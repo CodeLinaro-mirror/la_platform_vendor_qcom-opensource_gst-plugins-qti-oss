@@ -853,6 +853,9 @@ gst_qscreencapbuf_destroy (GstQCtx * qctx, GstBuffer * qscreencapbuf)
       gbm_memory_free (qctx,meta->gbminfo);
   }
 
+  GST_DEBUG("destroy wlbuffer from buffer %p ",qscreencapbuf);
+  if(meta->qwlbuf.wlbuf)
+       wl_buffer_destroy (meta->qwlbuf.wlbuf);
 teak:
   if (meta->parent) {
     /* Release the ref to our parent */
