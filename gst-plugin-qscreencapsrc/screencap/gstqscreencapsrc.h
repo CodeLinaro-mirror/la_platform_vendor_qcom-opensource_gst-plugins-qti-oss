@@ -62,6 +62,9 @@ struct _GstQScreenCapSrc
 
   GstClockID clock_id;
   gint64 last_frame_no;
+  gint pending_1_in_display;
+  gint released_cnt;//It means display released buf cnt. Use atomic op on this var, to reduce lock() calling, and this var needn't lock() protect.
+  GstClockTime first_time;
 
   GMutex  qc_lock;
 

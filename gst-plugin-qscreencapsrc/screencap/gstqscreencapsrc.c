@@ -174,6 +174,9 @@ gst_qscreencap_src_start (GstBaseSrc * basesrc)
   GstQScreenCapSrc *s = GST_QSCREENCAP_SRC (basesrc);
   gboolean ret = FALSE;
   s->last_frame_no = -1;
+  s->pending_1_in_display = 0;
+  g_atomic_int_set(&s->released_cnt, 0);
+  s->first_time = GST_CLOCK_TIME_NONE;
   GError *err = NULL;
 
   ret =  gst_qscreencap_src_open_display (s);
@@ -220,7 +223,13 @@ frame_redraw_callback (void *data, struct wl_callback *callback, uint32_t time)
   GstQScreenCapSrc * qscreencapsrc = data;
 
   GST_DEBUG_OBJECT (qscreencapsrc,"frame_redraw_cb\n");
-
+#ifdef ENABLE_PERFDEBUG_LOG
+  {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    printf("++++++++++ frame redraw cb, %d.%06d\n", tv.tv_sec, tv.tv_usec);
+  }
+#endif
   g_atomic_int_set (&qscreencapsrc->redraw_pending, FALSE);
   wl_callback_destroy (callback);
 }
@@ -276,7 +285,7 @@ gst_qscreencap_src_qscreencap_catch (GstQScreenCapSrc * qscreencapsrc)
 
        qscreencap = gst_qscreencapbuf_new (qscreencapsrc->qctx,
           GST_ELEMENT (qscreencapsrc), qscreencapsrc->width, qscreencapsrc->height,
-          (BufferReturnFunc) (gst_qscreencap_src_return_buf));
+          (BufferReturnFunc) (gst_qscreencap_src_return_buf), &qscreencapsrc->released_cnt);
        if (qscreencap == NULL) {
          GST_ELEMENT_ERROR (qscreencapsrc, RESOURCE, WRITE, (NULL),
            ("could not create a %dx%d qscreencap", qscreencapsrc->width,
@@ -328,7 +337,13 @@ gst_qscreencap_src_qscreencap_catch (GstQScreenCapSrc * qscreencapsrc)
 
   meta->qwlbuf.busy = TRUE;
   wl_display_flush (qdisplay->display);
-
+#ifdef ENABLE_PERFDEBUG_LOG
+  {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    printf("+++++++++++ commit at %d.%06d s\n", tv.tv_sec, tv.tv_usec);
+  }
+#endif
   GST_DEBUG_OBJECT (qscreencapsrc, "commit gstbuf %p  end",qscreencap);
 
 
@@ -371,7 +386,9 @@ gst_qscreencap_src_create (GstPushSrc * bs, GstBuffer ** buf)
   GstClockTime frame_duration;
   GstClockTime base_time;
   GstBuffer *gstbuf;
-  gint32 counting;
+  int wait_total_us;
+  GstMetaQScreenCap *meta;
+  QDisplay *qdisplay;
 
   GST_OBJECT_LOCK (qscreencapsrc);
   if (GST_ELEMENT_CLOCK (qscreencapsrc) == NULL) {
@@ -387,18 +404,20 @@ gst_qscreencap_src_create (GstPushSrc * bs, GstBuffer ** buf)
      return GST_FLOW_NOT_NEGOTIATED;
   }
 
-retry:
-  counting = 0;
+commit_one:
   GST_OBJECT_LOCK (qscreencapsrc);
-  base_time = GST_ELEMENT_CAST (qscreencapsrc)->base_time;
+  base_time = qscreencapsrc->first_time;//GST_ELEMENT_CAST (qscreencapsrc)->base_time;
   next_screencap_ts = gst_clock_get_time (GST_ELEMENT_CLOCK (qscreencapsrc));
 
   GST_DEBUG_OBJECT (qscreencapsrc, "timer base %" G_GUINT64_FORMAT,
         base_time);
   GST_DEBUG_OBJECT (qscreencapsrc, "timer cur %" G_GUINT64_FORMAT,
         next_screencap_ts);
-
-  next_screencap_ts -= base_time;
+  if (base_time != GST_CLOCK_TIME_NONE) {
+      next_screencap_ts -= base_time;
+  }else{
+      next_screencap_ts = 0;
+  }
 
   next_frame_no = gst_util_uint64_scale (next_screencap_ts,
       qscreencapsrc->fps_n, GST_SECOND * qscreencapsrc->fps_d);
@@ -446,63 +465,77 @@ retry:
   }
   qscreencapsrc->last_frame_no = next_frame_no;
   GST_OBJECT_UNLOCK (qscreencapsrc);
-redraw_checking:
-  if (g_atomic_int_get (&qscreencapsrc->redraw_pending) == TRUE)
-  {
-    counting ++;
-    GST_WARNING_OBJECT (qscreencapsrc,"redraw pending bufer len %d ", g_queue_get_length (&qscreencapsrc->qctx->qdisplay->pending_buffers));
-    usleep(500); //sleep 500us
 
-    if(counting > 30)
-      goto retry;
-    else
-     goto redraw_checking;
-
-  } else {
-    /* commit wlbuf for screen catching */
-    gstbuf = gst_qscreencap_src_qscreencap_catch (qscreencapsrc);
-    if (!gstbuf)
+  /* commit wlbuf for screen capture */
+  gstbuf = gst_qscreencap_src_qscreencap_catch (qscreencapsrc);
+  if (!gstbuf)
       return GST_FLOW_ERROR;
-
-    GST_BUFFER_DTS (gstbuf) = GST_CLOCK_TIME_NONE;
-
-    GST_BUFFER_PTS (gstbuf) = next_screencap_ts;
-
-    GST_BUFFER_DURATION (gstbuf) = frame_duration;
-
+  if (qscreencapsrc->first_time == GST_CLOCK_TIME_NONE) {
+      GST_OBJECT_LOCK(qscreencapsrc);
+      qscreencapsrc->first_time = gst_clock_get_time (GST_ELEMENT_CLOCK (qscreencapsrc));
+      GST_OBJECT_UNLOCK(qscreencapsrc);
   }
+
+  GST_BUFFER_PTS (gstbuf) = next_screencap_ts;
+  GST_BUFFER_DTS (gstbuf) = GST_CLOCK_TIME_NONE;
+  GST_BUFFER_DURATION (gstbuf) = frame_duration;
+//#define FORCE_COMMIT_TWO	//just for tune and debug
+#ifdef FORCE_COMMIT_TWO
+  if (qscreencapsrc->pending_1_in_display == 0) {
+      qscreencapsrc->pending_1_in_display = 1;
+      goto commit_one;
+  }
+#endif
+#define WAIT_TIMEOUT_US    1000000    //it should < 2000000000, otherwise will overflow
+#define WAIT_INTERVAL_US   2000
+  //wait until frame draw event coming and buf return
+  qdisplay = qscreencapsrc->qctx->qdisplay;
+  //from now, will use gstbuf to store released buf
   gstbuf = NULL;
-  {
-    /* get the output gstbuf */
-    GstMetaQScreenCap *meta;
-    QDisplay *qdisplay = qscreencapsrc->qctx->qdisplay;
-    g_mutex_lock (&qdisplay->capture_lock);
-    if (!g_queue_is_empty (&qdisplay->pending_buffers) ) {
-       gstbuf = g_queue_pop_head (&qdisplay->pending_buffers);
+  for(wait_total_us = 0; wait_total_us < WAIT_TIMEOUT_US;) {
+    if (g_atomic_int_get(&qscreencapsrc->released_cnt) > 0) {
+        g_mutex_lock (&qdisplay->capture_lock);
+        gstbuf = g_queue_pop_head (&qdisplay->pending_buffers);
 
-       g_hash_table_remove (qdisplay->buffers,gstbuf);
-       meta = GST_META_QSCREENCAP_GET (gstbuf);
-       g_assert(meta != NULL);
+        g_hash_table_remove (qdisplay->buffers, gstbuf);
+        meta = GST_META_QSCREENCAP_GET (gstbuf);
+        g_assert(meta != NULL);
 
+        g_mutex_unlock(&qdisplay->capture_lock);
+        g_atomic_int_dec_and_test(&qscreencapsrc->released_cnt);
 #ifdef DUMPFILE
-       dump_tga("/home/root/app-data/abgr.tga", meta->width, meta->height, meta->stride, meta->data);
+        dump_tga("/home/root/app-data/abgr.tga", meta->width, meta->height, meta->stride, meta->data);
 #endif
     }
-    g_mutex_unlock(&qdisplay->capture_lock);
-
+    if (gstbuf == NULL) {
+      //wait
+      usleep(WAIT_INTERVAL_US);
+      wait_total_us += WAIT_INTERVAL_US;
+      if (qscreencapsrc->pending_1_in_display == 0 && qscreencapsrc->fps_n > 30*qscreencapsrc->fps_d && wait_total_us*1000 >= (frame_duration > 10000000? frame_duration : 10000000)) {
+        //Usually, we commit 1 buf and wait until it released each time.
+        //If latency between commit and release > 1/fps, need commit one more buf, then, keep 1 commit 1 release.
+        //As display latency between commit and release buf, is ~25ms, we don't commit one more for fps <= 30 case.
+        //wait_total_us should not be too small, so add this 10ms limit
+        qscreencapsrc->pending_1_in_display = 1;
+        goto commit_one;
+      }
+    }else{
+        break;//got released buf
+    }
   }
-  if(gstbuf == NULL)
-  {
-      goto retry;
-
+  if (!(wait_total_us < WAIT_TIMEOUT_US)) {
+      GST_ERROR_OBJECT (qscreencapsrc, "Wait display return buf timeout %d us, should stop pipeline!\n", wait_total_us);
+      return GST_FLOW_ERROR;
   }
 
   *buf = gstbuf;
-  GST_DEBUG_OBJECT (qscreencapsrc, "frame durartion %" G_GUINT64_FORMAT,
-        GST_BUFFER_DURATION (*buf));
-  GST_DEBUG_OBJECT (qscreencapsrc, "push time %" G_GUINT64_FORMAT,
-        GST_BUFFER_PTS (*buf));
-  printf("push gstbuf %p\n",gstbuf);
+#ifdef ENABLE_PERFDEBUG_LOG
+  {
+    struct timeval n;
+    gettimeofday(&n, NULL);
+    printf("push gstbuf %p, ++++ %d.%06d sec, dur %lld\n",gstbuf, n.tv_sec, n.tv_usec, GST_BUFFER_DURATION(gstbuf));
+  }
+#endif
 done:
   return GST_FLOW_OK;
 }

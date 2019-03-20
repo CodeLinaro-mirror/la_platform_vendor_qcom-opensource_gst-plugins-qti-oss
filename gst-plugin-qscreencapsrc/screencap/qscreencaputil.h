@@ -47,6 +47,8 @@
 #include "screen-capture-client-protocol.h"
 #include "ivi-application-client-protocol.h"
 
+//#define ENABLE_PERFDEBUG_LOG
+
 G_BEGIN_DECLS
 #define GBM_PERFORM_GET_METADATA_ION_FD             0x24 /* Get Metadata ion fd from BO*/
 #define __gbm_fourcc_code(a,b,c,d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | \
@@ -108,6 +110,7 @@ struct _QWlBuffer {
 	int stride;
 	void *shm_data;
 	int busy;
+	gint *p_releasedbuf_cnt;//display released buf cnt, means display filled screen content into that buf, and released it
 };
 struct _QDisplay {
 	struct wl_display *display;
@@ -195,7 +198,7 @@ const GstMetaInfo * gst_meta_qscreencap_get_info (void);
 #define GST_META_QSCREENCAP_ADD(buf) ((GstMetaQScreenCap *)gst_buffer_add_meta(buf,gst_meta_qscreencap_get_info(),NULL))
 
 GstBuffer *gst_qscreencapbuf_new (GstQCtx * qctx,
-    GstElement * parent, int width, int height, BufferReturnFunc return_func);
+    GstElement * parent, int width, int height, BufferReturnFunc return_func, int* p_relbuf_cnt);
 
 void gst_qscreencapbuf_destroy (GstQCtx * qctx, GstBuffer * qscreencapbuf);
 

@@ -706,10 +706,18 @@ buffer_release(void *data, struct wl_buffer *buffer)
 
   g_mutex_lock (&qdisplay->capture_lock);
   GST_DEBUG("buffer_release gstbuf %p",qwlbuf->gstbuf);
+#ifdef ENABLE_PERFDEBUG_LOG
+  {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    printf("+++++++++++++ buf release %d.%06d\n", tv.tv_sec, tv.tv_usec);
+  }
+#endif
   g_queue_push_tail (&qdisplay->pending_buffers, qwlbuf->gstbuf);
   g_mutex_unlock (&qdisplay->capture_lock);
 
   qwlbuf->busy = 0;
+  g_atomic_int_inc(qwlbuf->p_releasedbuf_cnt);
 }
 
 static const struct wl_buffer_listener buffer_listener = {
@@ -753,7 +761,7 @@ static const struct gbm_buffer_params_listener params_listener = {
 
 GstBuffer *
 gst_qscreencapbuf_new (GstQCtx * qctx,
-    GstElement * parent, int width, int height, BufferReturnFunc return_func)
+    GstElement * parent, int width, int height, BufferReturnFunc return_func, gint* p_relbuf_cnt)
 {
   GstBuffer *qscreencapbuf = NULL;
   GstMetaQScreenCap *meta;
@@ -826,6 +834,7 @@ gst_qscreencapbuf_new (GstQCtx * qctx,
           meta->size, 0, meta->size, NULL, NULL));
 
   meta->qwlbuf.gstbuf = qscreencapbuf;
+  meta->qwlbuf.p_releasedbuf_cnt = p_relbuf_cnt;
   /* Keep a ref to our src */
   meta->parent = gst_object_ref (parent);
   meta->return_func = return_func;
