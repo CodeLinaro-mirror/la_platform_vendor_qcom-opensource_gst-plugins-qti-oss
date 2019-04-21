@@ -72,6 +72,9 @@ struct _GstQScreenCapSrc
   GSList *buffer_list;
 
   gboolean redraw_pending;
+
+  gboolean cacheable;
+  gboolean test_cacheable;
 };
 
 struct _GstQScreenCapSrcClass

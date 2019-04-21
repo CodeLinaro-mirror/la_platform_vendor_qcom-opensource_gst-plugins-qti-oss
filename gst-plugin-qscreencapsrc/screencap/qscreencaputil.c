@@ -47,12 +47,14 @@
 #include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h> // for close
+#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include "qscreencaputil.h"
 #include "media/msm_media_info.h"
 #include <gst/video/video.h>
 #include <gst/ionbuf/gstionbuf_meta.h>
 
-QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h);
+QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h,gboolean buf_cacheable);
 void gbm_memory_free(GstQCtx * qctx,QGbm_info *buf_gbm_info);
 GType
 gst_meta_qscreencap_api_get_type (void)
@@ -758,10 +760,30 @@ static const struct gbm_buffer_params_listener params_listener = {
         create_failed
 };
 
+int gst_qscreencapbuf_cache_invalidate(GstQCtx* qctx, GstMetaQScreenCap* meta)
+{
+  int ret;
+  struct ion_flush_data flush = {0};
+  struct ion_custom_data custom = {0};
+
+  flush.vaddr = meta->data;
+  flush.fd = meta->gbminfo->bo_fd;
+  //flush.handle = 0;
+  flush.length = meta->size;
+  custom.cmd = ION_IOC_INV_CACHES;
+  custom.arg = (unsigned long)&flush;
+
+  ret = ioctl(qctx->gbm_device_fd, ION_IOC_CUSTOM, &custom);
+  if (ret < 0) {
+    GST_ERROR("ioctl to do cache op, ret %d failed!", ret);
+    return -1;
+  }
+  return 0;
+}
 
 GstBuffer *
 gst_qscreencapbuf_new (GstQCtx * qctx,
-    GstElement * parent, int width, int height, BufferReturnFunc return_func, gint* p_relbuf_cnt)
+    GstElement * parent, int width, int height, BufferReturnFunc return_func, gint* p_relbuf_cnt, gboolean buf_cacheable)
 {
   GstBuffer *qscreencapbuf = NULL;
   GstMetaQScreenCap *meta;
@@ -784,7 +806,7 @@ gst_qscreencapbuf_new (GstQCtx * qctx,
   {
     int bostride,boheight;
 
-    meta->gbminfo = gbm_memory_alloc (qctx,width,height);
+    meta->gbminfo = gbm_memory_alloc (qctx,width,height,buf_cacheable);
     if (!meta->gbminfo)
       goto teak;
     boheight = qctx->gbm_bo_get_height(meta->gbminfo->bo);
@@ -885,7 +907,7 @@ teak:
 }
 
 
-QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h)
+QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h,gboolean buf_cacheable)
 {
 
     QGbm_info *op_buf_gbm_info = g_malloc(sizeof(QGbm_info));
@@ -897,9 +919,9 @@ QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h)
         return NULL;
     }
 
-    GST_DEBUG("create NV12 gbm_bo with width=%d, height=%d", w, h);
+    GST_DEBUG("create NV12 gbm_bo with width=%d, height=%d, cacheable %d", w, h, (int)buf_cacheable);
     bo = qctx->gbm_bo_create(qctx->gbm, w, h,GBM_FORMAT_ABGR8888,
-              GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+              GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | (buf_cacheable ? GBM_BO_USAGE_CACHEABLE_QTI : 0));
 
 
     if (bo == NULL) {
