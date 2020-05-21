@@ -52,6 +52,9 @@
 #include <gst/video/video.h>
 #include <gst/ionbuf/gstionbuf_meta.h>
 
+GST_DEBUG_CATEGORY_EXTERN (gst_debug_qscreencap_src);
+#define GST_CAT_DEFAULT gst_debug_qscreencap_src
+
 QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h);
 void gbm_memory_free(GstQCtx * qctx,QGbm_info *buf_gbm_info);
 GType
@@ -454,12 +457,12 @@ static const struct ivi_surface_listener ivi_surface_listener = {
 
 #define IVI_SURFACE_ID 9000
 
-QDisplay *create_display(void)
+QDisplay *create_display(gchar* screen)
 {
 	struct output *output, *next;
 	int found = 0;
 	GError *err = NULL;
-
+	gchar* select_screen = NULL;
 	QDisplay *qdisplay;
 	qdisplay = g_new0 (QDisplay, 1);
 	if (qdisplay == NULL)
@@ -545,12 +548,20 @@ QDisplay *create_display(void)
 
 	/* Select output */
 	wl_list_for_each_safe(output, next, &qdisplay->output_list, link) {
-                GST_DEBUG("%s",output->name);
+		GST_DEBUG("output name %s",output->name);
+
+		if (screen != NULL){
+			select_screen = screen;
+		}
+		else {
 #ifdef USE_V6
-		if (!strcmp(output->name, "DSI-0")) {
+			select_screen = "DSI-0";
 #else
-		if (!strcmp(output->name, "HDMI-A-1")) {
+			select_screen = "HDMI-A-1";
 #endif
+		}
+		if (!strcmp(output->name, select_screen)) {
+			qdisplay->output = output;
 			found = 1;
 			break;
 		}
@@ -579,10 +590,9 @@ QDisplay *create_display(void)
 
 /* get resouces for capture */
 GstQCtx *
-qscreencap_qctx_get (GstElement * parent)
+qscreencap_qctx_get (GstElement * parent, gchar* screen)
 {
   GstQCtx *qctx = NULL;
-
   qctx = g_new0 (GstQCtx, 1);
   if(!qctx) {
     GST_ERROR("g_new0 (GstQCtx) failed");
@@ -619,9 +629,9 @@ qscreencap_qctx_get (GstElement * parent)
 
   }
 
-  qctx->qdisplay = create_display();
+  qctx->qdisplay = create_display(screen);
   if(qctx->qdisplay == NULL) {
-    GST_ERROR("create_displaycreate_display failed");
+    GST_ERROR("create_display(%s) failed", screen==NULL?"Null":screen);
     dlclose(qctx->gbmhandle);
     g_free(qctx);
     return NULL;
@@ -629,8 +639,10 @@ qscreencap_qctx_get (GstElement * parent)
 
   qctx->width = qctx->qdisplay->output->width;
   qctx->height = qctx->qdisplay->output->height;
+  GST_DEBUG("qscreencap_qctx_get output name %s width %d,height %d", qctx->qdisplay->output->name, qctx->width, qctx->height);
 
-  qctx->gbm_device_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+#define GBMDEV_DEVICE_NODE "/dev/dri/renderD128"  //"/dev/dri/card0"
+  qctx->gbm_device_fd = open(GBMDEV_DEVICE_NODE, O_RDWR | O_CLOEXEC);
   if (qctx->gbm_device_fd < 0) {
          GST_ERROR("opening gbm device failed");
          return NULL;
