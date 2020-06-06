@@ -10,7 +10,7 @@ add_definitions(
     -D_GNU_SOURCE
     -DUSE_ION
     -D_LINUX_
-    -D_MSM8974_
+    -DUSE_GBM
 )
 
 set(SOURCE_FILES
@@ -35,6 +35,7 @@ target_link_libraries (mm-venc-omx-test-lite pthread)
 target_link_libraries (mm-venc-omx-test-lite OmxCore)
 target_link_libraries (mm-venc-omx-test-lite OmxVenc)
 target_link_libraries (mm-venc-omx-test-lite ion)
+target_link_libraries (mm-venc-omx-test-lite gbm)
 
 
 install (TARGETS mm-venc-omx-test-lite DESTINATION ${CMAKE_INSTALL_BINDIR})
