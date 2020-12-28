@@ -118,6 +118,7 @@ gst_qeavb_pcm_src_init (GstQeavbPcmSrc * qeavbpcmsrc)
   qeavbpcmsrc->eavb_addr = NULL;
   qeavbpcmsrc->eavb_fd = -1;
   qeavbpcmsrc->started = FALSE;
+  qeavbpcmsrc->is_first_pcmpacket = TRUE;
   memset(&(qeavbpcmsrc->hdr), 0, sizeof(eavb_ioctl_hdr_t));
   memset(&(qeavbpcmsrc->stream_info), 0, sizeof(eavb_ioctl_stream_info_t));
   g_mutex_init (&qeavbpcmsrc->lock);
@@ -296,6 +297,7 @@ gst_qeavb_pcm_src_start (GstBaseSrc * basesrc)
   int err = 0;
   GstQeavbPcmSrc *qeavbpcmsrc = GST_QEAVB_PCM_SRC (basesrc);
 
+  GST_INFO_OBJECT(qeavbpcmsrc,"qeavb pcm src start");
   qeavbpcmsrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
   if (qeavbpcmsrc->eavb_fd == -1) {
     GST_ERROR_OBJECT (qeavbpcmsrc,"open eavb fd error, exit!");
@@ -397,6 +399,11 @@ retry:
     GST_DEBUG_OBJECT (qeavbpcmsrc, "receive data len %d", recv_len);
 
     if (recv_len > 0) {
+      if (qeavbpcmsrc->is_first_pcmpacket) {
+        kpi_place_marker("M - qeavbpcmsrc receive the first packet");
+        GST_INFO_OBJECT(qeavbpcmsrc,"receive the first pcm packet");
+        qeavbpcmsrc->is_first_pcmpacket = FALSE;
+      }
       gst_buffer_fill (buffer, 0, qavb_buffer.pbuf, recv_len);
       gst_buffer_set_size (buffer, recv_len);
     } else {
