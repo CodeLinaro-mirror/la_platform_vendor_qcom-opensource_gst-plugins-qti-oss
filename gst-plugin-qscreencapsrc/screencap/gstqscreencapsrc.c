@@ -80,8 +80,10 @@ GST_STATIC_PAD_TEMPLATE ("src", GST_PAD_SRC, GST_PAD_ALWAYS,
 enum
 {
   PROP_0,
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
   PROP_BUF_CACHEABLE,
   PROP_TEST_CACHEABLE,
+#endif
 };
 
 #define gst_qscreencap_src_parent_class parent_class
@@ -331,13 +333,14 @@ gst_qscreencap_src_qscreencap_catch (GstQScreenCapSrc * qscreencapsrc)
   wl_surface_attach(qdisplay->surface, meta->qwlbuf.wlbuf, 0, 0);
 
   wl_surface_damage(qdisplay->surface, 0, 0, meta->width, meta->height);
-
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
   if (qscreencapsrc->test_cacheable) {
     memset(meta->data, (0xff & GST_BUFFER_PTS(qscreencap)), meta->size);
   }
   if (qscreencapsrc->cacheable) {
     gst_qscreencapbuf_cache_invalidate(qscreencapsrc->qctx, meta);
   }
+#endif
   g_atomic_int_set (&qscreencapsrc->redraw_pending, TRUE);
 
   callback = wl_surface_frame(qdisplay->surface);
@@ -540,12 +543,14 @@ commit_one:
   }
 
   *buf = gstbuf;
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
   if (qscreencapsrc->cacheable) {
     int cache_rt = gst_qscreencapbuf_cache_invalidate(qscreencapsrc->qctx, GST_META_QSCREENCAP_GET(gstbuf));
     if (cache_rt) {
       GST_ERROR_OBJECT(qscreencapsrc, "gst_qscreencapbuf_cache_invalidate ret %d failed", cache_rt);
     }
   }
+#endif
 
 #ifdef ENABLE_PERFDEBUG_LOG
   {
@@ -677,12 +682,14 @@ static void gst_qscreencap_src_set_property (GObject * object, guint prop_id, co
 {
   GstQScreenCapSrc* self = GST_QSCREENCAP_SRC(object);
   switch (prop_id) {
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
     case PROP_BUF_CACHEABLE:
       self->cacheable = g_value_get_boolean (value);
       break;
     case PROP_TEST_CACHEABLE:
       self->test_cacheable = g_value_get_boolean (value);
       break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -694,12 +701,14 @@ static void gst_qscreencap_src_get_property (GObject * object, guint prop_id, GV
 {
   GstQScreenCapSrc* self = GST_QSCREENCAP_SRC(object);
   switch (prop_id) {
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
    case PROP_BUF_CACHEABLE:
       g_value_set_boolean (value, self->cacheable);
       break;
    case PROP_TEST_CACHEABLE:
       g_value_set_boolean (value, self->test_cacheable);
       break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -721,6 +730,7 @@ gst_qscreencap_src_class_init (GstQScreenCapSrcClass * klass)
   gobjclass->set_property = gst_qscreencap_src_set_property;
   gobjclass->get_property = gst_qscreencap_src_get_property;
 
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
   g_object_class_install_property (gobjclass, PROP_BUF_CACHEABLE,
       g_param_spec_boolean ("buf-cacheable",
           "use cacheable buf to capture screen",
@@ -736,6 +746,7 @@ gst_qscreencap_src_class_init (GstQScreenCapSrcClass * klass)
           GST_QSCREENCAP_SRC_TEST_CACHEABLE_DEFAULT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
+#endif
 
   gst_element_class_add_pad_template (elemclass,
       gst_static_pad_template_get (&src_factory));

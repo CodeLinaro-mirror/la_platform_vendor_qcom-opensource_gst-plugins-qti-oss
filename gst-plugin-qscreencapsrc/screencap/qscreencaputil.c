@@ -760,6 +760,7 @@ static const struct gbm_buffer_params_listener params_listener = {
         create_failed
 };
 
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
 int gst_qscreencapbuf_cache_invalidate(GstQCtx* qctx, GstMetaQScreenCap* meta)
 {
   int ret;
@@ -780,6 +781,7 @@ int gst_qscreencapbuf_cache_invalidate(GstQCtx* qctx, GstMetaQScreenCap* meta)
   }
   return 0;
 }
+#endif
 
 GstBuffer *
 gst_qscreencapbuf_new (GstQCtx * qctx,
@@ -913,15 +915,19 @@ QGbm_info * gbm_memory_alloc(GstQCtx * qctx,int w,int h,gboolean buf_cacheable)
     QGbm_info *op_buf_gbm_info = g_malloc(sizeof(QGbm_info));
     struct gbm_bo *bo = NULL;
     int bo_fd = -1, meta_fd = -1;
+    unsigned int cacheable_usage = 0;
     memset(op_buf_gbm_info,0,sizeof(QGbm_info));
     if (!op_buf_gbm_info) {
         GST_ERROR("Invalid arguments to alloc_map_ion_memory");
         return NULL;
     }
 
-    GST_DEBUG("create NV12 gbm_bo with width=%d, height=%d, cacheable %d", w, h, (int)buf_cacheable);
+    GST_DEBUG("create rgba gbm_bo with width=%d, height=%d, cacheable %d", w, h, (int)buf_cacheable);
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
+    cacheable_usage = buf_cacheable ? GBM_BO_USAGE_CACHEABLE_QTI : 0;
+#endif
     bo = qctx->gbm_bo_create(qctx->gbm, w, h,GBM_FORMAT_ABGR8888,
-              GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | (buf_cacheable ? GBM_BO_USAGE_CACHEABLE_QTI : 0));
+              GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING | cacheable_usage);
 
 
     if (bo == NULL) {

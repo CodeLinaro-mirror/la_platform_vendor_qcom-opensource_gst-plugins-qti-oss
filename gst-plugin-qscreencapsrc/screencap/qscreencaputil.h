@@ -166,7 +166,9 @@ GstBuffer *gst_qscreencapbuf_new (GstQCtx * qctx,
 
 void gst_qscreencapbuf_destroy (GstQCtx * qctx, GstBuffer * qscreencapbuf);
 
+#ifdef GBM_BO_USAGE_CACHEABLE_QTI
 int gst_qscreencapbuf_cache_invalidate(GstQCtx* qctx, GstMetaQScreenCap* meta);
+#endif
 
 /* Call to manually release a buffer */
 void gst_qscreencap_buffer_free (GstBuffer * qscreencapbuf);
