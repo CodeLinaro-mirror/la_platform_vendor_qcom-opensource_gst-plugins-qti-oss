@@ -127,6 +127,7 @@ struct _Gstqticodec2venc
   char *roi_rect_payload;
   char *roi_rect_payload_ext;
   BITRATE_SAVING_MODE bitrate_saving_mode;
+  gboolean is_heic;
 };
 
 /*

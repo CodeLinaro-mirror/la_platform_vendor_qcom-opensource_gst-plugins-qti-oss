@@ -160,7 +160,8 @@ typedef enum {
     PIXEL_FORMAT_RGBA_8888,
     PIXEL_FORMAT_YV12,
     PIXEL_FORMAT_P010,
-    PIXEL_FORMAT_TP10_UBWC
+    PIXEL_FORMAT_TP10_UBWC,
+    PIXEL_FORMAT_NV12_512
 } PIXEL_FORMAT_TYPE;
 
 typedef enum {
@@ -172,6 +173,8 @@ typedef enum {
     C2_PIXEL_FORMAT_VENUS_NV12 = 0x7FA30C04,
     // NV12 EXT with UBWC compression
     C2_PIXEL_FORMAT_VENUS_NV12_UBWC = 0x7FA30C06,
+    // NV12 EXT with 512 width and height alignment (used by HEIC tile encoder)
+    C2_PIXEL_FORMAT_VENUS_NV12_512 = 0x116,
     // 10-bit Tightly-packed and compressed YUV
     C2_PIXEL_FORMAT_VENUS_TP10 = 0x7FA30C09,
     // Venus 10-bit YUV 4:2:0 Planar format
@@ -366,6 +369,7 @@ typedef struct {
     void* gbm_bo;
     gboolean secure;
     guint32 interlaceMode;
+    gboolean heic_flag;
 } BufferDescriptor;
 
 typedef struct {

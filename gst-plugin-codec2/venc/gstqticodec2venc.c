@@ -84,7 +84,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2h264enc.h"
 #include "gstqcodec2h265enc.h"
 
-
 GST_DEBUG_CATEGORY (gst_qticodec2venc_debug);
 #define GST_CAT_DEFAULT gst_qticodec2venc_debug
 
@@ -475,7 +474,9 @@ gst_to_c2_pixelformat (GstVideoEncoder * encoder, GstVideoFormat format)
     case GST_VIDEO_FORMAT_NV12:
       if (enc->is_ubwc) {
         result = PIXEL_FORMAT_NV12_UBWC;
-      } else {
+      } else if (enc->is_heic)
+        result = PIXEL_FORMAT_NV12_512;
+      else {
         result = PIXEL_FORMAT_NV12_LINEAR;
       }
       break;
@@ -1156,6 +1157,10 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
   if (GST_FLOW_OK != gst_qticodec2venc_setup_output (encoder, state)) {
     GST_ERROR_OBJECT (enc, "fail to setup output");
     goto error_output;
+  }
+
+  if (enc->comp_name && strstr(enc->comp_name, "heic")) {
+      enc->is_heic = TRUE;
   }
 
   if (!gst_video_encoder_negotiate (encoder)) {
@@ -1933,6 +1938,7 @@ gst_qticodec2venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   inBuf.height = enc->height;
   inBuf.format = enc->input_format;
   inBuf.ubwc_flag = enc->is_ubwc;
+  inBuf.heic_flag = enc->is_heic;
 
   gst_memory_unref (mem);
 
@@ -2431,6 +2437,7 @@ gst_qticodec2venc_init (Gstqticodec2venc * enc)
   enc->roi_rect_payload_ext = NULL;
   enc->bitrate_saving_mode = DEFAULT_BITRATE_SAVING_MODE;
   enc->silent = FALSE;
+  enc->is_heic = FALSE;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
