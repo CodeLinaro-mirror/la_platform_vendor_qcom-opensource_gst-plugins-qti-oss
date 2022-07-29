@@ -565,8 +565,28 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
                 result = C2_NO_MEMORY;
             }
         } else {
-            LOG_ERROR("Buffer fd(%u) not found", fd);
-            result = C2_NOT_FOUND;
+            /* If the buffer is not found, we assume it is a valid external buffer.
+             * When using external buffer, first attach the fd to C2AllocatorGBM,
+             * then when calling alloc(), it will try to import the external
+             * buffer by fd instead of allocating a new one. */
+            if (!isUseExternalBuffer()) {
+                setUseExternalBuffer(TRUE);
+                LOG_MESSAGE("Set to use external buffer for C2AllocatorGBM");
+            }
+            result = attachExternalFd(fd);
+            if (result == C2_OK) {
+                buf = alloc(buffer);
+                if (buf) {
+                    work->input.buffers.emplace_back(buf);
+                    LOG_MESSAGE("Successfully import and queue the external "
+                        "buffer, fd=%d", fd);
+                } else {
+                    LOG_ERROR("Failed to import external fd: %d", fd);
+                    result = C2_CORRUPTED;
+                }
+            } else {
+                LOG_ERROR("Failed(%d) to attach external fd: %d", result, fd);
+            }
         }
     } else if (inputBuffer) {
         std::shared_ptr<C2Buffer> clientBuf;
