@@ -850,7 +850,6 @@ static gboolean
 gst_qticodec2vdec_stop (GstVideoDecoder * decoder)
 {
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  gboolean ret = TRUE;
 
   GST_DEBUG_OBJECT (dec, "stop");
 
@@ -860,10 +859,10 @@ gst_qticodec2vdec_stop (GstVideoDecoder * decoder)
 
   /* Stop the component */
   if (dec->comp) {
-    ret = c2component_stop (dec->comp);
+    c2component_stop (dec->comp);
   }
 
-  return ret;
+  return TRUE;
 }
 
 /* Called when the element changes to GST_STATE_NULL */
@@ -1506,6 +1505,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     case EVENT_ERROR:{
       GST_ERROR_OBJECT (dec, "Something un-expected happened(%d)",
           *(gint32 *) data);
+      GST_ELEMENT_ERROR (dec, STREAM, DECODE, ("Decoder posts an error"),
+          (NULL));
       break;
     }
     case EVENT_UPDATE_MAX_BUF_CNT:{
