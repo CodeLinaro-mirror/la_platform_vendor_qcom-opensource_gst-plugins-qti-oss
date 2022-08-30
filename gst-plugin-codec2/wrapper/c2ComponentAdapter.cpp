@@ -722,6 +722,10 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             ret = C2_NOT_FOUND;
         } else {
             mC2Allocator = allocator;
+            auto allocatorGBM =
+                std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2Allocator);
+            auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this);
+            allocatorGBM->setAcquireExtBufCb(func);
         }
     }
 
@@ -973,6 +977,11 @@ bool C2ComponentAdapter::isUseExternalBuffer()
         LOG_ERROR("allocatorGBM is NULL");
     }
     return ret;
+}
+
+void C2ComponentAdapter::acquireExtBuf()
+{
+    mCallback->onAcquireExtBuffer();
 }
 
 C2ComponentListenerAdapter::C2ComponentListenerAdapter(C2ComponentAdapter* comp)
