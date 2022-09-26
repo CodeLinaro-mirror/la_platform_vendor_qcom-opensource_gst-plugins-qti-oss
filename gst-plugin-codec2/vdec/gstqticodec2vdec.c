@@ -1446,6 +1446,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
               gst_video_decoder_set_interlaced_output_state (decoder,
               dec->output_format, interlace_mode, dec->width, dec->height,
               dec->input_state);
+          if (!output_state) {
+            GST_ERROR_OBJECT (dec, "Failed to set output state");
+            break;
+          }
+
           output_state->caps = gst_video_info_to_caps (&output_state->info);
 
           GST_DEBUG_OBJECT (dec, "set interlace mode %s in caps",

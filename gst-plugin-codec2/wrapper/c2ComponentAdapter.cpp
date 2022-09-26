@@ -238,7 +238,12 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
             if (mDataCopyFunc) {
                 if (linear_block->handle()) {
-                    uint32_t dest_fd = linear_block->handle()->data[0];
+                    const C2Handle *handle = linear_block->handle();
+                    if (!handle) {
+                        LOG_ERROR("invalid C2 handle");
+                        return C2_CORRUPTED;
+                    }
+                    uint32_t dest_fd = handle->data[0];
                     /* That data length is from upstream gst plugin pushed down gstbuffer.
                      * In the DataCopyFunc callback function, it may reduce the data length
                      * to its actual length accordingly, but couldn’t increase the length
