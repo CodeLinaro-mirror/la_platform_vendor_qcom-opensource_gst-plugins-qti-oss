@@ -788,7 +788,8 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             mC2AllocatorGBM = allocator;
             auto allocatorGBM =
                 std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
-            auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this);
+            auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
+                                  std::placeholders::_1, std::placeholders::_2);
             if (allocatorGBM) {
                 allocatorGBM->setAcquireExtBufCb(func);
             }
@@ -1101,9 +1102,9 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     return result;
 }
 
-void C2ComponentAdapter::acquireExtBuf()
+void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height)
 {
-    mCallback->onAcquireExtBuffer();
+    mCallback->onAcquireExtBuffer(width, height);
 }
 
 C2ComponentListenerAdapter::C2ComponentListenerAdapter(C2ComponentAdapter* comp)

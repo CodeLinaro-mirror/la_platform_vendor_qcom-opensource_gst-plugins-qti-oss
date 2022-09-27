@@ -706,7 +706,7 @@ public:
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
-    void onAcquireExtBuffer() override;
+    void onAcquireExtBuffer(uint32_t width, uint32_t height) override;
 
 private:
     listener_cb mCallback;
@@ -904,7 +904,7 @@ void CodecCallback::onUpdateMaxBufCount(uint32_t outputDelay)
     mCallback(mHandle, EVENT_UPDATE_MAX_BUF_CNT, &outputDelay);
 }
 
-void CodecCallback::onAcquireExtBuffer()
+void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
 {
 
     if (!mCallback) {
@@ -912,7 +912,11 @@ void CodecCallback::onAcquireExtBuffer()
         return;
     }
 
-    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, nullptr);
+    BufferResolution resolution = { 0 };
+    resolution.width = width;
+    resolution.height = height;
+
+    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, &resolution);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
