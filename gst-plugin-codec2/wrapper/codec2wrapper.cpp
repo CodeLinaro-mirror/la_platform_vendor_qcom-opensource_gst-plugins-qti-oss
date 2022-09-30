@@ -627,6 +627,7 @@ public:
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
+    void onAcquireExtBuffer() override;
 
 private:
     listener_cb mCallback;
@@ -822,6 +823,17 @@ void CodecCallback::onUpdateMaxBufCount(uint32_t outputDelay)
     }
 
     mCallback(mHandle, EVENT_UPDATE_MAX_BUF_CNT, &outputDelay);
+}
+
+void CodecCallback::onAcquireExtBuffer()
+{
+
+    if (!mCallback) {
+        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        return;
+    }
+
+    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, nullptr);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

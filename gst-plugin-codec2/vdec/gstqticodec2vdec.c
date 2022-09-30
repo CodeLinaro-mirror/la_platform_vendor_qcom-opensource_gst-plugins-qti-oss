@@ -855,10 +855,6 @@ gst_qticodec2vdec_stop (GstVideoDecoder * decoder)
 
   GST_DEBUG_OBJECT (dec, "stop");
 
-  if (dec->use_external_buf) {
-    gst_pad_stop_task (GST_VIDEO_DECODER_SRC_PAD (decoder));
-  }
-
   /* Stop the component */
   if (dec->comp) {
     c2component_stop (dec->comp);
@@ -913,22 +909,54 @@ gst_qticodec2vdec_close (GstVideoDecoder * decoder)
   return TRUE;
 }
 
- /* This loop is used to acquire external buffers */
 static void
-acquire_external_buf_loop (GstVideoDecoder * decoder)
+insert_external_buf_to_hashtable (GstVideoDecoder *decoder, gint fd, GstBuffer *buffer)
 {
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  GHashTable *buffer_table = dec->buffer_table;
+  GHashTable *buf_table = dec->buffer_table;
+  gint key = fd;
+  GstBuffer *gst_buf = NULL;
+
+  if (!buf_table) {
+    GST_ERROR_OBJECT(dec, "Buffer hash table is NULL");
+    return;
+  }
+  gst_buf = (GstBuffer *) g_hash_table_lookup (buf_table, &key);
+  if (gst_buf) {
+    GST_DEBUG_OBJECT (dec,
+        "GstBuffer(%p) is already in hashtable, fd=%d", gst_buf, fd);
+  } else {
+    gint *buf_key = NULL;
+    buf_key = g_malloc (sizeof (gint));
+    *buf_key = key;
+    g_hash_table_insert (buf_table, buf_key, buffer);
+    GST_DEBUG_OBJECT (dec,
+        "Insert buffer %p with buf_fd=%d to hashtable, table_size=%u",
+        buffer, fd, g_hash_table_size (buf_table));
+  }
+}
+
+static void
+acquire_external_buf_callback (GstVideoDecoder * decoder)
+{
+  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
   GstFlowReturn ret;
   GstBuffer *buffer = NULL;
   GstMemory *memory = NULL;
   gint fd = -1;
   gint64 timeout;
+  gboolean acquired = FALSE;
 
-  if (dec->out_port_pool) {
+  if (!dec->out_port_pool) {
+    GST_ERROR_OBJECT (dec, "External pool is NULL");
+    return;
+  }
+  while (!acquired) {
     g_mutex_lock (&dec->external_buf_lock);
     if (dec->acquired_external_buf < dec->max_external_buf_cnt) {
-      ret = gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, NULL);
+      GstBufferPoolAcquireParams params = { 0 };
+      params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
+      ret = gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, &params);
       if (buffer) {
         memory = gst_buffer_peek_memory (buffer, 0);
         if (memory) {
@@ -941,29 +969,18 @@ acquire_external_buf_loop (GstVideoDecoder * decoder)
           if (!c2component_attachExternalFd (dec->comp, fd)) {
             GST_ERROR_OBJECT (dec, "Failed to attach fd to Codec2");
           }
+          /* Insert the corresponding gstbuffer to hashtable */
+          insert_external_buf_to_hashtable(decoder, fd, buffer);
 
-          /* Attach the corresponding gstbuffer to hashtable */
-          gint64 key = (gint64) fd << 32;
-          GstBuffer *gst_buf = NULL;
-          gst_buf = (GstBuffer *) g_hash_table_lookup (buffer_table, &key);
-          if (gst_buf) {
-            GST_DEBUG_OBJECT (dec,
-                "GstBuffer(%p) is already in hashtable, fd=%d", gst_buf, fd);
-          } else {
-            gint64 *buf_key = NULL;
-            buf_key = g_malloc (sizeof (gint64));
-            *buf_key = key;
-            g_hash_table_insert (buffer_table, buf_key, buffer);
-            GST_DEBUG_OBJECT (dec,
-                "Insert buffer %p with buf_fd=%d to hashtable, table_size=%u",
-                buffer, fd, g_hash_table_size (buffer_table));
-          }
+          acquired = TRUE;
           dec->acquired_external_buf++;
         }
       } else {
-        GST_ERROR_OBJECT (dec,
+        GST_WARNING_OBJECT (dec,
             "Failed to acquire buffer from pool: %p with ret=%d",
             dec->out_port_pool, ret);
+        g_mutex_unlock (&dec->external_buf_lock);
+        break;
       }
     } else {
       GST_DEBUG_OBJECT (dec,
@@ -975,14 +992,16 @@ acquire_external_buf_loop (GstVideoDecoder * decoder)
           (EXT_BUF_WAIT_TIMEOUT_MS * G_TIME_SPAN_MILLISECOND);
       if (!g_cond_wait_until (&dec->external_buf_cond, &dec->external_buf_lock,
               timeout)) {
-        dec->max_external_buf_cnt++;
-        GST_ERROR_OBJECT (dec, "Timed out on wait for external buf! Updated "
-            "max_external_buf_cnt to %u", dec->max_external_buf_cnt);
+        if (!dec->eos_reached) {
+          dec->max_external_buf_cnt++;
+          GST_WARNING_OBJECT (dec, "Timed out on wait for external buf! Updated "
+              "max_external_buf_cnt to %u", dec->max_external_buf_cnt);
+        }
+        g_mutex_unlock (&dec->external_buf_lock);
+        break;
       }
     }
     g_mutex_unlock (&dec->external_buf_lock);
-  } else {
-    GST_WARNING_OBJECT (dec, "External pool is NULL");
   }
 }
 
@@ -994,21 +1013,11 @@ gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
   Gstqticodec2vdecClass *dec_class = GST_QTICODEC2VDEC_GET_CLASS (decoder);
   GstFlowReturn ret = GST_FLOW_OK;
-  GstTaskState task_state;
 
   GST_DEBUG_OBJECT (dec, "handle_frame");
 
   if (!dec->input_setup) {
     return GST_FLOW_OK;
-  }
-
-  if (dec->use_external_buf) {
-    task_state = gst_pad_get_task_state (GST_VIDEO_DECODER_SRC_PAD (dec));
-    if (task_state == GST_TASK_STOPPED || task_state == GST_TASK_PAUSED) {
-      GST_DEBUG_OBJECT (dec, "Starting video dec loop task");
-      gst_pad_start_task (GST_VIDEO_DECODER_SRC_PAD (dec),
-          (GstTaskFunction) acquire_external_buf_loop, decoder, NULL);
-    }
   }
 
   GST_DEBUG_OBJECT (dec,
@@ -1096,7 +1105,7 @@ gst_qticodec2vdec_decide_allocation (GstVideoDecoder * decoder,
         /* Create a hashtabe to store gstbuffer from external pool */
         if (!dec->buffer_table) {
           dec->buffer_table =
-              g_hash_table_new_full (g_int64_hash, g_int64_equal, g_free, NULL);
+              g_hash_table_new_full (g_int_hash, g_int_equal, g_free, NULL);
         }
         GST_DEBUG_OBJECT (dec,
             "Use buffer pool from downstream, pool: %p, size: %u, "
@@ -1242,7 +1251,7 @@ gst_qticodec2vdec_wrap_output_buffer (GstVideoDecoder * decoder,
 
   if (dec->use_external_buf) {
     GstBuffer *gst_buf = NULL;
-    gint64 key = ((gint64) decode_buf->fd << 32);
+    gint key = decode_buf->fd;
     gst_buf = (GstBuffer *) g_hash_table_lookup (dec->buffer_table, &key);
     if (gst_buf) {
       g_mutex_lock (&dec->external_buf_lock);
@@ -1489,9 +1498,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
       } else if (out_buf->flag & FLAG_TYPE_END_OF_STREAM) {
         GST_INFO_OBJECT (dec, "Decoder reached EOS");
-        if (dec->use_external_buf) {
-          gst_pad_stop_task (GST_VIDEO_DECODER_SRC_PAD (dec));
-        }
         g_mutex_lock (&dec->pending_lock);
         dec->eos_reached = TRUE;
         g_cond_signal (&dec->pending_cond);
@@ -1527,6 +1533,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
         g_mutex_unlock (&dec->external_buf_lock);
       }
+      break;
+    }
+    case EVENT_ACQUIRE_EXT_BUF:{
+      acquire_external_buf_callback(decoder);
       break;
     }
     default:{
