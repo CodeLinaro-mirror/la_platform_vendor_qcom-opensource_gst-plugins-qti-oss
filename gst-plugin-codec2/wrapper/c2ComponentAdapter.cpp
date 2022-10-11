@@ -238,7 +238,12 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
             if (mDataCopyFunc) {
                 if (linear_block->handle()) {
-                    uint32_t dest_fd = linear_block->handle()->data[0];
+                    const C2Handle *handle = linear_block->handle();
+                    if (!handle) {
+                        LOG_ERROR("invalid C2 handle");
+                        return C2_CORRUPTED;
+                    }
+                    uint32_t dest_fd = handle->data[0];
                     /* That data length is from upstream gst plugin pushed down gstbuffer.
                      * In the DataCopyFunc callback function, it may reduce the data length
                      * to its actual length accordingly, but couldn’t increase the length
@@ -742,6 +747,10 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             ret = C2_NOT_FOUND;
         } else {
             mC2Allocator = allocator;
+            auto allocatorGBM =
+                std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2Allocator);
+            auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this);
+            allocatorGBM->setAcquireExtBufCb(func);
         }
     }
 
@@ -993,6 +1002,11 @@ bool C2ComponentAdapter::isUseExternalBuffer()
         LOG_ERROR("allocatorGBM is NULL");
     }
     return ret;
+}
+
+void C2ComponentAdapter::acquireExtBuf()
+{
+    mCallback->onAcquireExtBuffer();
 }
 
 C2ComponentListenerAdapter::C2ComponentListenerAdapter(C2ComponentAdapter* comp)
