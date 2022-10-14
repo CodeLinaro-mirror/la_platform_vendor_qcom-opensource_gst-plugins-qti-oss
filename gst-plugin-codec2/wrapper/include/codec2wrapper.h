@@ -98,6 +98,10 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_PROFILE_LEVEL "profile_level"
 #define CONFIG_FUNCTION_KEY_INTERLACE_INFO "interlace_info"
 #define CONFIG_FUNCTION_KEY_DEINTERLACE "deinterlace"
+#define CONFIG_FUNCTION_KEY_FRAMERATE "framerate"
+#define CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD "intraframes_period"
+#define CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST "intra_video_frame_request"
+#define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -384,6 +388,8 @@ typedef struct {
         gboolean low_latency_mode;
         gboolean color_space_conversion;
         gboolean deinterlace;
+        gboolean force_idr;
+        gboolean inline_sps_pps_headers;
 
         union {
             guint32 u32;
@@ -449,6 +455,8 @@ typedef struct {
             C2W_PROFILE_T profile;
             C2W_LEVEL_T level;
         } profileAndLevel;
+
+        gfloat framerate;
     };
 } ConfigParams;
 
