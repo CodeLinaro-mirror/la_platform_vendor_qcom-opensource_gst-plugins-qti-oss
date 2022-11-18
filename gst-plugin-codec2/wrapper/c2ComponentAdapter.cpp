@@ -750,7 +750,9 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             auto allocatorGBM =
                 std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2Allocator);
             auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this);
-            allocatorGBM->setAcquireExtBufCb(func);
+            if (allocatorGBM) {
+                allocatorGBM->setAcquireExtBufCb(func);
+            }
         }
     }
 
