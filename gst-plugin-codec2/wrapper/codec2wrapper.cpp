@@ -1386,7 +1386,7 @@ gboolean c2component_delete(void* comp)
     return ret;
 }
 
-gboolean c2component_attachExternalFd(void* comp, int fd)
+gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd)
 {
     LOG_MESSAGE("Attach external fd: %d", fd);
 
@@ -1395,7 +1395,7 @@ gboolean c2component_attachExternalFd(void* comp, int fd)
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
-        c2Status = comp_wrapper->attachExternalFd(fd);
+        c2Status = comp_wrapper->attachExternalFd(type, fd);
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
@@ -1405,7 +1405,7 @@ gboolean c2component_attachExternalFd(void* comp, int fd)
     return ret;
 }
 
-gboolean c2component_setUseExternalBuffer(void* comp, gboolean useExternal)
+gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gboolean useExternal)
 {
     LOG_MESSAGE("Set to use external buffer: %s", useExternal ? "TRUE" : "FALSE");
 
@@ -1414,7 +1414,7 @@ gboolean c2component_setUseExternalBuffer(void* comp, gboolean useExternal)
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
-        c2Status = comp_wrapper->setUseExternalBuffer(useExternal);
+        c2Status = comp_wrapper->setUseExternalBuffer(type, useExternal);
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
