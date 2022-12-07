@@ -566,7 +566,7 @@ gst_qticodec2venc_rate_control_get_type (void)
   if (qtype == 0) {
     static const GEnumValue values[] = {
       {RC_OFF, "Disable RC", "disable"},
-      {RC_CONST, "Constant", "constant"},
+      {RC_CONST, "Constant bitrate, constant framerate, CBR-CFR", "constant"},
       {RC_CBR_VFR, "Constant bitrate, variable framerate", "CBR-VFR"},
       {RC_VBR_CFR, "Variable bitrate, constant framerate", "VBR-CFR"},
       {RC_VBR_VFR, "Variable bitrate, variable framerate", "VBR-VFR"},
