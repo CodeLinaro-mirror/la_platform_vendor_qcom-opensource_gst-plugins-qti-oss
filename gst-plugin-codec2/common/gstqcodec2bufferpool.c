@@ -35,7 +35,6 @@
 #include <gst/gst.h>
 #include "gst/gstinfo.h"
 #include "gstqcodec2bufferpool.h"
-#include <media/msm_media_info.h>
 #include "codec2wrapper.h"
 
 GST_DEBUG_CATEGORY_STATIC (qcodec2bufferpool_debug);

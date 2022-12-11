@@ -31,7 +31,6 @@
 
 #include <chrono>
 #include <C2PlatformSupport.h>
-#include <media/msm_media_info.h>
 #include <gst/gst.h>
 #include <C2AllocatorGBM.h>
 #include <C2AllocatorIon.h>

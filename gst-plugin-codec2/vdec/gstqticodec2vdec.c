@@ -80,7 +80,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2bufferpool.h"
 #include <dlfcn.h>
 #include <libdrm/drm_fourcc.h>
-#include <media/msm_media_info.h>
 #include "gstqcodec2h264dec.h"
 #include "gstqcodec2h265dec.h"
 #include "gstqcodec2vp9dec.h"

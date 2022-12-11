@@ -76,7 +76,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <gst/gst.h>
 #include <C2AllocatorGBM.h>
 #include <ReflectedParamUpdater.h>
-#include <media/msm_media_info.h>
 
 GST_DEBUG_CATEGORY(gst_qticodec2wrapper_debug);
 #define GST_CAT_DEFAULT gst_qticodec2wrapper_debug
