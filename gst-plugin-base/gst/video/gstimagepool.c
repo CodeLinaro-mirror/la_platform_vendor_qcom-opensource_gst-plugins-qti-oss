@@ -71,8 +71,10 @@
 
 #include <gbm.h>
 #include <gbm_priv.h>
+#ifdef USE_ION_BUFFER_POOL
 #include <linux/ion.h>
 #include <linux/msm_ion.h>
+#endif
 #include <media/msm_media_info.h>
 
 
@@ -81,8 +83,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_image_pool_debug);
 
 #define GST_IS_GBM_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_GBM))
+#ifdef USE_ION_BUFFER_POOL
 #define GST_IS_ION_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_ION))
+#endif
 
 #define DEFAULT_PAGE_ALIGNMENT 4096
 
@@ -309,6 +313,7 @@ gbm_device_free (GstImageBufferPool * vpool, gint fd)
   priv->gbm_bo_destroy (bo);
 }
 
+#ifdef USE_ION_BUFFER_POOL
 static gboolean
 open_ion_device (GstImageBufferPool * vpool)
 {
@@ -413,6 +418,7 @@ ion_device_free (GstImageBufferPool * vpool, gint fd)
 
   close (fd);
 }
+#endif
 
 static const gchar **
 gst_image_buffer_pool_get_options (GstBufferPool * pool)
@@ -565,8 +571,10 @@ gst_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     memory = gbm_device_alloc (vpool);
+#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     memory = ion_device_alloc (vpool);
+#endif
   }
 
   if (NULL == memory) {
@@ -603,8 +611,10 @@ gst_image_buffer_pool_free (GstBufferPool * pool, GstBuffer * buffer)
 
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     gbm_device_free (vpool, fd);
+#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     ion_device_free (vpool, fd);
+#endif
   }
   gst_buffer_unref (buffer);
 }
@@ -636,8 +646,10 @@ gst_image_buffer_pool_finalize (GObject * object)
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     close_gbm_device (vpool);
+#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     close_ion_device (vpool);
+#endif
   }
 
   g_mutex_clear (&priv->lock);
@@ -686,9 +698,11 @@ gst_image_buffer_pool_new (const gchar * type)
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using GBM memory");
     success = open_gbm_device (vpool);
+#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using ION memory");
     success = open_ion_device (vpool);
+#endif
   } else {
     GST_ERROR_OBJECT (vpool, "Invalid memory type %s!",
         g_quark_to_string (vpool->priv->memtype));
