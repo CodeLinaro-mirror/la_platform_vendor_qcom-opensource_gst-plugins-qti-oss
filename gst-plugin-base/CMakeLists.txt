@@ -29,12 +29,19 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Werror")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter")
 
+
+if (GST_ION_POOL)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_ION_BUFFER_POOL=1")
+endif()
+
 include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/include/gstreamer-1.0>
 )
 
 add_subdirectory(gst/video)
+if (GST_ION_POOL)
 add_subdirectory(gst/memory)
+endif()
 add_subdirectory(gst/ml)
 add_subdirectory(gst/cvp)
