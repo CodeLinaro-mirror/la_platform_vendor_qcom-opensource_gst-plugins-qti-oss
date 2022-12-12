@@ -84,13 +84,16 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2h264enc.h"
 #include "gstqcodec2h265enc.h"
 
-
 GST_DEBUG_CATEGORY (gst_qticodec2venc_debug);
 #define GST_CAT_DEFAULT gst_qticodec2venc_debug
 
 #define DEFAULT_COLOR_SPACE_CONVERSION            (FALSE)
 #define DEFAULT_BITRATE_SAVING_MODE               (0xffffffff)
 #define DEFAULT_BLUR_MODE                         (0xffffffff)
+#define DEFAULT_INTERVAL_INTRAFRAMES              (0xffffffff)
+#define DEFAULT_INLINE_HEADERS                    (FALSE)
+
+#define COMMON_FRAMERATE                          (30)
 
 /* class initialization */
 G_DEFINE_TYPE (Gstqticodec2venc, gst_qticodec2venc, GST_TYPE_VIDEO_ENCODER);
@@ -117,6 +120,14 @@ static G_DEFINE_QUARK (QtiCodec2EncoderQuark, qticodec2venc_qdata);
 
 enum
 {
+  /* actions */
+  SIGNAL_FORCE_IDR,
+
+  LAST_SIGNAL
+};
+
+enum
+{
   PROP_0,
   PROP_SILENT,
   PROP_RATE_CONTROL,
@@ -139,6 +150,8 @@ enum
   PROP_BLUR_HEIGHT,
   PROP_ROI,
   PROP_BITRATE_SAVING_MODE,
+  PROP_INTERVAL_INTRAFRAMES,
+  PROP_INLINE_SPSPPS_HEADERS,
 };
 
 /* GstVideoEncoder base class method */
@@ -183,6 +196,8 @@ static void gst_qticodec2venc_release_frames (GstVideoEncoder * encoder);
 static gboolean
 gst_qticodec2venc_refresh_input_layout_info (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, BufferDescriptor * bufinfo);
+
+static guint gst_qticodec2venc_signals[LAST_SIGNAL] = { 0 };
 
 /* pad templates */
 #define GST_QC2VENC_CAPS_MAKE(format,min,max) \
@@ -252,20 +267,6 @@ make_pixel_format_param (guint32 fmt, gboolean is_input)
   param.config_name = CONFIG_FUNCTION_KEY_PIXELFORMAT;
   param.isInput = is_input;
   param.pixelFormat.fmt = fmt;
-
-  return param;
-}
-
-static ConfigParams
-make_interlace_param (INTERLACE_MODE_TYPE mode, gboolean is_input)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.config_name = CONFIG_FUNCTION_KEY_INTERLACE_INFO;
-  param.isInput = is_input;
-  param.interlaceMode.type = mode;
 
   return param;
 }
@@ -463,6 +464,58 @@ make_profile_level_param (C2W_PROFILE_T profile, C2W_LEVEL_T level)
   return param;
 }
 
+static ConfigParams
+make_framerate_param (gfloat framerate)
+{
+  ConfigParams param;
+
+  memset(&param, 0, sizeof(ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
+  param.framerate = framerate;
+
+  return param;
+}
+
+static ConfigParams
+make_intraframes_period_param (guint32 interval, gfloat framerate)
+{
+  ConfigParams param;
+
+  memset(&param, 0, sizeof(ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD;
+  param.val.i64 = (gint64)(interval + 1) * 1e6 / framerate;
+
+  return param;
+}
+
+static ConfigParams
+make_force_idr_param (gboolean force_idr)
+{
+  ConfigParams param;
+
+  memset(&param, 0, sizeof(ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST;
+  param.force_idr = force_idr;
+
+  return param;
+}
+
+static ConfigParams
+make_header_mode_param (gboolean header_mode)
+{
+  ConfigParams param;
+
+  memset(&param, 0, sizeof(ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE;
+  param.inline_sps_pps_headers = header_mode;
+
+  return param;
+}
+
 static gchar *
 get_c2_comp_name (GstStructure * structure)
 {
@@ -489,7 +542,9 @@ gst_to_c2_pixelformat (GstVideoEncoder * encoder, GstVideoFormat format)
     case GST_VIDEO_FORMAT_NV12:
       if (enc->is_ubwc) {
         result = PIXEL_FORMAT_NV12_UBWC;
-      } else {
+      } else if (enc->is_heic)
+        result = PIXEL_FORMAT_NV12_512;
+      else {
         result = PIXEL_FORMAT_NV12_LINEAR;
       }
       break;
@@ -579,7 +634,7 @@ gst_qticodec2venc_rate_control_get_type (void)
   if (qtype == 0) {
     static const GEnumValue values[] = {
       {RC_OFF, "Disable RC", "disable"},
-      {RC_CONST, "Constant", "constant"},
+      {RC_CONST, "Constant bitrate, constant framerate, CBR-CFR", "constant"},
       {RC_CBR_VFR, "Constant bitrate, variable framerate", "CBR-VFR"},
       {RC_VBR_CFR, "Variable bitrate, constant framerate", "VBR-CFR"},
       {RC_VBR_VFR, "Variable bitrate, variable framerate", "VBR-VFR"},
@@ -1097,10 +1152,8 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
   gint height = 0;
   GstVideoFormat input_format = GST_VIDEO_FORMAT_UNKNOWN;
   GstVideoInterlaceMode interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
-  INTERLACE_MODE_TYPE c2interlace_mode = INTERLACE_MODE_PROGRESSIVE;
   GPtrArray *config = NULL;
   ConfigParams resolution;
-  ConfigParams interlace;
   ConfigParams pixelformat;
   ConfigParams mirror;
   ConfigParams rotation;
@@ -1113,6 +1166,9 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
   ConfigParams slice_mode;
   ConfigParams blur_info;
   ConfigParams bitrate_saving_mode;
+  ConfigParams framerate;
+  ConfigParams intraframes_period;
+  ConfigParams inline_header;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1149,16 +1205,12 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
   if ((mode = gst_structure_get_string (structure, "interlace-mode"))) {
     if (g_str_equal ("progressive", mode)) {
       interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
-      c2interlace_mode = INTERLACE_MODE_PROGRESSIVE;
     } else if (g_str_equal ("interleaved", mode)) {
       interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
-      c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
     } else if (g_str_equal ("mixed", mode)) {
       interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
-      c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
     } else if (g_str_equal ("fields", mode)) {
       interlace_mode = GST_VIDEO_INTERLACE_MODE_FIELDS;
-      c2interlace_mode = INTERLACE_MODE_FIELD_TOP_FIRST;
     }
   }
 
@@ -1176,6 +1228,10 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
   if (GST_FLOW_OK != gst_qticodec2venc_setup_output (encoder, state)) {
     GST_ERROR_OBJECT (enc, "fail to setup output");
     goto error_output;
+  }
+
+  if (enc->comp_name && strstr(enc->comp_name, "heic")) {
+      enc->is_heic = TRUE;
   }
 
   if (!gst_video_encoder_negotiate (encoder)) {
@@ -1260,6 +1316,26 @@ gst_qticodec2venc_set_format (GstVideoEncoder * encoder,
     }
     g_ptr_array_add (config, &blur_info);
   }
+
+  if (enc->interval_intraframes != DEFAULT_INTERVAL_INTRAFRAMES) {
+    gfloat fps = COMMON_FRAMERATE;
+    if (0 != enc->input_info.fps_n && 0 != enc->input_info.fps_d) {
+      fps = (float)enc->input_info.fps_n / enc->input_info.fps_d;
+    }
+    framerate = make_framerate_param (fps);
+    g_ptr_array_add (config, &framerate);
+
+    intraframes_period = make_intraframes_period_param (enc->interval_intraframes, fps);
+    g_ptr_array_add (config, &intraframes_period);
+    GST_DEBUG_OBJECT (enc, "set interval intraframes: %u, framerate: %f, intraframes period: %"
+        G_GINT64_FORMAT, enc->interval_intraframes, fps, intraframes_period.val.i64);
+  }
+
+  if (enc->inline_sps_pps_headers) {
+    inline_header = make_header_mode_param(enc->inline_sps_pps_headers);
+    g_ptr_array_add (config, &inline_header);
+  }
+
   /* Create component */
   if (!gst_qticodec2venc_create_component (encoder)) {
     GST_ERROR_OBJECT (enc, "Failed to create component");
@@ -1401,6 +1477,28 @@ gst_qticodec2venc_close (GstVideoEncoder * encoder)
   return TRUE;
 }
 
+static GstFlowReturn
+gst_qticodec2venc_force_idr(Gstqticodec2venc * encoder)
+{
+  GstFlowReturn ret = GST_FLOW_OK;
+  GST_DEBUG_OBJECT (encoder, "gst_qticodec2venc_force_idr");
+
+  GPtrArray *config = g_ptr_array_new ();
+  if (config) {
+    ConfigParams force_idr = make_force_idr_param(TRUE);
+    g_ptr_array_add(config, &force_idr);
+
+    if (!c2componentInterface_config (encoder->comp_intf,
+            config, BLOCK_MODE_MAY_BLOCK)) {
+      GST_WARNING_OBJECT (encoder, "Failed to set force-IDR config");
+      ret = GST_FLOW_ERROR;
+    }
+    g_ptr_array_free (config, TRUE);
+  }
+
+  return ret;
+}
+
 /* Called whenever a input frame from the upstream is sent to encoder */
 static GstFlowReturn
 gst_qticodec2venc_handle_frame (GstVideoEncoder * encoder,
@@ -1411,23 +1509,34 @@ gst_qticodec2venc_handle_frame (GstVideoEncoder * encoder,
 
   GST_DEBUG_OBJECT (enc, "handle_frame");
 
+  g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
+
   if (!enc->input_setup) {
-    return GST_FLOW_OK;
+    goto done;
   }
 
   if (!enc->output_setup) {
-    return GST_FLOW_ERROR;
+    ret = GST_FLOW_ERROR;
+    goto done;
   }
 
   GST_DEBUG ("Frame number : %d, pts: %" GST_TIME_FORMAT,
       frame->system_frame_number, GST_TIME_ARGS (frame->pts));
 
-  /* Encode frame */
-  if (frame) {
-    return gst_qticodec2venc_encode (encoder, frame);
-  } else {
-    return GST_FLOW_EOS;
+  if (GST_VIDEO_CODEC_FRAME_IS_FORCE_KEYFRAME (frame)) {
+    GST_INFO_OBJECT (enc, "Forcing key frame");
+    if (GST_FLOW_OK != gst_qticodec2venc_force_idr(enc)) {
+      GST_ERROR_OBJECT (enc, "Failed to force key frame");
+    }
   }
+
+  /* Encode frame */
+  ret = gst_qticodec2venc_encode (encoder, frame);
+
+done:
+  gst_video_codec_frame_unref (frame);
+
+  return ret;
 }
 
 static gboolean
@@ -1515,7 +1624,6 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
   Gstqticodec2venc *enc = GST_QTICODEC2VENC (encoder);
   GstFlowReturn ret = GST_FLOW_OK;
   GstVideoCodecFrame *frame = NULL;
-  GstMapInfo map = GST_MAP_INFO_INIT;
   GstBuffer *outbuf = NULL;
   GstVideoCodecState *state = NULL;
   GstVideoInfo *vinfo = NULL;
@@ -1528,6 +1636,7 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
     vinfo = &state->info;
   } else {
     GST_ERROR_OBJECT (enc, "video codec state is NULL, unexpected!");
+    ret = GST_FLOW_ERROR;
     goto out;
   }
 
@@ -1536,6 +1645,7 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
     GST_ERROR_OBJECT (enc,
         "Error in gst_video_encoder_get_frame, frame number: %lu",
         encode_buf->index);
+    ret = GST_FLOW_ERROR;
     goto out;
   }
 
@@ -1579,23 +1689,22 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
         (GDestroyNotify) gst_qticodec2venc_buffer_release);
 
     frame->output_buffer = outbuf;
-    gst_video_codec_frame_unref (frame);
     ret = gst_video_encoder_finish_frame (encoder, frame);
     if (ret == GST_FLOW_FLUSHING) {
       GST_WARNING_OBJECT (enc, "downstream is flushing");
     } else if (ret != GST_FLOW_OK) {
       GST_ERROR_OBJECT (enc, "Failed to finish frame, outbuf: %p", outbuf);
-      goto out;
     }
   } else {
     GST_ERROR_OBJECT (enc, "Failed to create outbuf");
-    goto out;
+    ret = GST_FLOW_ERROR;
   }
 
-  return ret;
-
 out:
-  return GST_FLOW_ERROR;
+  if (state)
+    gst_video_codec_state_unref (state);
+
+  return ret;
 }
 
 static void
@@ -1906,7 +2015,6 @@ static GstFlowReturn
 gst_qticodec2venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 {
   Gstqticodec2venc *enc = GST_QTICODEC2VENC (encoder);
-  GstVideoFrame video_frame;
   BufferDescriptor inBuf;
   GstBuffer *buf = NULL;
   GstMemory *mem;
@@ -1917,10 +2025,6 @@ gst_qticodec2venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   GstVideoC2BufMeta *video_c2buf_meta = NULL;
 
   GST_DEBUG_OBJECT (enc, "encode");
-  if (!frame) {
-    GST_WARNING_OBJECT (enc, "frame is NULL, ret GST_FLOW_EOS");
-    return GST_FLOW_EOS;
-  }
 
   memset (&inBuf, 0, sizeof (BufferDescriptor));
 
@@ -1954,6 +2058,7 @@ gst_qticodec2venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   inBuf.height = enc->height;
   inBuf.format = enc->input_format;
   inBuf.ubwc_flag = enc->is_ubwc;
+  inBuf.heic_flag = enc->is_heic;
 
   gst_memory_unref (mem);
 
@@ -1983,8 +2088,8 @@ gst_qticodec2venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
     if (inBuf.offset[0] != 0 || inBuf.offset[1] != offset) {
       chk_result |= 2;
-      GST_ERROR_OBJECT (enc, "The input buffer offset<%u, %u> does not meet the "
-          "requirements of encoder <0, %u>", inBuf.offset[0], inBuf.offset[1], offset);
+      GST_ERROR_OBJECT (enc, "The input buffer offset<%" G_GSIZE_FORMAT ", %" G_GSIZE_FORMAT ">"
+          " does not meet the requirements of encoder <0, %u>", inBuf.offset[0], inBuf.offset[1], offset);
     }
 
     g_warn_if_fail (!chk_result && "Input NV12 linear dmabuf layout does not meet HW enc requirement!");
@@ -2111,6 +2216,12 @@ gst_qticodec2venc_set_property (GObject * object, guint prop_id,
     case PROP_BITRATE_SAVING_MODE:
       enc->bitrate_saving_mode = g_value_get_enum (value);
       break;
+    case PROP_INTERVAL_INTRAFRAMES:
+      enc->interval_intraframes = g_value_get_uint (value);
+      break;
+    case PROP_INLINE_SPSPPS_HEADERS:
+      enc->inline_sps_pps_headers = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2186,6 +2297,12 @@ gst_qticodec2venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_BITRATE_SAVING_MODE:
       g_value_set_enum (value, enc->bitrate_saving_mode);
+      break;
+    case PROP_INTERVAL_INTRAFRAMES:
+      g_value_set_uint (value, enc->interval_intraframes);
+      break;
+    case PROP_INLINE_SPSPPS_HEADERS:
+      g_value_set_boolean (value, enc->inline_sps_pps_headers);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2414,6 +2531,31 @@ gst_qticodec2venc_class_init (Gstqticodec2vencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_INTERVAL_INTRAFRAMES,
+      g_param_spec_uint ("interval-intraframes",
+          "Interval of coding Intra frames",
+          "Interval of coding Intra frames (0xffffffff=component default)",
+          0, G_MAXUINT,
+          DEFAULT_INTERVAL_INTRAFRAMES,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_INLINE_SPSPPS_HEADERS,
+      g_param_spec_boolean ("inline-header",
+          "Inline SPS/PPS headers before IDR",
+          "Inline SPS/PPS header before IDR",
+          DEFAULT_INLINE_HEADERS,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  gst_qticodec2venc_signals[SIGNAL_FORCE_IDR] =
+      g_signal_new ("force-idr",
+          G_TYPE_FROM_CLASS (klass),
+          G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+          G_STRUCT_OFFSET (Gstqticodec2vencClass, force_idr),
+          NULL, NULL, NULL,
+          GST_TYPE_FLOW_RETURN, 0, G_TYPE_NONE);
+
   video_encoder_class->stop = GST_DEBUG_FUNCPTR (gst_qticodec2venc_stop);
   video_encoder_class->set_format =
       GST_DEBUG_FUNCPTR (gst_qticodec2venc_set_format);
@@ -2424,6 +2566,8 @@ gst_qticodec2venc_class_init (Gstqticodec2vencClass * klass)
   video_encoder_class->close = GST_DEBUG_FUNCPTR (gst_qticodec2venc_close);
   video_encoder_class->propose_allocation =
       GST_DEBUG_FUNCPTR (gst_qticodec2venc_propose_allocation);
+
+  klass->force_idr = GST_DEBUG_FUNCPTR (gst_qticodec2venc_force_idr);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "Codec2 video encoder", "Encoder/Video",
@@ -2452,6 +2596,9 @@ gst_qticodec2venc_init (Gstqticodec2venc * enc)
   enc->roi_rect_payload_ext = NULL;
   enc->bitrate_saving_mode = DEFAULT_BITRATE_SAVING_MODE;
   enc->silent = FALSE;
+  enc->is_heic = FALSE;
+  enc->interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
+  enc->inline_sps_pps_headers = DEFAULT_INLINE_HEADERS;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);

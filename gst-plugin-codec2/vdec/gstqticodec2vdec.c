@@ -180,7 +180,9 @@ _unfixed_caps_has_compression (const GstCaps * caps, const gchar * compression)
     string =
         gst_structure_has_field (structure,
         "compression") ? gst_structure_to_string (structure) : NULL;
-    ret = !!g_strrstr (string, compression);
+    if (string && g_strrstr (string, compression)) {
+      ret = TRUE;
+    }
     g_free (string);
 
     if (ret == TRUE) {
@@ -484,16 +486,12 @@ static GstFlowReturn
 gst_qticodec2vdec_setup_output (GstVideoDecoder * decoder)
 {
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  GstVideoAlignment align;
   GstFlowReturn ret = GST_FLOW_OK;
   GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
-  ConfigParams pixelformat;
-  GPtrArray *config = NULL;
 
   GstCaps *templ_caps, *intersection = NULL;
   GstStructure *s;
   const gchar *format_str;
-  gboolean actual_map = FALSE;
 
   /* Set decoder output format to NV12 by default */
   dec->output_state =
@@ -579,7 +577,6 @@ gst_qticodec2vdec_setup_output (GstVideoDecoder * decoder)
 
   GST_DEBUG_OBJECT (dec, "Complete setup output");
 
-done:
   return ret;
 
 error_setup_output:
@@ -868,7 +865,6 @@ static gboolean
 gst_qticodec2vdec_close (GstVideoDecoder * decoder)
 {
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  gboolean ret = TRUE;
 
   GST_DEBUG_OBJECT (dec, "close");
 
@@ -1016,8 +1012,10 @@ gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
 
   GST_DEBUG_OBJECT (dec, "handle_frame");
 
+  g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
+
   if (!dec->input_setup) {
-    return GST_FLOW_OK;
+    goto done;
   }
 
   GST_DEBUG_OBJECT (dec,
@@ -1025,22 +1023,21 @@ gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
       GST_TIME_FORMAT, frame->system_frame_number, frame->distance_from_sync,
       GST_TIME_ARGS (frame->pts));
 
-  if (frame) {
-    if (dec_class->handle_frame) {
-      if (!dec_class->handle_frame (dec, frame)) {
-        GST_ERROR_OBJECT (dec, "Subclass failed to handle format");
-        return GST_FLOW_ERROR;
-      }
+  if (dec_class->handle_frame) {
+    if (!dec_class->handle_frame (dec, frame)) {
+      GST_ERROR_OBJECT (dec, "Subclass failed to handle format");
+      ret = GST_FLOW_ERROR;
+      goto done;
     }
   }
 
   /* Decode frame */
-  if (frame) {
-    return gst_qticodec2vdec_decode (decoder, frame);
-  } else {
-    GST_DEBUG_OBJECT (dec, "EOS reached in handle_frame");
-    return GST_FLOW_EOS;
-  }
+  ret = gst_qticodec2vdec_decode (decoder, frame);
+
+done:
+  gst_video_codec_frame_unref (frame);
+
+  return ret;
 }
 
 static gboolean
@@ -1229,22 +1226,15 @@ gst_qticodec2vdec_wrap_output_buffer (GstVideoDecoder * decoder,
 {
   GstBuffer *out_buf = NULL;
   GstVideoCodecState *state;
-  GstVideoInfo *vinfo;
-  GstStructure *structure = NULL;
   Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
   guint output_size = decode_buf->size;
   GstBufferPoolAcquireParamsExt param_ext;
   guint64 *p_modifier = NULL;
-  guint32 color_fmt = 0;
-  gsize offset[GST_VIDEO_MAX_PLANES] = { 0, };
-  gint stride[GST_VIDEO_MAX_PLANES] = { 0, };
 
   memset (&param_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
 
   state = gst_video_decoder_get_output_state (decoder);
-  if (state) {
-    vinfo = &state->info;
-  } else {
+  if (!state) {
     GST_ERROR_OBJECT (dec, "Failed to get decoder output state");
     return NULL;
   }
@@ -1382,10 +1372,6 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
         vinfo->fps_n, decode_buf->interlaceMode);
   }
 
-  /* Decrease the refcount of the frame so that the frame is released by the
-   * gst_video_decoder_finish_frame function and so that the output buffer is
-   * writable when it's pushed downstream */
-  gst_video_codec_frame_unref (frame);
   ret = gst_video_decoder_finish_frame (decoder, frame);
   if (ret == GST_FLOW_FLUSHING) {
     GST_DEBUG_OBJECT (dec, "seek: downstream is flushing");
@@ -1470,6 +1456,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           }
           GST_INFO_OBJECT (dec, "output caps: %" GST_PTR_FORMAT,
               output_state->caps);
+
+          if (dec->output_state) {
+            gst_video_codec_state_unref (dec->output_state);
+          }
           dec->output_state = output_state;
           if (!gst_video_decoder_negotiate (decoder)) {
             gst_video_codec_state_unref (dec->output_state);
@@ -1559,17 +1549,10 @@ gst_qticodec2vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   GstMapInfo mapinfo = { 0, };
   GstBuffer *buf = NULL;
   BufferDescriptor inBuf;
-  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
-  ConfigParams pixelformat;
-  GPtrArray *config = NULL;
   gboolean status = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (dec, "decode");
-  if (!frame) {
-    GST_WARNING_OBJECT (dec, "frame is NULL, ret GST_FLOW_EOS");
-    return GST_FLOW_EOS;
-  }
 
   memset (&inBuf, 0, sizeof (BufferDescriptor));
 
@@ -1751,6 +1734,13 @@ plugin_init (GstPlugin * qticodec2vdec)
   /* debug category for filtering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qticodec2vdec_debug, "qticodec2vdec",
       0, "QTI GST codec2.0 video decoder");
+
+  static gsize res = FALSE;
+  static const gchar *tags[] = { NULL };
+  if (g_once_init_enter (&res)) {
+    gst_meta_register_custom ("GstQVDMeta", tags, NULL, NULL, NULL);
+    g_once_init_leave (&res, TRUE);
+  }
 
   if (!gst_element_register (qticodec2vdec, "qcodec2h264dec",
           GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H264_DEC)) {

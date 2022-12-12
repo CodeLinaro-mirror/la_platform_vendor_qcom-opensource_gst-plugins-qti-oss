@@ -108,6 +108,10 @@ std::unique_ptr<C2Param> setIntraRefresh(gpointer param);
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param);
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param);
 std::unique_ptr<C2Param> setVideoProfileLevel(gpointer param);
+std::unique_ptr<C2Param> setVideoFramerate (gpointer param);
+std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param);
+std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param);
+std::unique_ptr<C2Param> setVideoHeaderMode (gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -133,6 +137,10 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_COLOR_ASPECTS_INFO, setColorAspectsInfo },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH, setIntraRefresh },
     { CONFIG_FUNCTION_KEY_PROFILE_LEVEL, setVideoProfileLevel },
+    { CONFIG_FUNCTION_KEY_FRAMERATE, setVideoFramerate },
+    { CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD, setIntraframesPeriod },
+    { CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST, setIntraVideoFrameRequest },
+    { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
 };
 
 // Function map for vendor parameter configuration
@@ -247,7 +255,7 @@ std::unique_ptr<C2Param> setMirrorType(gpointer param, void* const comp_intf)
 
         mirror = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(mirror);
+        return mirror;
     }
     LOG_WARNING("setMirrorType output not implemented");
 
@@ -274,7 +282,7 @@ std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf)
 
         rotation = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(rotation);
+        return rotation;
     }
     LOG_WARNING("setRotation output not implemented");
 
@@ -317,7 +325,7 @@ std::unique_ptr<C2Param> setOutputPictureOrderMode(gpointer param, void* const c
     kvpairs.emplace("vendor.qti-ext-dec-picture-order.enable", item);
     outputPictureOrderMode = intf_wrapper->updateParamFromConfig(kvpairs);
 
-    return std::move(outputPictureOrderMode);
+    return outputPictureOrderMode;
 }
 
 std::unique_ptr<C2Param> setSliceMode(gpointer param, void* const comp_intf)
@@ -345,7 +353,7 @@ std::unique_ptr<C2Param> setSliceMode(gpointer param, void* const comp_intf)
         sliceModeBytesOrMb = intf_wrapper->updateParamFromConfig(kvpairs);
     }
 
-    return std::move(sliceModeBytesOrMb);
+    return sliceModeBytesOrMb;
 }
 
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param)
@@ -354,8 +362,6 @@ std::unique_ptr<C2Param> setDecLowLatency(gpointer param)
     if (param == NULL) {
         return nullptr;
     }
-
-    ConfigParams* config = (ConfigParams*)param;
 
     C2GlobalLowLatencyModeTuning lowLatencyMode;
     lowLatencyMode.value = C2_TRUE;
@@ -386,7 +392,7 @@ std::unique_ptr<C2Param> setDownscale(gpointer param, void* const comp_intf)
 
         scale = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(scale);
+        return scale;
     }
     LOG_WARNING("setDownscale input not implemented");
 
@@ -410,7 +416,7 @@ std::unique_ptr<C2Param> setEncColorSpaceConv(gpointer param, void* const comp_i
 
     colorSpaceConv = intf_wrapper->updateParamFromConfig(kvpairs);
 
-    return std::move(colorSpaceConv);
+    return colorSpaceConv;
 }
 
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param)
@@ -463,7 +469,7 @@ std::unique_ptr<C2Param> setBlurMode(gpointer param, void* const comp_intf)
 
         blur = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(blur);
+        return blur;
     }
     LOG_WARNING("setBlurMode output not implemented");
 
@@ -491,7 +497,7 @@ std::unique_ptr<C2Param> setBlurResolution(gpointer param, void* const comp_intf
 
         blur = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(blur);
+        return blur;
     }
     LOG_WARNING("setBlurResolution output not implemented");
 
@@ -522,7 +528,7 @@ std::unique_ptr<C2Param> setRoiRegion(gpointer param, void* const comp_intf)
 
     roi = intf_wrapper->updateParamFromConfig(kvpairs);
 
-    return std::move(roi);
+    return roi;
 }
 
 std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_intf)
@@ -544,7 +550,7 @@ std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_i
 
         bitrateSavingMode = intf_wrapper->updateParamFromConfig(kvpairs);
 
-        return std::move(bitrateSavingMode);
+        return bitrateSavingMode;
     }
     return nullptr;
 }
@@ -586,7 +592,7 @@ std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf)
 
     interlaceInfo = intf_wrapper->updateParamFromConfig(kvpairs);
 
-    return std::move(interlaceInfo);
+    return interlaceInfo;
 }
 
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
@@ -607,7 +613,80 @@ std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
 
     deinterlace = intf_wrapper->updateParamFromConfig(kvpairs);
 
-    return std::move(deinterlace);
+    return deinterlace;
+}
+
+std::unique_ptr<C2Param> setVideoFramerate (gpointer param)
+{
+  if (param == NULL) {
+      return nullptr;
+  }
+
+  ConfigParams* config = (ConfigParams*)param;
+
+  if (config->isInput) {
+      LOG_WARNING("setVideoFramerate input not implemented");
+  } else {
+      C2StreamFrameRateInfo::output framerate;
+      framerate.value = config->framerate;
+      return C2Param::Copy(framerate);
+  }
+
+  return nullptr;
+}
+
+std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        LOG_WARNING("setIntraframesPeriod input not implemented");
+    } else {
+        C2StreamSyncFrameIntervalTuning::output syncFrameInterval;
+        syncFrameInterval.value = config->val.i64;
+        return C2Param::Copy(syncFrameInterval);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        LOG_WARNING("setIntraVideoFrameRequest input not implemented");
+    } else if (config->force_idr) {
+        C2StreamRequestSyncFrameTuning::output frameRequest;
+        frameRequest.value = (uint32_t)C2Config::SYNC_FRAME;
+        return C2Param::Copy(frameRequest);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    C2PrependHeaderModeSetting header_mode;
+    header_mode.value = config->inline_sps_pps_headers ?
+        C2Config::PREPEND_HEADER_TO_ALL_SYNC :
+        C2Config::PREPEND_HEADER_TO_NONE;
+
+    return C2Param::Copy(header_mode);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1100,11 +1179,8 @@ gboolean c2component_drain(void* const comp, DRAIN_MODE_TYPE mode)
     LOG_MESSAGE("Draining work");
 
     gboolean ret = FALSE;
-    c2_status_t c2Status = C2_NO_INIT;
 
     if (comp) {
-        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
-
         LOG_MESSAGE("Not implemented");
     }
 
