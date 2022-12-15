@@ -43,6 +43,11 @@
 #include <condition_variable>
 #include <C2Buffer.h>
 
+namespace android {
+class C2AllocatorGBM;
+class C2AllocatorIon;
+}
+
 namespace QTI {
 
 class C2ComponentAdapter;
@@ -147,8 +152,8 @@ private:
     std::map<uint64_t, std::shared_ptr<C2GraphicBlock> > mInPendingBuffer;
     std::map<uint64_t, std::shared_ptr<C2Buffer> > mOutPendingBuffer;
     std::set<TrackBuffer*> mTrackBuffers;
-    std::shared_ptr<C2Allocator> mC2AllocatorGBM;
-    std::shared_ptr<C2Allocator> mC2AllocatorIon;
+    std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
+    std::shared_ptr<android::C2AllocatorIon> mC2AllocatorIon;
 
     uint32_t mNumPendingWorks;
     std::mutex mLock;
