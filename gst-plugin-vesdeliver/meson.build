@@ -9,7 +9,7 @@ plugins_pkgconfig_install_dir = join_paths(plugins_install_dir, 'pkgconfig')
 
 gstvesdeliver_sources = [
   'gstvesdeliver.c',
-  'gstvesdeliverpool.c'
+  'gstvesdeliverallocator.c'
 ]
 
 gstvesdeliver_c_args = ['-DHAVE_CONFIG_H']

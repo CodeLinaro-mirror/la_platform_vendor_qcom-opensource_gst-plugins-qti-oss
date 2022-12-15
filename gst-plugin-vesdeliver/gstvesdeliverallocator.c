@@ -4,7 +4,7 @@
 #include <dlfcn.h>
 #include <ion/ion.h>
 #include <linux/msm_ion.h>
-#include "gstvesdeliverpool.h"
+#include "gstvesdeliverallocator.h"
 
 /* Dynamically load libs by dlopen. */
 static const char *ion_lib_name  = "libion.so.0";
