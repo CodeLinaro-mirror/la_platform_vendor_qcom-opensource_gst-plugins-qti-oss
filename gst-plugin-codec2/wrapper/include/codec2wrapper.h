@@ -76,6 +76,38 @@ extern "C" {
 #include <gst/video/video.h>
 #include <stdint.h>
 
+#ifdef GST_USE_MMM_COLOR_FMT
+#include <media/mmm_color_fmt.h>
+
+enum color_fmts {
+        COLOR_FMT_NV12 = MMM_COLOR_FMT_NV12,
+        COLOR_FMT_NV21 = MMM_COLOR_FMT_NV21,
+        COLOR_FMT_NV12_UBWC = MMM_COLOR_FMT_NV12_UBWC,
+        COLOR_FMT_NV12_BPP10_UBWC = MMM_COLOR_FMT_NV12_BPP10_UBWC,
+        COLOR_FMT_RGBA8888 = MMM_COLOR_FMT_RGBA8888,
+        COLOR_FMT_RGBA8888_UBWC = MMM_COLOR_FMT_RGBA8888_UBWC,
+        COLOR_FMT_RGBA1010102_UBWC = MMM_COLOR_FMT_RGBA1010102_UBWC,
+        COLOR_FMT_RGB565_UBWC = MMM_COLOR_FMT_RGB565_UBWC,
+        COLOR_FMT_P010_UBWC = MMM_COLOR_FMT_P010_UBWC,
+        COLOR_FMT_P010 = MMM_COLOR_FMT_P010,
+        COLOR_FMT_NV12_512 = MMM_COLOR_FMT_NV12_512,
+};
+
+#define VENUS_Y_STRIDE MMM_COLOR_FMT_Y_STRIDE
+#define VENUS_UV_STRIDE MMM_COLOR_FMT_UV_STRIDE
+#define VENUS_Y_SCANLINES MMM_COLOR_FMT_Y_SCANLINES
+#define VENUS_UV_SCANLINES MMM_COLOR_FMT_UV_SCANLINES
+#define VENUS_Y_META_STRIDE MMM_COLOR_FMT_Y_META_STRIDE
+#define VENUS_UV_META_STRIDE MMM_COLOR_FMT_UV_META_STRIDE
+#define VENUS_Y_META_SCANLINES MMM_COLOR_FMT_Y_META_SCANLINES
+#define VENUS_UV_META_SCANLINES MMM_COLOR_FMT_UV_META_SCANLINES
+#define VENUS_BUFFER_SIZE MMM_COLOR_FMT_BUFFER_SIZE
+#define VENUS_BUFFER_SIZE_USED MMM_COLOR_FMT_BUFFER_SIZE_USED
+
+#else
+#include <media/msm_media_info.h>
+#endif
+
 #define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))
 
 #define CONFIG_FUNCTION_KEY_PIXELFORMAT "pixelformat"
@@ -98,6 +130,10 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_PROFILE_LEVEL "profile_level"
 #define CONFIG_FUNCTION_KEY_INTERLACE_INFO "interlace_info"
 #define CONFIG_FUNCTION_KEY_DEINTERLACE "deinterlace"
+#define CONFIG_FUNCTION_KEY_FRAMERATE "framerate"
+#define CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD "intraframes_period"
+#define CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST "intra_video_frame_request"
+#define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -160,7 +196,8 @@ typedef enum {
     PIXEL_FORMAT_RGBA_8888,
     PIXEL_FORMAT_YV12,
     PIXEL_FORMAT_P010,
-    PIXEL_FORMAT_TP10_UBWC
+    PIXEL_FORMAT_TP10_UBWC,
+    PIXEL_FORMAT_NV12_512
 } PIXEL_FORMAT_TYPE;
 
 typedef enum {
@@ -172,6 +209,8 @@ typedef enum {
     C2_PIXEL_FORMAT_VENUS_NV12 = 0x7FA30C04,
     // NV12 EXT with UBWC compression
     C2_PIXEL_FORMAT_VENUS_NV12_UBWC = 0x7FA30C06,
+    // NV12 EXT with 512 width and height alignment (used by HEIC tile encoder)
+    C2_PIXEL_FORMAT_VENUS_NV12_512 = 0x116,
     // 10-bit Tightly-packed and compressed YUV
     C2_PIXEL_FORMAT_VENUS_TP10 = 0x7FA30C09,
     // Venus 10-bit YUV 4:2:0 Planar format
@@ -366,6 +405,7 @@ typedef struct {
     void* gbm_bo;
     gboolean secure;
     guint32 interlaceMode;
+    gboolean heic_flag;
 } BufferDescriptor;
 
 typedef struct {
@@ -380,6 +420,8 @@ typedef struct {
         gboolean low_latency_mode;
         gboolean color_space_conversion;
         gboolean deinterlace;
+        gboolean force_idr;
+        gboolean inline_sps_pps_headers;
 
         union {
             guint32 u32;
@@ -445,8 +487,15 @@ typedef struct {
             C2W_PROFILE_T profile;
             C2W_LEVEL_T level;
         } profileAndLevel;
+
+        gfloat framerate;
     };
 } ConfigParams;
+
+typedef struct {
+    guint32 width;
+    guint32 height;
+} BufferResolution;
 
 typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 
@@ -478,8 +527,8 @@ gboolean c2component_createBlockpool(void* const comp, BUFFER_POOL_TYPE poolType
 gboolean c2component_configBlockpool(void* comp, BUFFER_POOL_TYPE poolType);
 gboolean c2component_freeOutBuffer(void* const comp, guint64 bufferId);
 gboolean c2component_delete(void* comp);
-gboolean c2component_attachExternalFd(void* comp, int fd);
-gboolean c2component_setUseExternalBuffer(void* comp, gboolean useExternal);
+gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd);
+gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gboolean useExternal);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ComponentInterface API

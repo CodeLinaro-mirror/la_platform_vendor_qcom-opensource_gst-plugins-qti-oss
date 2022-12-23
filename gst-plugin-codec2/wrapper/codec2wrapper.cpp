@@ -76,7 +76,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <gst/gst.h>
 #include <C2AllocatorGBM.h>
 #include <ReflectedParamUpdater.h>
-#include <media/msm_media_info.h>
 
 GST_DEBUG_CATEGORY(gst_qticodec2wrapper_debug);
 #define GST_CAT_DEFAULT gst_qticodec2wrapper_debug
@@ -108,6 +107,10 @@ std::unique_ptr<C2Param> setIntraRefresh(gpointer param);
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param);
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param);
 std::unique_ptr<C2Param> setVideoProfileLevel(gpointer param);
+std::unique_ptr<C2Param> setVideoFramerate (gpointer param);
+std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param);
+std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param);
+std::unique_ptr<C2Param> setVideoHeaderMode (gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -133,6 +136,10 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_COLOR_ASPECTS_INFO, setColorAspectsInfo },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH, setIntraRefresh },
     { CONFIG_FUNCTION_KEY_PROFILE_LEVEL, setVideoProfileLevel },
+    { CONFIG_FUNCTION_KEY_FRAMERATE, setVideoFramerate },
+    { CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD, setIntraframesPeriod },
+    { CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST, setIntraVideoFrameRequest },
+    { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
 };
 
 // Function map for vendor parameter configuration
@@ -608,6 +615,79 @@ std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
     return deinterlace;
 }
 
+std::unique_ptr<C2Param> setVideoFramerate (gpointer param)
+{
+  if (param == NULL) {
+      return nullptr;
+  }
+
+  ConfigParams* config = (ConfigParams*)param;
+
+  if (config->isInput) {
+      LOG_WARNING("setVideoFramerate input not implemented");
+  } else {
+      C2StreamFrameRateInfo::output framerate;
+      framerate.value = config->framerate;
+      return C2Param::Copy(framerate);
+  }
+
+  return nullptr;
+}
+
+std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        LOG_WARNING("setIntraframesPeriod input not implemented");
+    } else {
+        C2StreamSyncFrameIntervalTuning::output syncFrameInterval;
+        syncFrameInterval.value = config->val.i64;
+        return C2Param::Copy(syncFrameInterval);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        LOG_WARNING("setIntraVideoFrameRequest input not implemented");
+    } else if (config->force_idr) {
+        C2StreamRequestSyncFrameTuning::output frameRequest;
+        frameRequest.value = (uint32_t)C2Config::SYNC_FRAME;
+        return C2Param::Copy(frameRequest);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    C2PrependHeaderModeSetting header_mode;
+    header_mode.value = config->inline_sps_pps_headers ?
+        C2Config::PREPEND_HEADER_TO_ALL_SYNC :
+        C2Config::PREPEND_HEADER_TO_NONE;
+
+    return C2Param::Copy(header_mode);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CodecCallback API handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -625,7 +705,7 @@ public:
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
-    void onAcquireExtBuffer() override;
+    void onAcquireExtBuffer(uint32_t width, uint32_t height) override;
 
 private:
     listener_cb mCallback;
@@ -823,7 +903,7 @@ void CodecCallback::onUpdateMaxBufCount(uint32_t outputDelay)
     mCallback(mHandle, EVENT_UPDATE_MAX_BUF_CNT, &outputDelay);
 }
 
-void CodecCallback::onAcquireExtBuffer()
+void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
 {
 
     if (!mCallback) {
@@ -831,7 +911,11 @@ void CodecCallback::onAcquireExtBuffer()
         return;
     }
 
-    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, nullptr);
+    BufferResolution resolution = { 0 };
+    resolution.width = width;
+    resolution.height = height;
+
+    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, &resolution);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1305,7 +1389,7 @@ gboolean c2component_delete(void* comp)
     return ret;
 }
 
-gboolean c2component_attachExternalFd(void* comp, int fd)
+gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd)
 {
     LOG_MESSAGE("Attach external fd: %d", fd);
 
@@ -1314,7 +1398,7 @@ gboolean c2component_attachExternalFd(void* comp, int fd)
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
-        c2Status = comp_wrapper->attachExternalFd(fd);
+        c2Status = comp_wrapper->attachExternalFd(type, fd);
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
@@ -1324,7 +1408,7 @@ gboolean c2component_attachExternalFd(void* comp, int fd)
     return ret;
 }
 
-gboolean c2component_setUseExternalBuffer(void* comp, gboolean useExternal)
+gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gboolean useExternal)
 {
     LOG_MESSAGE("Set to use external buffer: %s", useExternal ? "TRUE" : "FALSE");
 
@@ -1333,7 +1417,7 @@ gboolean c2component_setUseExternalBuffer(void* comp, gboolean useExternal)
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
-        c2Status = comp_wrapper->setUseExternalBuffer(useExternal);
+        c2Status = comp_wrapper->setUseExternalBuffer(type, useExternal);
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
