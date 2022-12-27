@@ -34,7 +34,6 @@
 #include <types.h>
 #include <C2Config.h>
 #include <codec2wrapper.h>
-#include <media/msm_media_info.h>
 
 namespace QTI {
 
@@ -255,6 +254,10 @@ uint32_t toC2PixelFormat(PIXEL_FORMAT_TYPE pixel)
     }
     case PIXEL_FORMAT_NV12_UBWC: {
         result = C2_PIXEL_FORMAT_VENUS_NV12_UBWC;
+        break;
+    }
+    case PIXEL_FORMAT_NV12_512:{
+        result = C2_PIXEL_FORMAT_VENUS_NV12_512;
         break;
     }
     case PIXEL_FORMAT_RGBA_8888: {
