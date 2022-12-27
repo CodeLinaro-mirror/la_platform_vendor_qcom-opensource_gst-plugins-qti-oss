@@ -78,7 +78,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
-#include <media/msm_media_info.h>
 
 #include "gstqticodec2venc.h"
 #include "gstqcodec2h264enc.h"

@@ -80,7 +80,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2bufferpool.h"
 #include <dlfcn.h>
 #include <libdrm/drm_fourcc.h>
-#include <media/msm_media_info.h>
 #include "gstqcodec2h264dec.h"
 #include "gstqcodec2h265dec.h"
 #include "gstqcodec2vp9dec.h"
@@ -724,8 +723,10 @@ gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
   resolution = make_resolution_param (width, height, TRUE);
   g_ptr_array_add (config, &resolution);
 
+#ifndef DISABLE_INTERLACE
   interlace = make_interlace_param (c2interlace_mode, FALSE);
   g_ptr_array_add (config, &interlace);
+#endif
 
   if (dec->output_picture_order_mode != DEFAULT_OUTPUT_PICTURE_ORDER_MODE) {
     output_picture_order_mode =

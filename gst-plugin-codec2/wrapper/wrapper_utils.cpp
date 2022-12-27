@@ -34,7 +34,6 @@
 #include <types.h>
 #include <C2Config.h>
 #include <codec2wrapper.h>
-#include <media/msm_media_info.h>
 
 namespace QTI {
 
