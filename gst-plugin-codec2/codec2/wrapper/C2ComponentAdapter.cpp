@@ -27,7 +27,9 @@
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "c2ComponentAdapter.h"
+#include "C2ComponentAdapter.h"
+
+#include "C2WrapperUtils.h"
 
 #include <chrono>
 #include <C2PlatformSupport.h>

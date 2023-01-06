@@ -151,5 +151,7 @@ GType gst_qticodec2venc_get_type (void);
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
+gboolean gst_qcodec2venc_plugin_init (GstPlugin * plugin);
+
 G_END_DECLS
 #endif /* __GST_QTICODEC2VENC_H__ */

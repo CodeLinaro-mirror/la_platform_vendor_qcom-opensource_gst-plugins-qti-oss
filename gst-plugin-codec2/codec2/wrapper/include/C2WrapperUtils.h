@@ -27,8 +27,8 @@
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __WRAPPER_UTILS_H__
-#define __WRAPPER_UTILS_H__
+#ifndef __C2_WRAPPER_UTILS_H__
+#define __C2_WRAPPER_UTILS_H__
 
 #include "types.h"
 #include "gbm_priv.h"
@@ -66,4 +66,4 @@ C2Config::level_t toC2Level(C2W_LEVEL_T level);
 
 } // namespace QTI
 
-#endif /* __WRAPPER_UTILS_H__ */
+#endif /* __C2_WRAPPER_UTILS_H__ */

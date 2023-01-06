@@ -37,7 +37,4 @@ gstcodecparsers_dep = dependency('gstreamer-codecparsers-1.0',
 
 configure_file(output : 'config.h', configuration : core_conf)
 
-subdir('wrapper')
-subdir('common')
-subdir('vdec')
-subdir('venc')
+subdir('codec2')

@@ -63,9 +63,8 @@ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "c2ComponentStoreAdapter.h"
-#include "c2ComponentAdapter.h"
-#include "c2ComponentInterfaceAdapter.h"
+#include "C2ComponentInterfaceAdapter.h"
+
 #include <gst/gst.h>
 
 GST_DEBUG_CATEGORY_EXTERN(gst_qticodec2wrapper_debug);
@@ -73,109 +72,119 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qticodec2wrapper_debug);
 
 namespace QTI {
 
-C2ComponentStoreAdapter::C2ComponentStoreAdapter(std::shared_ptr<C2ComponentStore> store,
-    QC2ComponentStoreFactory* factory, void* dl_handle)
-    : mStore(std::move(store))
-    , mFactory(factory)
-    , mDlHandle(dl_handle)
+C2ComponentInterfaceAdapter::C2ComponentInterfaceAdapter(std::shared_ptr<C2ComponentInterface> compIntf)
 {
+
+    mCompIntf = std::move(compIntf);
 }
 
-C2ComponentStoreAdapter::~C2ComponentStoreAdapter()
+C2ComponentInterfaceAdapter::~C2ComponentInterfaceAdapter()
 {
-
-    mStore = nullptr;
-
-    if (mFactory) {
-        delete mFactory;
-    }
-    if (mDlHandle) {
-        LOG_DEBUG("dl close libqcodec2_core handle");
-        dlclose(mDlHandle);
-    }
+    LOG_MESSAGE("delete C2 Component Interface Adapter");
+    mCompIntf = nullptr;
 }
 
-C2String C2ComponentStoreAdapter::getName()
+C2String C2ComponentInterfaceAdapter::getName() const
 {
 
-    C2String name;
-
-    if (mStore) {
-        name = mStore->getName();
-    }
-
-    return name;
+    return mCompIntf->getName();
 }
 
-c2_status_t C2ComponentStoreAdapter::createComponent(C2String name, void** const component)
+c2_node_id_t C2ComponentInterfaceAdapter::getId() const
 {
 
-    c2_status_t result = C2_BAD_VALUE;
-    std::shared_ptr<C2Component> comp = nullptr;
-
-    result = mStore->createComponent(name, &comp);
-    if ((result == C2_OK) && (comp != nullptr)) {
-        C2ComponentAdapter* comp_adapter = new C2ComponentAdapter(comp);
-
-        if (comp_adapter) {
-            *component = comp_adapter;
-        }
-    }
-
-    return result;
+    return mCompIntf->getId();
 }
 
-c2_status_t C2ComponentStoreAdapter::createInterface(C2String name, void** const interface)
+c2_status_t C2ComponentInterfaceAdapter::initReflectedParamUpdater(std::shared_ptr<C2ParamReflector>& reflector)
 {
 
-    c2_status_t result = C2_BAD_VALUE;
-    std::shared_ptr<C2ComponentInterface> compIntf = nullptr;
+    LOG_MESSAGE("Init ReflectedParamUpdater");
 
-    result = mStore->createInterface(name, &compIntf);
-    if (result == C2_OK) {
+    c2_status_t result = C2_NO_INIT;
 
-        C2ComponentInterfaceAdapter* intf_adapter = new C2ComponentInterfaceAdapter(compIntf);
-        if (intf_adapter != nullptr) {
-            *interface = intf_adapter;
-        }
-    }
+    mParamUpdater = nullptr;
+    std::vector<std::shared_ptr<C2ParamDescriptor> > supportedParams;
 
-    return result;
-}
+    result = mCompIntf->querySupportedParams_nb(&supportedParams);
+    if (C2_OK == result) {
+        mParamUpdater = std::make_shared<android::ReflectedParamUpdater>();
 
-std::vector<std::shared_ptr<const C2Component::Traits> > C2ComponentStoreAdapter::listComponents()
-{
-
-    std::vector<std::shared_ptr<const C2Component::Traits> > result;
-
-    if (mStore) {
-        result = mStore->listComponents();
-    }
-
-    return result;
-}
-
-bool C2ComponentStoreAdapter::isComponentSupported(char* name)
-{
-    if (!name)
-        return false;
-
-    for (auto cs : listComponents()) {
-        std::string comp_name(name);
-        if (cs->name.compare(comp_name) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-std::shared_ptr<C2ParamReflector> C2ComponentStoreAdapter::getParamReflector()
-{
-    if (mStore) {
-        return mStore->getParamReflector();
+        mParamUpdater->clear();
+        mParamUpdater->addParamDesc(reflector, supportedParams);
     } else {
-        return nullptr;
+        LOG_ERROR("Failed(%d) to query supported params", result);
     }
+
+    return result;
+}
+
+std::unique_ptr<C2Param> C2ComponentInterfaceAdapter::updateParamFromConfig(
+    const android::ReflectedParamUpdater::Dict& kvpairs)
+{
+
+    if (mParamUpdater == nullptr)
+        return nullptr;
+
+    std::vector<C2Param::Index> paramIndices;
+    mParamUpdater->getParamIndicesFromMessage(kvpairs, &paramIndices);
+
+    for (const auto& index : paramIndices) {
+        LOG_MESSAGE("update param index name = %s", mParamUpdater->getParamName(index).c_str());
+    }
+
+    std::vector<std::unique_ptr<C2Param> > updateParams;
+
+    if (mCompIntf->query_vb({}, paramIndices, C2_MAY_BLOCK, &updateParams) == C2_OK) {
+        mParamUpdater->updateParamsFromMessage(kvpairs, &updateParams);
+        LOG_MESSAGE("update param vector size = %zu", updateParams.size());
+
+        if (updateParams.size() > 0) {
+
+            return std::move(updateParams[0]);
+        }
+    }
+
+    return nullptr;
+}
+
+android::ReflectedParamUpdater::Dict C2ComponentInterfaceAdapter::getParams(
+    const std::vector<std::unique_ptr<C2Param> >& params)
+{
+    android::ReflectedParamUpdater::Dict dict;
+    if (mParamUpdater == nullptr)
+        return dict;
+
+    return mParamUpdater->getParams(params);
+}
+
+c2_status_t C2ComponentInterfaceAdapter::config(const std::vector<C2Param*>& stackParams, c2_blocking_t mayBlock)
+{
+
+    LOG_MESSAGE("Component interface (%p) configured", this);
+
+    c2_status_t result = C2_NO_INIT;
+    std::vector<std::unique_ptr<C2SettingResult> > failures;
+
+    result = mCompIntf->config_vb(stackParams, mayBlock, &failures);
+    if ((C2_OK != result) || (failures.size() != 0)) {
+        LOG_WARNING("Configuration failed(%d)", static_cast<int32_t>(result));
+    }
+
+    return result;
+}
+
+c2_status_t C2ComponentInterfaceAdapter::setComponent(std::weak_ptr<C2Component> comp)
+{
+
+    c2_status_t result = C2_NO_INIT;
+
+    if (!comp.expired()) {
+        mConnectedComponent = comp;
+        result = C2_OK;
+    }
+
+    return result;
 }
 
 } // namespace QTI

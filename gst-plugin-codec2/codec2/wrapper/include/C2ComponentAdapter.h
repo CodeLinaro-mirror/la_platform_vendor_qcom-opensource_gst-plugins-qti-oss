@@ -31,9 +31,8 @@
 #define __C2COMPONENTADAPTER_H__
 
 #include "types.h"
-#include "c2ComponentInterfaceAdapter.h"
+#include "C2ComponentInterfaceAdapter.h"
 #include "codec2wrapper.h"
-#include "wrapper_utils.h"
 
 #include <C2Config.h>
 #include <C2Component.h>

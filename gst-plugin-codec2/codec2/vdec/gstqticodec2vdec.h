@@ -168,5 +168,7 @@ struct _Gstqticodec2vdecClass
 
 GType gst_qticodec2vdec_get_type (void);
 
+gboolean gst_qcodec2vdec_plugin_init (GstPlugin * plugin);
+
 G_END_DECLS
 #endif /* __GST_QTICODEC2VDEC_H__ */
