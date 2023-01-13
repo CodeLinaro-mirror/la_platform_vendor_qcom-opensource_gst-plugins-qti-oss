@@ -57,6 +57,7 @@ G_BEGIN_DECLS
 #define MPEG2_CAPS \
     "video/mpeg, " \
     "mpegversion = (int)2, " \
+    "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
 #define QTICODEC2VDEC_SRC_WH_CAPS    \
   "width  = (int) [ 96, 8192 ], "     \

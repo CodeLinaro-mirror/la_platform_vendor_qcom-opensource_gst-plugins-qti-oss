@@ -28,6 +28,7 @@ G_BEGIN_DECLS
 #define MPEG2_CAPS \
     "video/mpeg, " \
     "mpegversion = (int)2, " \
+    "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
 
 #define GST_TYPE_VESDELIVER \
