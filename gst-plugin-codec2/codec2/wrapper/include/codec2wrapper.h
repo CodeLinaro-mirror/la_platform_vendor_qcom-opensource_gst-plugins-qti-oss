@@ -118,6 +118,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_RATECONTROL "ratecontrol"
 #define CONFIG_FUNCTION_KEY_DEC_LOW_LATENCY "dec_low_latency"
 #define CONFIG_FUNCTION_KEY_INTRAREFRESH "intra_refresh"
+#define CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE "intra_refresh_type"
 #define CONFIG_FUNCTION_KEY_OUTPUT_PICTURE_ORDER_MODE "output_picture_order_mode"
 #define CONFIG_FUNCTION_KEY_DOWNSCALE "downscale"
 #define CONFIG_FUNCTION_KEY_ENC_CSC "enc_colorspace_conversion"
@@ -292,6 +293,7 @@ typedef enum {
 typedef enum {
     IR_NONE = 0,
     IR_RANDOM,
+    IR_CYCLIC,
 } IR_MODE_TYPE;
 
 typedef enum {

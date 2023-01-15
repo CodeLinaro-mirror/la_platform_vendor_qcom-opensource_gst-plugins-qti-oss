@@ -22,11 +22,15 @@ endif
 gst_plugin_codec2_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
 
 if get_option('interlace').enabled()
-  gst_plugin_codec2_args += ['-DENABLE_INTERLACE']
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_INTERLACE']
 endif
 
 if get_option('qprange').enabled()
-  gst_plugin_codec2_args += ['-DQPRANGE']
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_QPRANGE']
+endif
+
+if get_option('ir-cyclic').enabled()
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_IR_CYCLIC']
 endif
 
 configinc = include_directories('.')

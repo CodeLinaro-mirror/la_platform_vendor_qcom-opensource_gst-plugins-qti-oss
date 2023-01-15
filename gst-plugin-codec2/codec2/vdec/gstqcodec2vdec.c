@@ -721,7 +721,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   resolution = make_resolution_param (width, height, TRUE);
   g_ptr_array_add (config, &resolution);
 
-#ifdef ENABLE_INTERLACE
+#ifdef GST_SUPPORT_INTERLACE
   interlace = make_interlace_param (c2interlace_mode, FALSE);
   g_ptr_array_add (config, &interlace);
 #endif

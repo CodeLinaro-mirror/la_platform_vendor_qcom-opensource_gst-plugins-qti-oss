@@ -360,6 +360,24 @@ make_intra_refresh_param (IR_MODE_TYPE mode, guint32 intra_refresh_mbs)
 }
 
 static ConfigParams
+make_intra_refresh_type_param (IR_MODE_TYPE mode)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE;
+  if (mode == IR_RANDOM) {
+    param.irMode.type = 0; // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
+  } else if (mode == IR_CYCLIC) {
+    param.irMode.type = 1; // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
+  }
+
+  return param;
+}
+
+
+static ConfigParams
 make_blur_mode_param (BLUR_MODE mode, gboolean is_input)
 {
   ConfigParams param;
@@ -778,6 +796,7 @@ gst_qcodec2_venc_intra_refresh_mode_get_type (void)
     static const GEnumValue values[] = {
       {IR_NONE, "None", "none"},
       {IR_RANDOM, "Random", "random"},
+      {IR_CYCLIC, "Cyclic", "cyclic"},
       {0, NULL, NULL}
     };
 
@@ -1179,6 +1198,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams color_space_conversion;
   ConfigParams color_aspects;
   ConfigParams intra_refresh;
+  ConfigParams intra_refresh_type;
   ConfigParams bitrate;
   gboolean update_bitrate = FALSE;
   ConfigParams slice_mode;
@@ -1321,6 +1341,16 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->intra_refresh_mode && enc->intra_refresh_mbs) {
     GST_DEBUG_OBJECT (enc, "set intra refresh mode: %d, mbs:%d",
         enc->intra_refresh_mode, enc->intra_refresh_mbs);
+
+#ifdef GST_SUPPORT_IR_CYCLIC
+    /* cyclic mode is supported on lemans;
+     * setting intra refresh type qc2::IntraRefreshMode
+     */
+    intra_refresh_type =
+        make_intra_refresh_type_param (enc->intra_refresh_mode);
+    g_ptr_array_add (config, &intra_refresh_type);
+#endif
+
     intra_refresh =
         make_intra_refresh_param (enc->intra_refresh_mode,
         enc->intra_refresh_mbs);
@@ -1360,7 +1390,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &inline_header);
   }
 
-#ifdef QPRANGE
+#ifdef GST_SUPPORT_QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
