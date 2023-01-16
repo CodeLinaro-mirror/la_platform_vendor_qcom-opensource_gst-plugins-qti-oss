@@ -78,8 +78,8 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <C2AllocatorGBM.h>
 #include <ReflectedParamUpdater.h>
 
-GST_DEBUG_CATEGORY(gst_qticodec2wrapper_debug);
-#define GST_CAT_DEFAULT gst_qticodec2wrapper_debug
+GST_DEBUG_CATEGORY(gst_qcodec2_wrapper_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_wrapper_debug
 
 using namespace QTI;
 
@@ -925,8 +925,8 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
 void* c2componentStore_create()
 {
 
-    GST_DEBUG_CATEGORY_INIT(gst_qticodec2wrapper_debug,
-        "qticodec2wrapper", 0, "QTI GST codec2.0 wrapper");
+    GST_DEBUG_CATEGORY_INIT(gst_qcodec2_wrapper_debug,
+        "qcodec2wrapper", 0, "GST QTI codec2.0 wrapper");
 
     LOG_MESSAGE("Creating component store");
     void* lib = dlopen("libqcodec2_core.so", RTLD_NOW);

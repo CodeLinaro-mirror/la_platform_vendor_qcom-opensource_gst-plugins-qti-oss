@@ -1,14 +1,14 @@
 gstqcodec2_sources = [
-  'gstqcodec2.c',
+  'plugin.c',
   'common/gstqcodec2bufferpool.c',
   'vdec/gstqcodec2h264dec.c',
   'vdec/gstqcodec2h265dec.c',
   'vdec/gstqcodec2mpeg2dec.c',
   'vdec/gstqcodec2vp9dec.c',
-  'vdec/gstqticodec2vdec.c',
+  'vdec/gstqcodec2vdec.c',
   'venc/gstqcodec2h264enc.c',
   'venc/gstqcodec2h265enc.c',
-  'venc/gstqticodec2venc.c',
+  'venc/gstqcodec2venc.c',
 ]
 
 # venc depends on libxml-2.0

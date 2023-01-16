@@ -36,7 +36,7 @@
 #define __GST_QCODEC2_H264_ENC_H__
 
 #include <gst/gst.h>
-#include "gstqticodec2venc.h"
+#include "gstqcodec2venc.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_QCODEC2_H264_ENC \
@@ -56,12 +56,12 @@ typedef struct _GstQcodec2H264EncClass GstQcodec2H264EncClass;
 
 struct _GstQcodec2H264Enc
 {
-  Gstqticodec2venc parent;
+  GstQcodec2Venc parent;
 };
 
 struct _GstQcodec2H264EncClass
 {
-  Gstqticodec2vencClass parent_class;
+  GstQcodec2VencClass parent_class;
 };
 
 GType gst_qcodec2_h264_enc_get_type (void);

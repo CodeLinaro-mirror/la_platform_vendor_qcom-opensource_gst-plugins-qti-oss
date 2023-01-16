@@ -27,8 +27,8 @@
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __GST_QTICODEC2VDEC_H__
-#define __GST_QTICODEC2VDEC_H__
+#ifndef __GST_QCODEC2_VDEC_H__
+#define __GST_QCODEC2_VDEC_H__
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -59,42 +59,42 @@ G_BEGIN_DECLS
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
-#define QTICODEC2VDEC_SRC_WH_CAPS    \
+#define QCODEC2_VDEC_SRC_WH_CAPS    \
   "width  = (int) [ 96, 8192 ], "     \
   "height = (int) [ 96, 8192 ]"
-#define QTICODEC2VDEC_SRC_FPS_CAPS    \
+#define QCODEC2_VDEC_SRC_FPS_CAPS    \
   "framerate = (fraction) [ 0, 960 ]"
-#define QTICODEC2VDEC_RAW_CAPS(formats) \
+#define QCODEC2_VDEC_RAW_CAPS(formats) \
   "video/x-raw, "                       \
   "format = (string) " formats ", "     \
-  QTICODEC2VDEC_SRC_WH_CAPS ", "       \
-  QTICODEC2VDEC_SRC_FPS_CAPS
-#define QTICODEC2VDEC_RAW_CAPS_WITH_FEATURES(features, formats) \
+  QCODEC2_VDEC_SRC_WH_CAPS ", "       \
+  QCODEC2_VDEC_SRC_FPS_CAPS
+#define QCODEC2_VDEC_RAW_CAPS_WITH_FEATURES(features, formats) \
   "video/x-raw(" features "), "                                 \
   "format = (string) " formats ", "                             \
-  QTICODEC2VDEC_SRC_WH_CAPS   ", "                             \
-  QTICODEC2VDEC_SRC_FPS_CAPS
-#define GST_TYPE_QTICODEC2VDEC          (gst_qticodec2vdec_get_type())
-#define GST_QTICODEC2VDEC(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_QTICODEC2VDEC,Gstqticodec2vdec))
-#define GST_QTICODEC2VDEC_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_QTICODEC2VDEC,Gstqticodec2vdecClass))
-#define GST_QTICODEC2VDEC_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS((obj),GST_TYPE_QTICODEC2VDEC,Gstqticodec2vdecClass))
-#define GST_IS_QTICODEC2VDEC(obj)       (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_QTICODEC2VDEC))
-#define GST_IS_QTICODEC2VDEC_CLASS(obj) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_QTICODEC2VDEC))
-typedef struct _Gstqticodec2vdec Gstqticodec2vdec;
-typedef struct _Gstqticodec2vdecClass Gstqticodec2vdecClass;
+  QCODEC2_VDEC_SRC_WH_CAPS   ", "                             \
+  QCODEC2_VDEC_SRC_FPS_CAPS
+#define GST_TYPE_QCODEC2_VDEC          (gst_qcodec2_vdec_get_type())
+#define GST_QCODEC2_VDEC(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_QCODEC2_VDEC,GstQcodec2Vdec))
+#define GST_QCODEC2_VDEC_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_QCODEC2_VDEC,GstQcodec2VdecClass))
+#define GST_QCODEC2_VDEC_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS((obj),GST_TYPE_QCODEC2_VDEC,GstQcodec2VdecClass))
+#define GST_IS_QCODEC2_VDEC(obj)       (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_QCODEC2_VDEC))
+#define GST_IS_QCODEC2_VDEC_CLASS(obj) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_QCODEC2_VDEC))
+typedef struct _GstQcodec2Vdec GstQcodec2Vdec;
+typedef struct _GstQcodec2VdecClass GstQcodec2VdecClass;
 
 typedef guint64 (*f_get_modifier) (void *bo);
 ConfigParams make_pixel_format_param (guint32 fmt, gboolean is_input);
-guint32 gst_to_c2_pixelformat (Gstqticodec2vdec * decoder,
+guint32 gst_to_c2_pixelformat (GstQcodec2Vdec * decoder,
     GstVideoFormat format);
-gboolean gst_qticodec2vdec_start_comp_and_config_pool (Gstqticodec2vdec *
+gboolean gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec *
     decoder);
 
 /* Maximum number of input frame queued */
 #define MAX_QUEUED_FRAME  64
 #define DEFAULT_DEINTERLACE TRUE
 
-struct _Gstqticodec2vdec
+struct _GstQcodec2Vdec
 {
   GstVideoDecoder parent;
 
@@ -155,20 +155,20 @@ ConfigParams make_deinterlace_param (gboolean deinterlace);
 /*
   Class structure should always contain the class structure for the type you're inheriting from.
 */
-struct _Gstqticodec2vdecClass
+struct _GstQcodec2VdecClass
 {
   GstVideoDecoderClass parent_class;
 
-    gboolean (*open) (Gstqticodec2vdec * decoder);
-    gboolean (*set_format) (Gstqticodec2vdec * decoder,
+    gboolean (*open) (GstQcodec2Vdec * decoder);
+    gboolean (*set_format) (GstQcodec2Vdec * decoder,
       GstVideoCodecState * state);
-    GstFlowReturn (*handle_frame) (Gstqticodec2vdec * decoder,
+    GstFlowReturn (*handle_frame) (GstQcodec2Vdec * decoder,
       GstVideoCodecFrame * frame);
 };
 
-GType gst_qticodec2vdec_get_type (void);
+GType gst_qcodec2_vdec_get_type (void);
 
-gboolean gst_qcodec2vdec_plugin_init (GstPlugin * plugin);
+gboolean gst_qcodec2_vdec_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
-#endif /* __GST_QTICODEC2VDEC_H__ */
+#endif /* __GST_QCODEC2_VDEC_H__ */

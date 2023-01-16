@@ -39,14 +39,14 @@
 #include <gst/gst.h>
 #include "gstqcodec2mpeg2dec.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gst_qticodec2vdec_debug);
-#define GST_CAT_DEFAULT gst_qticodec2vdec_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
 static void gst_qcodec2_mpeg2_dec_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_qcodec2_mpeg2_dec_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
-static gboolean gst_qcodec2_mpeg2_dec_set_format (Gstqticodec2vdec * decoder,
+static gboolean gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state);
 
 enum
@@ -57,7 +57,7 @@ enum
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2MPEG2Dec, gst_qcodec2_mpeg2_dec,
-    GST_TYPE_QTICODEC2VDEC);
+    GST_TYPE_QCODEC2_VDEC);
 
 static GstStaticPadTemplate gst_qcodec2_mpeg2_dec_sink_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
@@ -70,7 +70,7 @@ gst_qcodec2_mpeg2_dec_class_init (GstQcodec2MPEG2DecClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
-  Gstqticodec2vdecClass *videodec_class = GST_QTICODEC2VDEC_CLASS (klass);
+  GstQcodec2VdecClass *videodec_class = GST_QCODEC2_VDEC_CLASS (klass);
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_qcodec2_mpeg2_dec_sink_template));
 
@@ -101,7 +101,7 @@ static void
 gst_qcodec2_mpeg2_dec_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  Gstqticodec2vdec *base_dec = GST_QTICODEC2VDEC (object);
+  GstQcodec2Vdec *base_dec = GST_QCODEC2_VDEC (object);
 
   switch (prop_id) {
     case PROP_DEINTERLACE:
@@ -117,7 +117,7 @@ static void
 gst_qcodec2_mpeg2_dec_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  Gstqticodec2vdec *base_dec = GST_QTICODEC2VDEC (object);
+  GstQcodec2Vdec *base_dec = GST_QCODEC2_VDEC (object);
 
   switch (prop_id) {
     case PROP_DEINTERLACE:
@@ -130,11 +130,11 @@ gst_qcodec2_mpeg2_dec_get_property (GObject * object, guint prop_id,
 }
 
 static gboolean
-gst_qcodec2_mpeg2_dec_set_format (Gstqticodec2vdec * decoder,
+gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state)
 {
   GstQcodec2MPEG2Dec *dec = GST_QCODEC2_MPEG2_DEC (decoder);
-  Gstqticodec2vdec *base_dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *base_dec = GST_QCODEC2_VDEC (decoder);
   gboolean result = TRUE;
   ConfigParams deinterlace;
   ConfigParams pixel_format;

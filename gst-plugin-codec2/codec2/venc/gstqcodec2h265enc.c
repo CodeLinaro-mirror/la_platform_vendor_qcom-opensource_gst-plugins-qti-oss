@@ -39,19 +39,19 @@
 #include <gst/gst.h>
 #include "gstqcodec2h265enc.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gst_qticodec2venc_debug);
-#define GST_CAT_DEFAULT gst_qticodec2venc_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_venc_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_venc_debug
 
 /* class initialization */
-G_DEFINE_TYPE (GstQcodec2H265Enc, gst_qcodec2_h265_enc, GST_TYPE_QTICODEC2VENC);
+G_DEFINE_TYPE (GstQcodec2H265Enc, gst_qcodec2_h265_enc, GST_TYPE_QCODEC2_VENC);
 
 #define DEFAULT_HEVC_PROFILE C2W_HEVC_PROFILE_MAIN
 #define DEFAULT_HEVC_TIER "main"
 
-static gboolean gst_qcodec2_h265_enc_set_format (Gstqticodec2venc * encoder,
+static gboolean gst_qcodec2_h265_enc_set_format (GstQcodec2Venc * encoder,
     GstVideoCodecState * state);
 
-static GstStaticPadTemplate gst_qtivenc_src_template =
+static GstStaticPadTemplate gst_venc_src_template =
     GST_STATIC_PAD_TEMPLATE (GST_VIDEO_ENCODER_SRC_NAME,
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -66,10 +66,10 @@ static GstStaticPadTemplate gst_qtivenc_src_template =
 static void
 gst_qcodec2_h265_enc_class_init (GstQcodec2H265EncClass * klass)
 {
-  Gstqticodec2vencClass *videoenc_class = GST_QTICODEC2VENC_CLASS (klass);
+  GstQcodec2VencClass *videoenc_class = GST_QCODEC2_VENC_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_qtivenc_src_template));
+      gst_static_pad_template_get (&gst_venc_src_template));
 
   videoenc_class->set_format =
       GST_DEBUG_FUNCPTR (gst_qcodec2_h265_enc_set_format);
@@ -153,7 +153,7 @@ gst_qcodec2_h265_get_level_from_str (const gchar * level, const gchar * tier)
 }
 
 static gboolean
-gst_qcodec2_h265_enc_set_format (Gstqticodec2venc * encoder,
+gst_qcodec2_h265_enc_set_format (GstQcodec2Venc * encoder,
     GstVideoCodecState * state)
 {
   GstQcodec2H265Enc *enc = GST_QCODEC2_H265_ENC (encoder);

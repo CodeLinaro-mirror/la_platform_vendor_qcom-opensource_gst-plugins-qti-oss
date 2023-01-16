@@ -9,20 +9,20 @@
 #   define GST_PACKAGE_ORIGIN "-"
 #endif
 
-#include "gstqticodec2vdec.h"
-#include "gstqticodec2venc.h"
+#include "gstqcodec2vdec.h"
+#include "gstqcodec2venc.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
   GST_INFO ("qcodec2 plugin init");
 
-  if (!gst_qcodec2vdec_plugin_init (plugin)) {
+  if (!gst_qcodec2_vdec_plugin_init (plugin)) {
     GST_ERROR ("qcodec2vdec plugin init error");
     return FALSE;
   }
 
-  if (!gst_qcodec2venc_plugin_init (plugin)) {
+  if (!gst_qcodec2_venc_plugin_init (plugin)) {
     GST_ERROR ("qcodec2venc plugin init error");
     return FALSE;
   }

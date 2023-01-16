@@ -39,14 +39,14 @@
 #include <gst/gst.h>
 #include "gstqcodec2h265dec.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gst_qticodec2vdec_debug);
-#define GST_CAT_DEFAULT gst_qticodec2vdec_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
-static gboolean gst_qcodec2_h265_dec_set_format (Gstqticodec2vdec * decoder,
+static gboolean gst_qcodec2_h265_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state);
 
 /* class initialization */
-G_DEFINE_TYPE (GstQcodec2H265Dec, gst_qcodec2_h265_dec, GST_TYPE_QTICODEC2VDEC);
+G_DEFINE_TYPE (GstQcodec2H265Dec, gst_qcodec2_h265_dec, GST_TYPE_QCODEC2_VDEC);
 
 static GstStaticPadTemplate gst_qcodec2_h265_dec_sink_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
@@ -58,7 +58,7 @@ static void
 gst_qcodec2_h265_dec_class_init (GstQcodec2H265DecClass * klass)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
-  Gstqticodec2vdecClass *qcodec2vdec_class = GST_QTICODEC2VDEC_CLASS (klass);
+  GstQcodec2VdecClass *qcodec2vdec_class = GST_QCODEC2_VDEC_CLASS (klass);
 
   qcodec2vdec_class->set_format = gst_qcodec2_h265_dec_set_format;
 
@@ -76,10 +76,10 @@ gst_qcodec2_h265_dec_init (GstQcodec2H265Dec * self)
 }
 
 static gboolean
-gst_qcodec2_h265_dec_set_format (Gstqticodec2vdec * decoder,
+gst_qcodec2_h265_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state)
 {
-  Gstqticodec2vdec *base_dec = decoder;
+  GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2H265Dec *dec = GST_QCODEC2_H265_DEC (decoder);
   GstStructure *structure = NULL;
   GPtrArray *config = NULL;

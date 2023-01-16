@@ -33,8 +33,8 @@
 * SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
-#ifndef __GST_QTICODEC2VENC_H__
-#define __GST_QTICODEC2VENC_H__
+#ifndef __GST_QCODEC2_VENC_H__
+#define __GST_QCODEC2_VENC_H__
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -46,14 +46,14 @@
 #include "codec2wrapper.h"
 
 G_BEGIN_DECLS
-#define GST_TYPE_QTICODEC2VENC          (gst_qticodec2venc_get_type())
-#define GST_QTICODEC2VENC(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_QTICODEC2VENC,Gstqticodec2venc))
-#define GST_QTICODEC2VENC_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_QTICODEC2VENC,Gstqticodec2vencClass))
-#define GST_QTICODEC2VENC_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS((obj),GST_TYPE_QTICODEC2VENC,Gstqticodec2vencClass))
-#define GST_IS_QTICODEC2VENC(obj)       (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_QTICODEC2VENC))
-#define GST_IS_QTICODEC2VENC_CLASS(obj) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_QTICODEC2VENC))
-typedef struct _Gstqticodec2venc Gstqticodec2venc;
-typedef struct _Gstqticodec2vencClass Gstqticodec2vencClass;
+#define GST_TYPE_QCODEC2_VENC          (gst_qcodec2_venc_get_type())
+#define GST_QCODEC2_VENC(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_QCODEC2_VENC,GstQcodec2Venc))
+#define GST_QCODEC2_VENC_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_QCODEC2_VENC,GstQcodec2VencClass))
+#define GST_QCODEC2_VENC_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS((obj),GST_TYPE_QCODEC2_VENC,GstQcodec2VencClass))
+#define GST_IS_QCODEC2_VENC(obj)       (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_QCODEC2_VENC))
+#define GST_IS_QCODEC2_VENC_CLASS(obj) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_QCODEC2_VENC))
+typedef struct _GstQcodec2Venc GstQcodec2Venc;
+typedef struct _GstQcodec2VencClass GstQcodec2VencClass;
 
 /* Maximum number of input frame queued */
 #define MAX_QUEUED_FRAME  32
@@ -70,7 +70,7 @@ typedef struct
   C2W_LEVEL_T e;
 } LevelMapping;
 
-struct _Gstqticodec2venc
+struct _GstQcodec2Venc
 {
   GstVideoEncoder parent;
 
@@ -135,23 +135,23 @@ struct _Gstqticodec2venc
 /*
   Class structure should always contain the class structure for the type you're inheriting from.
 */
-struct _Gstqticodec2vencClass
+struct _GstQcodec2VencClass
 {
   GstVideoEncoderClass parent_class;
 
-  gboolean (*set_format) (Gstqticodec2venc * encoder,
+  gboolean (*set_format) (GstQcodec2Venc * encoder,
     GstVideoCodecState * state);
 
   /* actions */
-  GstFlowReturn (*force_idr) (Gstqticodec2venc * encoder);
+  GstFlowReturn (*force_idr) (GstQcodec2Venc * encoder);
 };
 
-GType gst_qticodec2venc_get_type (void);
+GType gst_qcodec2_venc_get_type (void);
 
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
-gboolean gst_qcodec2venc_plugin_init (GstPlugin * plugin);
+gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
-#endif /* __GST_QTICODEC2VENC_H__ */
+#endif /* __GST_QCODEC2_VENC_H__ */
