@@ -87,6 +87,9 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_BLUR_MODE                         (0xffffffff)
 #define DEFAULT_INTERVAL_INTRAFRAMES              (0xffffffff)
 #define DEFAULT_INLINE_HEADERS                    (FALSE)
+#define DEFAULT_INIT_QUANT_I_FRAMES               (0xffffffff)
+#define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
+#define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 
 #define COMMON_FRAMERATE                          (30)
 
@@ -147,6 +150,15 @@ enum
   PROP_BITRATE_SAVING_MODE,
   PROP_INTERVAL_INTRAFRAMES,
   PROP_INLINE_SPSPPS_HEADERS,
+  PROP_MIN_QP_I_FRAMES,
+  PROP_MAX_QP_I_FRAMES,
+  PROP_MIN_QP_P_FRAMES,
+  PROP_MAX_QP_P_FRAMES,
+  PROP_MIN_QP_B_FRAMES,
+  PROP_MAX_QP_B_FRAMES,
+  PROP_INIT_QUANT_I_FRAMES,
+  PROP_INIT_QUANT_P_FRAMES,
+  PROP_INIT_QUANT_B_FRAMES,
 };
 
 /* GstVideoEncoder base class method */
@@ -507,6 +519,49 @@ make_header_mode_param (gboolean header_mode)
 
   param.config_name = CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE;
   param.inline_sps_pps_headers = header_mode;
+
+  return param;
+}
+
+static ConfigParams
+make_qp_ranges_param (guint32 min_i_qp, guint32 max_i_qp, guint32 min_p_qp,
+    guint32 max_p_qp, guint32 min_b_qp, guint32 max_b_qp)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_IPB_QP_RANGE;
+  param.qp_ranges.min_i_qp = min_i_qp;
+  param.qp_ranges.max_i_qp = max_i_qp;
+  param.qp_ranges.min_p_qp = min_p_qp;
+  param.qp_ranges.max_p_qp = max_p_qp;
+  param.qp_ranges.min_b_qp = min_b_qp;
+  param.qp_ranges.max_b_qp = max_b_qp;
+
+  return param;
+}
+
+static ConfigParams
+make_qp_init_param (guint32 quant_i_frames, guint32 quant_p_frames, guint32 quant_b_frames)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_IPB_QP_INIT;
+  if (quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) {
+    param.qp_init.quant_i_frames_enable = TRUE;
+    param.qp_init.quant_i_frames = quant_i_frames;
+  }
+  if (quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) {
+    param.qp_init.quant_p_frames_enable = TRUE;
+    param.qp_init.quant_p_frames = quant_p_frames;
+  }
+  if (quant_b_frames != DEFAULT_INIT_QUANT_B_FRAMES) {
+    param.qp_init.quant_b_frames_enable = TRUE;
+    param.qp_init.quant_b_frames = quant_b_frames;
+  }
 
   return param;
 }
@@ -1164,6 +1219,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams framerate;
   ConfigParams intraframes_period;
   ConfigParams inline_header;
+  ConfigParams qp_ranges;
+  ConfigParams qp_init;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1329,6 +1386,26 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->inline_sps_pps_headers) {
     inline_header = make_header_mode_param(enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
+  }
+
+  qp_ranges = make_qp_ranges_param (
+      enc->min_qp_i_frames, enc->max_qp_i_frames,
+      enc->min_qp_p_frames, enc->max_qp_p_frames,
+      enc->min_qp_b_frames, enc->max_qp_b_frames);
+  g_ptr_array_add (config, &qp_ranges);
+  GST_DEBUG_OBJECT (enc, "set quant ranges I:[%u,%u], P:[%u,%u], B:[%u,%u]",
+      enc->min_qp_i_frames, enc->max_qp_i_frames,
+      enc->min_qp_p_frames, enc->max_qp_p_frames,
+      enc->min_qp_b_frames, enc->max_qp_b_frames);
+
+  if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
+      (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
+      (enc->quant_b_frames != DEFAULT_INIT_QUANT_B_FRAMES)) {
+    qp_init = make_qp_init_param (enc->quant_i_frames,
+        enc->quant_p_frames, enc->quant_b_frames);
+    g_ptr_array_add (config, &qp_init);
+    GST_DEBUG_OBJECT (enc, "set init quant I frames: %u, quant P frames: %u, quant B frmes: %u",
+        enc->quant_i_frames, enc->quant_p_frames, enc->quant_b_frames);
   }
 
   /* Create component */
@@ -2216,6 +2293,33 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_INLINE_SPSPPS_HEADERS:
       enc->inline_sps_pps_headers = g_value_get_boolean (value);
       break;
+    case PROP_MIN_QP_I_FRAMES:
+      enc->min_qp_i_frames = g_value_get_uint (value);
+      break;
+    case PROP_MAX_QP_I_FRAMES:
+      enc->max_qp_i_frames = g_value_get_uint (value);
+      break;
+    case PROP_MIN_QP_P_FRAMES:
+      enc->min_qp_p_frames = g_value_get_uint (value);
+      break;
+    case PROP_MAX_QP_P_FRAMES:
+      enc->max_qp_p_frames = g_value_get_uint (value);
+      break;
+    case PROP_MIN_QP_B_FRAMES:
+      enc->min_qp_b_frames = g_value_get_uint (value);
+      break;
+    case PROP_MAX_QP_B_FRAMES:
+      enc->max_qp_b_frames = g_value_get_uint (value);
+      break;
+    case PROP_INIT_QUANT_I_FRAMES:
+      enc->quant_i_frames = g_value_get_uint (value);
+      break;
+    case PROP_INIT_QUANT_P_FRAMES:
+      enc->quant_p_frames = g_value_get_uint (value);
+      break;
+    case PROP_INIT_QUANT_B_FRAMES:
+      enc->quant_b_frames = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2297,6 +2401,33 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INLINE_SPSPPS_HEADERS:
       g_value_set_boolean (value, enc->inline_sps_pps_headers);
+      break;
+    case PROP_MIN_QP_I_FRAMES:
+      g_value_set_uint (value, enc->min_qp_i_frames);
+      break;
+    case PROP_MAX_QP_I_FRAMES:
+      g_value_set_uint (value, enc->max_qp_i_frames);
+      break;
+    case PROP_MIN_QP_P_FRAMES:
+      g_value_set_uint (value, enc->min_qp_p_frames);
+      break;
+    case PROP_MAX_QP_P_FRAMES:
+      g_value_set_uint (value, enc->max_qp_p_frames);
+      break;
+    case PROP_MIN_QP_B_FRAMES:
+      g_value_set_uint (value, enc->min_qp_b_frames);
+      break;
+    case PROP_MAX_QP_B_FRAMES:
+      g_value_set_uint (value, enc->max_qp_b_frames);
+      break;
+    case PROP_INIT_QUANT_I_FRAMES:
+      g_value_set_uint (value, enc->quant_i_frames);
+      break;
+    case PROP_INIT_QUANT_P_FRAMES:
+      g_value_set_uint (value, enc->quant_p_frames);
+      break;
+    case PROP_INIT_QUANT_B_FRAMES:
+      g_value_set_uint (value, enc->quant_b_frames);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2520,6 +2651,69 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_MIN_QP_I_FRAMES,
+      g_param_spec_uint ("min-quant-i-frames", "Min quant I frames",
+          "Minimum quantization parameter allowed for I-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_MAX_QP_I_FRAMES,
+      g_param_spec_uint ("max-quant-i-frames", "Max quant I frames",
+          "Maximum quantization parameter allowed for I-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_MIN_QP_P_FRAMES,
+      g_param_spec_uint ("min-quant-p-frames", "Min quant P frames",
+          "Minimum quantization parameter allowed for P-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_MAX_QP_P_FRAMES,
+      g_param_spec_uint ("max-quant-p-frames", "Max quant P frames",
+          "Maximum quantization parameter allowed for P-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_MIN_QP_B_FRAMES,
+      g_param_spec_uint ("min-quant-b-frames", "Min quant B frames",
+          "Minimum quantization parameter allowed for B-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_MAX_QP_B_FRAMES,
+      g_param_spec_uint ("max-quant-b-frames", "Max quant B frames",
+          "Maximum quantization parameter allowed for B-frames, 0 means no limit",
+          0, G_MAXUINT, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_INIT_QUANT_I_FRAMES,
+      g_param_spec_uint ("init-quant-i-frames", "I-Frame Quantization",
+          "Initial quantization parameter for I-frames (0xffffffff=component default)",
+          0, G_MAXUINT, DEFAULT_INIT_QUANT_I_FRAMES,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_INIT_QUANT_P_FRAMES,
+      g_param_spec_uint ("init-quant-p-frames", "P-Frame Quantization",
+          "Initial quantization parameter for P-frames (0xffffffff=component default)",
+          0, G_MAXUINT, DEFAULT_INIT_QUANT_P_FRAMES,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_INIT_QUANT_B_FRAMES,
+      g_param_spec_uint ("init-quant-b-frames", "B-Frame Quantization",
+          "Initial quantization parameter for B-frames (0xffffffff=component default)",
+          0, G_MAXUINT, DEFAULT_INIT_QUANT_B_FRAMES,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] =
       g_signal_new ("force-idr",
           G_TYPE_FROM_CLASS (klass),
@@ -2571,6 +2765,16 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->is_heic = FALSE;
   enc->interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
   enc->inline_sps_pps_headers = DEFAULT_INLINE_HEADERS;
+
+  enc->min_qp_i_frames = 0;
+  enc->max_qp_i_frames = 0;
+  enc->min_qp_p_frames = 0;
+  enc->max_qp_p_frames = 0;
+  enc->min_qp_b_frames = 0;
+  enc->max_qp_b_frames = 0;
+  enc->quant_i_frames = DEFAULT_INIT_QUANT_I_FRAMES;
+  enc->quant_p_frames = DEFAULT_INIT_QUANT_P_FRAMES;
+  enc->quant_b_frames = DEFAULT_INIT_QUANT_B_FRAMES;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);

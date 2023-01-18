@@ -130,6 +130,15 @@ struct _GstQcodec2Venc
   gboolean is_heic;
   guint32 interval_intraframes;
   gboolean inline_sps_pps_headers;
+  guint32 min_qp_i_frames;
+  guint32 max_qp_i_frames;
+  guint32 min_qp_p_frames;
+  guint32 max_qp_p_frames;
+  guint32 min_qp_b_frames;
+  guint32 max_qp_b_frames;
+  guint32 quant_i_frames;
+  guint32 quant_p_frames;
+  guint32 quant_b_frames;
 };
 
 /*
