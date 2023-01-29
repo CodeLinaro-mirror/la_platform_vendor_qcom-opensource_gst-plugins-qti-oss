@@ -27,10 +27,8 @@
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __UTILS_H__
-#define __UTILS_H__
+#include "C2WrapperUtils.h"
 
-#include "wrapper_utils.h"
 #include <types.h>
 #include <C2Config.h>
 #include <codec2wrapper.h>
@@ -634,4 +632,3 @@ C2Config::level_t toC2Level(C2W_LEVEL_T level)
 
 } // namespace QTI
 
-#endif /* __UTILS_H__ */

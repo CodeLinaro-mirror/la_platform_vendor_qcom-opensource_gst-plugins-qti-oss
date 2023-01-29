@@ -57,6 +57,7 @@ G_BEGIN_DECLS
 #define MPEG2_CAPS \
     "video/mpeg, " \
     "mpegversion = (int)2, " \
+    "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
 #define QTICODEC2VDEC_SRC_WH_CAPS    \
   "width  = (int) [ 96, 8192 ], "     \
@@ -166,6 +167,8 @@ struct _Gstqticodec2vdecClass
 };
 
 GType gst_qticodec2vdec_get_type (void);
+
+gboolean gst_qcodec2vdec_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
 #endif /* __GST_QTICODEC2VDEC_H__ */

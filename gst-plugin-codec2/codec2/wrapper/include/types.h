@@ -63,8 +63,8 @@ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __TYPES_H__
-#define __TYPES_H__
+#ifndef __C2_WRAPPER_TYPES_H__
+#define __C2_WRAPPER_TYPES_H__
 
 #include <stdio.h>
 #include <C2Component.h>
@@ -106,4 +106,4 @@ public:
 
 } // namespace QTI
 
-#endif /* __TYPES_H__ */
+#endif /* __C2_WRAPPER_TYPES_H__ */

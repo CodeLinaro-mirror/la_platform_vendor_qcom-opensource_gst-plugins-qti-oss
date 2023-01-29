@@ -27,7 +27,9 @@
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "c2ComponentAdapter.h"
+#include "C2ComponentAdapter.h"
+
+#include "C2WrapperUtils.h"
 
 #include <chrono>
 #include <C2PlatformSupport.h>
@@ -771,7 +773,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             LOG_ERROR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else {
-            mC2AllocatorIon = allocator;
+            mC2AllocatorIon = std::dynamic_pointer_cast<android::C2AllocatorIon>(allocator);
         }
     } else if (poolType == C2BlockPool::BASIC_GRAPHIC) {
         ret = android::CreateCodec2BlockPool(C2AllocatorStore::DEFAULT_GRAPHIC, mComp, &mGraphicPool);
@@ -784,13 +786,11 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             LOG_ERROR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else {
-            mC2AllocatorGBM = allocator;
-            auto allocatorGBM =
-                std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
+            mC2AllocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(allocator);
             auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
                                   std::placeholders::_1, std::placeholders::_2);
-            if (allocatorGBM) {
-                allocatorGBM->setAcquireExtBufCb(func);
+            if (mC2AllocatorGBM) {
+                mC2AllocatorGBM->setAcquireExtBufCb(func);
             }
         }
     }
@@ -883,18 +883,17 @@ void C2ComponentAdapter::handleWorkDone(
                 if (param->forOutput()) {
                     C2PortActualDelayTuning::output outputDelay;
                     if (outputDelay.updateFrom(*param)) {
-                        auto allocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
-                        if (allocatorGBM) {
+                        if (mC2AllocatorGBM) {
                             LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu",
                                 outputDelay.value, mGraphicPool->getLocalId());
                             if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                                 /* Update the max acquirable buffer count for external buffer pool */
                                 mCallback->onUpdateMaxBufCount(outputDelay.value);
                             } else {
-                                allocatorGBM->setMaxAllocationCount(outputDelay.value);
+                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
                             }
                         } else {
-                            LOG_ERROR("allocatorGBM is NULL");
+                            LOG_ERROR("mC2AllocatorGBM is NULL");
                         }
                     }
                 }
@@ -1002,11 +1001,10 @@ c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
     LOG_MESSAGE("Component(%p) attach external fd: %d for pool type %d", this, fd, type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
-        auto allocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
-        if (allocatorGBM) {
-            result = allocatorGBM->attachExternalFd(fd);
+        if (mC2AllocatorGBM) {
+            result = mC2AllocatorGBM->attachExternalFd(fd);
         } else {
-            LOG_ERROR("allocatorGBM is NULL");
+            LOG_ERROR("mC2AllocatorGBM is NULL");
             result = C2_BAD_VALUE;
         }
     } else {
@@ -1027,11 +1025,10 @@ c2_status_t C2ComponentAdapter::setUseExternalBuffer(BUFFER_POOL_TYPE type, bool
         this, useExternal ? "TRUE" : "FALSE", type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
-        auto allocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
-        if (allocatorGBM) {
-            result = allocatorGBM->setUseExternalBuffer(useExternal);
+        if (mC2AllocatorGBM) {
+            result = mC2AllocatorGBM->setUseExternalBuffer(useExternal);
         } else {
-            LOG_ERROR("allocatorGBM is NULL");
+            LOG_ERROR("mC2AllocatorGBM is NULL");
             result = C2_BAD_VALUE;
         }
     } else {
@@ -1046,11 +1043,10 @@ bool C2ComponentAdapter::isUseExternalBuffer(BUFFER_POOL_TYPE type)
     bool ret = false;
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
-        auto allocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(mC2AllocatorGBM);
-        if (allocatorGBM) {
-            ret = allocatorGBM->isUseExternalBuffer();
+        if (mC2AllocatorGBM) {
+            ret = mC2AllocatorGBM->isUseExternalBuffer();
         } else {
-            LOG_ERROR("allocatorGBM is NULL");
+            LOG_ERROR("mC2AllocatorGBM is NULL");
         }
     } else {
         LOG_ERROR("Invalid buffer pool type %d", type);
@@ -1064,39 +1060,47 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     c2_status_t result = C2_OK;
     std::shared_ptr<C2LinearBlock> linearBlock = nullptr;
     std::shared_ptr<C2LinearAllocation> allocation = nullptr;
-    auto allocatorIon = std::dynamic_pointer_cast<android::C2AllocatorIon>(mC2AllocatorIon);
+    bool need_release = false;
 
     uint32_t alignSize = ALIGN (size, 4096);
-    /* dup the external buffer fd to decouple decoder and upstream element,
-     * both of them need to close the buffer fd separately after use */
-    android::C2HandleIon *handleIon = new android::C2HandleIon (dup(fd), alignSize);
-    do {
-        if (nullptr == allocatorIon || nullptr == handleIon) {
-            LOG_ERROR ("Invalid allocatorIon or handleIon");
-            result = C2_NO_MEMORY;
-            break;
-        }
-        result = allocatorIon->priorLinearAllocation (handleIon, &allocation);
-        if (result != C2_OK) {
-            LOG_ERROR ("Failed(%d) to call priorLinearAllocation", result);
-            /* need to delete hanleIon here if priorLinearAllocation failed */
-            delete handleIon;
-            break;
-        }
-        linearBlock = _C2BlockFactory::CreateLinearBlock (allocation);
-        if (linearBlock == nullptr) {
-            LOG_ERROR ("Failed to CreateLinearBlock");
-            result = C2_NO_MEMORY;
-            break;
-        }
-        linearBlock->mSize = size;
-        c2Buf = createLinearBuffer (linearBlock);
-        if (!c2Buf) {
-            LOG_ERROR ("Failed to createLinearBuffer");
-            result = C2_NO_MEMORY;
-            break;
-        }
-    } while (0);
+    /* dup the external buffer fd to decouple decoder and upstream element, and the
+     * input external buffer fd should be closed by upstream element after use, dup_fd
+     * will be closed in the destructor of C2AllocationIon::Impl after passing to it */
+    int dup_fd = dup(fd);
+    android::C2HandleIon *handleIon = new android::C2HandleIon (dup_fd, alignSize);
+
+    if (nullptr == mC2AllocatorIon || nullptr == handleIon) {
+        LOG_ERROR ("Invalid mC2AllocatorIon or handleIon");
+        need_release = true;
+        close(dup_fd);
+        result = C2_NO_MEMORY;
+        goto do_exit;
+    }
+    /* handleIon will be released in priorLinearAllocation if return C2_OK */
+    result = mC2AllocatorIon->priorLinearAllocation (handleIon, &allocation);
+    if (result != C2_OK) {
+        LOG_ERROR ("Failed(%d) to call priorLinearAllocation", result);
+        need_release = true;
+        goto do_exit;
+    }
+    linearBlock = _C2BlockFactory::CreateLinearBlock (allocation);
+    if (linearBlock == nullptr) {
+        LOG_ERROR ("Failed to CreateLinearBlock");
+        result = C2_NO_MEMORY;
+        goto do_exit;
+    }
+    linearBlock->mSize = size;
+    c2Buf = createLinearBuffer (linearBlock);
+    if (!c2Buf) {
+        LOG_ERROR ("Failed to createLinearBuffer");
+        result = C2_NO_MEMORY;
+    }
+
+do_exit:
+    if (need_release && handleIon) {
+        /* need to delete handleIon here if priorLinearAllocation failed */
+        delete handleIon;
+    }
 
     return result;
 }

@@ -67,10 +67,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #  include "config.h"
 #endif
 
-#ifndef GST_PACKAGE_ORIGIN
-#   define GST_PACKAGE_ORIGIN "-"
-#endif
-
 #include <gst/gst.h>
 
 #include <string.h>
@@ -2344,27 +2340,6 @@ gst_qticodec2venc_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-static gboolean
-plugin_init (GstPlugin * qticodec2venc)
-{
-  /* debug category for fltering log messages */
-  GST_DEBUG_CATEGORY_INIT (gst_qticodec2venc_debug, "qticodec2venc",
-      0, "QTI GST codec2.0 video encoder");
-
-  if (!gst_element_register (qticodec2venc, "qcodec2h264enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H264_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h264enc");
-    return FALSE;
-  }
-  if (!gst_element_register (qticodec2venc, "qcodec2h265enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H265_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h265enc");
-    return FALSE;
-  }
-
-  return TRUE;
-}
-
 /* Initialize the qticodec2venc's class */
 static void
 gst_qticodec2venc_class_init (Gstqticodec2vencClass * klass)
@@ -2603,8 +2578,23 @@ gst_qticodec2venc_init (Gstqticodec2venc * enc)
   g_mutex_init (&enc->pending_lock);
 }
 
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    qticodec2venc,
-    "QTI GST Codec2.0 Video Encoder",
-    plugin_init, VERSION, GST_LICENSE_UNKNOWN, PACKAGE_NAME, GST_PACKAGE_ORIGIN)
+gboolean
+gst_qcodec2venc_plugin_init (GstPlugin * plugin)
+{
+  /* debug category for fltering log messages */
+  GST_DEBUG_CATEGORY_INIT (gst_qticodec2venc_debug, "qticodec2venc",
+      0, "QTI GST codec2.0 video encoder");
+
+  if (!gst_element_register (plugin, "qcodec2h264enc",
+          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H264_ENC)) {
+    GST_ERROR ("failed to register element qcodec2h264enc");
+    return FALSE;
+  }
+  if (!gst_element_register (plugin, "qcodec2h265enc",
+          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H265_ENC)) {
+    GST_ERROR ("failed to register element qcodec2h265enc");
+    return FALSE;
+  }
+
+  return TRUE;
+}

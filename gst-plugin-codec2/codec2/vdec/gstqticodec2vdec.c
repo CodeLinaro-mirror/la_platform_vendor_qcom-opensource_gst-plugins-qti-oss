@@ -67,10 +67,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #  include "config.h"
 #endif
 
-#ifndef GST_PACKAGE_ORIGIN
-#   define GST_PACKAGE_ORIGIN "-"
-#endif
-
 #include <gst/gst.h>
 #include <string.h>
 #include <stdio.h>
@@ -1784,47 +1780,6 @@ gst_qticodec2vdec_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-/* entry point to initialize the plug-in
- * register the plugin
- */
-static gboolean
-plugin_init (GstPlugin * qticodec2vdec)
-{
-  /* debug category for filtering log messages */
-  GST_DEBUG_CATEGORY_INIT (gst_qticodec2vdec_debug, "qticodec2vdec",
-      0, "QTI GST codec2.0 video decoder");
-
-  static gsize res = FALSE;
-  static const gchar *tags[] = { NULL };
-  if (g_once_init_enter (&res)) {
-    gst_meta_register_custom ("GstQVDMeta", tags, NULL, NULL, NULL);
-    g_once_init_leave (&res, TRUE);
-  }
-
-  if (!gst_element_register (qticodec2vdec, "qcodec2h264dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H264_DEC)) {
-    GST_ERROR ("failed to register element qcodec2h264dec");
-    return FALSE;
-  }
-  if (!gst_element_register (qticodec2vdec, "qcodec2h265dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H265_DEC)) {
-    GST_ERROR ("failed to register element qcodec2h265dec");
-    return FALSE;
-  }
-  if (!gst_element_register (qticodec2vdec, "qcodec2vp9dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_VP9_DEC)) {
-    GST_ERROR ("failed to register element qcodec2vp9dec");
-    return FALSE;
-  }
-  if (!gst_element_register (qticodec2vdec, "qcodec2mpeg2dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_MPEG2_DEC)) {
-    GST_ERROR ("failed to register element qcodec2mpeg2dec");
-    return FALSE;
-  }
-
-  return TRUE;
-}
-
 /* Initialize the qticodec2vdec's class */
 static void
 gst_qticodec2vdec_class_init (Gstqticodec2vdecClass * klass)
@@ -1954,8 +1909,40 @@ gst_qticodec2vdec_init (Gstqticodec2vdec * dec)
 
 }
 
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    qticodec2vdec,
-    "QTI GST Codec2.0 Video Decoder",
-    plugin_init, VERSION, GST_LICENSE_UNKNOWN, PACKAGE_NAME, GST_PACKAGE_ORIGIN)
+gboolean
+gst_qcodec2vdec_plugin_init (GstPlugin * plugin)
+{
+  /* debug category for filtering log messages */
+  GST_DEBUG_CATEGORY_INIT (gst_qticodec2vdec_debug, "qticodec2vdec",
+      0, "QTI GST codec2.0 video decoder");
+
+  static gsize res = FALSE;
+  static const gchar *tags[] = { NULL };
+  if (g_once_init_enter (&res)) {
+    gst_meta_register_custom ("GstQVDMeta", tags, NULL, NULL, NULL);
+    g_once_init_leave (&res, TRUE);
+  }
+
+  if (!gst_element_register (plugin, "qcodec2h264dec",
+          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H264_DEC)) {
+    GST_ERROR ("failed to register element qcodec2h264dec");
+    return FALSE;
+  }
+  if (!gst_element_register (plugin, "qcodec2h265dec",
+          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H265_DEC)) {
+    GST_ERROR ("failed to register element qcodec2h265dec");
+    return FALSE;
+  }
+  if (!gst_element_register (plugin, "qcodec2vp9dec",
+          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_VP9_DEC)) {
+    GST_ERROR ("failed to register element qcodec2vp9dec");
+    return FALSE;
+  }
+  if (!gst_element_register (plugin, "qcodec2mpeg2dec",
+          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_MPEG2_DEC)) {
+    GST_ERROR ("failed to register element qcodec2mpeg2dec");
+    return FALSE;
+  }
+
+  return TRUE;
+}

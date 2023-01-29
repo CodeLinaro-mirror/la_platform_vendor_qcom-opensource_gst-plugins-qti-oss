@@ -66,10 +66,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __CODEC2WRAPPER_H__
 #define __CODEC2WRAPPER_H__
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <glib.h>
 #include <gmodule.h>
 #include <dlfcn.h>
@@ -106,6 +102,10 @@ enum color_fmts {
 
 #else
 #include <media/msm_media_info.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))

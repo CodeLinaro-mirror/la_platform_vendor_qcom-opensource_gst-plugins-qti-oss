@@ -31,9 +31,8 @@
 #define __C2COMPONENTADAPTER_H__
 
 #include "types.h"
-#include "c2ComponentInterfaceAdapter.h"
+#include "C2ComponentInterfaceAdapter.h"
 #include "codec2wrapper.h"
-#include "wrapper_utils.h"
 
 #include <C2Config.h>
 #include <C2Component.h>
@@ -42,6 +41,11 @@
 #include <set>
 #include <condition_variable>
 #include <C2Buffer.h>
+
+namespace android {
+class C2AllocatorGBM;
+class C2AllocatorIon;
+}
 
 namespace QTI {
 
@@ -147,8 +151,8 @@ private:
     std::map<uint64_t, std::shared_ptr<C2GraphicBlock> > mInPendingBuffer;
     std::map<uint64_t, std::shared_ptr<C2Buffer> > mOutPendingBuffer;
     std::set<TrackBuffer*> mTrackBuffers;
-    std::shared_ptr<C2Allocator> mC2AllocatorGBM;
-    std::shared_ptr<C2Allocator> mC2AllocatorIon;
+    std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
+    std::shared_ptr<android::C2AllocatorIon> mC2AllocatorIon;
 
     uint32_t mNumPendingWorks;
     std::mutex mLock;

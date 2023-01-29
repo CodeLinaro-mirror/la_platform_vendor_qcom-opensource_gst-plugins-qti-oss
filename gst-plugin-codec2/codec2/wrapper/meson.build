@@ -1,9 +1,9 @@
 codec2wrapper_sources = [
-  'c2ComponentAdapter.cpp',
-  'c2ComponentInterfaceAdapter.cpp',
-  'c2ComponentStoreAdapter.cpp',
+  'C2ComponentAdapter.cpp',
+  'C2ComponentInterfaceAdapter.cpp',
+  'C2ComponentStoreAdapter.cpp',
+  'C2WrapperUtils.cpp',
   'codec2wrapper.cpp',
-  'wrapper_utils.cpp'
 ]
 
 codec2wrapper_inc = include_directories('include')

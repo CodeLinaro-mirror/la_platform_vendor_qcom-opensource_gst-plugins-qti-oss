@@ -63,11 +63,12 @@ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "c2ComponentStoreAdapter.h"
-#include "c2ComponentAdapter.h"
-#include "c2ComponentInterfaceAdapter.h"
 #include "codec2wrapper.h"
-#include "wrapper_utils.h"
+
+#include "C2ComponentStoreAdapter.h"
+#include "C2ComponentAdapter.h"
+#include "C2ComponentInterfaceAdapter.h"
+#include "C2WrapperUtils.h"
 #include <sys/mman.h>
 
 #include <string.h>
