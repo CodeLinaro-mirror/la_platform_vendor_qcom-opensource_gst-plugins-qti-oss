@@ -204,6 +204,8 @@ static gboolean
 gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, BufferDescriptor * bufinfo);
 
+static void gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder);
+
 static guint gst_qcodec2_venc_signals[LAST_SIGNAL] = { 0 };
 
 static ConfigParams
@@ -1185,6 +1187,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams color_aspects;
   ConfigParams intra_refresh;
   ConfigParams bitrate;
+  gboolean update_bitrate = FALSE;
   ConfigParams slice_mode;
   ConfigParams blur_info;
   ConfigParams bitrate_saving_mode;
@@ -1269,6 +1272,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
     g_ptr_array_add (config, &bitrate);
     GST_DEBUG_OBJECT (enc, "set target bitrate:%u", enc->target_bitrate);
+    update_bitrate = TRUE;
   }
 
   if (enc->bitrate_saving_mode != DEFAULT_BITRATE_SAVING_MODE) {
@@ -1400,6 +1404,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (!c2componentInterface_config (enc->comp_intf,
           config, BLOCK_MODE_MAY_BLOCK)) {
     GST_WARNING_OBJECT (enc, "Failed to set encoder config");
+  } else {
+    if (update_bitrate) {
+      enc->configured_target_bitrate = enc->target_bitrate;
+    }
   }
 
   g_ptr_array_free (config, TRUE);
@@ -1546,6 +1554,37 @@ gst_qcodec2_venc_force_idr (GstQcodec2Venc * encoder)
   return ret;
 }
 
+static void
+gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
+{
+  GPtrArray *config = NULL;
+  ConfigParams bitrate;
+  gboolean update_bitrate = FALSE;
+  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
+  if ((enc->target_bitrate > 0) &&
+      (enc->target_bitrate != enc->configured_target_bitrate)) {
+    config = g_ptr_array_new ();
+    bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
+    g_ptr_array_add (config, &bitrate);
+    GST_DEBUG_OBJECT (enc, "Dynamically configure target bitrate to %u from %u",
+        enc->target_bitrate, enc->configured_target_bitrate);
+    update_bitrate = TRUE;
+  }
+
+  if (config) {
+    if (!c2componentInterface_config (enc->comp_intf,
+            config, BLOCK_MODE_MAY_BLOCK)) {
+      GST_WARNING_OBJECT (enc,
+          "Failed to set encoder config for target bitrate");
+    } else {
+      if (update_bitrate) {
+        enc->configured_target_bitrate = enc->target_bitrate;
+      }
+    }
+    g_ptr_array_free (config, TRUE);
+  }
+}
+
 /* Called whenever a input frame from the upstream is sent to encoder */
 static GstFlowReturn
 gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
@@ -1576,6 +1615,8 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
       GST_ERROR_OBJECT (enc, "Failed to force key frame");
     }
   }
+
+  gst_qcodec2_venc_handle_dynamic_config (encoder);
 
   /* Encode frame */
   ret = gst_qcodec2_venc_encode (encoder, frame);
@@ -2580,7 +2621,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           "Target bitrate in bits per second (0 means not explicitly set bitrate)",
           0, G_MAXUINT, 0,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
-          GST_PARAM_MUTABLE_READY));
+          GST_PARAM_MUTABLE_PLAYING));
 
   g_object_class_install_property (gobject_class, PROP_SLICE_MODE,
       g_param_spec_enum ("slice-mode", "slice mode",
@@ -2725,6 +2766,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->downscale_width = 0;
   enc->downscale_height = 0;
   enc->target_bitrate = 0;
+  enc->configured_target_bitrate = 0;
   enc->blur_mode = DEFAULT_BLUR_MODE;
   enc->blur_width = 0;
   enc->blur_height = 0;

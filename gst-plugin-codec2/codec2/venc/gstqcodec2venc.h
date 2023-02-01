@@ -129,6 +129,7 @@ struct _GstQcodec2Venc
   IR_MODE_TYPE intra_refresh_mode;
   guint32 intra_refresh_mbs;
   guint32 target_bitrate;
+  guint32 configured_target_bitrate;
   SLICE_MODE slice_mode;
   guint32 slice_size;
   GMutex pending_lock;
