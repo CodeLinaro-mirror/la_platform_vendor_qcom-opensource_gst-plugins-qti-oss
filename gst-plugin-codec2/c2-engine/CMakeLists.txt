@@ -7,12 +7,17 @@ add_library(${GST_QTI_C2_ENGINE} SHARED
   c2-config.cc
 )
 
+target_compile_definitions(${GST_QTI_C2_ENGINE} PRIVATE
+  $<$<BOOL:${CODEC2_QPR_API_2}>:CODEC2_QPR_API_2>
+)
+
 target_include_directories(${GST_QTI_C2_ENGINE} PUBLIC
   ${GST_INCLUDE_DIRS}
 )
 
 target_include_directories(${GST_QTI_C2_ENGINE} PRIVATE
   ${KERNEL_BUILDDIR}/usr/include
+  ${KERNEL_BUILDDIR}/usr/include/vidc
 )
 
 target_link_libraries(${GST_QTI_C2_ENGINE} PRIVATE

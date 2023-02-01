@@ -34,7 +34,7 @@
 
 #include "c2-component.h"
 
-#include <vidc/media/msm_media_info.h>
+#include <media/msm_media_info.h>
 
 #define MAX_PENDING_WORK 6
 
