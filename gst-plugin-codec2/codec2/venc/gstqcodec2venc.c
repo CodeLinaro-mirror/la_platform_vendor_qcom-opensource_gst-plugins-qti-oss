@@ -206,35 +206,6 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
 
 static guint gst_qcodec2_venc_signals[LAST_SIGNAL] = { 0 };
 
-/* pad templates */
-#define GST_QC2VENC_CAPS_MAKE(format,min,max) \
-    "video/x-raw, "                           \
-    "format = (string) " format ", "          \
-    "width = (int) [" #min ", " #max "], "    \
-    "height = (int) [" #min ", " #max "],"    \
-    "framerate = " GST_VIDEO_FPS_RANGE
-
-#define GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(feature,format,min,max) \
-    "video/x-raw(" feature "), "                                    \
-    "format = (string) " format ", "                                \
-    "width = (int) [" #min ", " #max "], "                          \
-    "height = (int) [" #min ", " #max "],"                          \
-    "framerate = " GST_VIDEO_FPS_RANGE
-
-#define GST_QC2VENC_SINK_TEMPLATE_CAP \
-    GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF,"NV12",128,8192)";" \
-    GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF,"P010_10LE",128,8192)";" \
-    GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF,"NV12_10LE32",128,8192)";" \
-    GST_QC2VENC_CAPS_MAKE("NV12",128,8192)";" \
-    GST_QC2VENC_CAPS_MAKE("P010_10LE",128,8192)";" \
-    GST_QC2VENC_CAPS_MAKE("NV12_10LE32",128,8192)
-
-static GstStaticPadTemplate gst_venc_sink_template =
-GST_STATIC_PAD_TEMPLATE (GST_VIDEO_ENCODER_SINK_NAME,
-    GST_PAD_SINK,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_QC2VENC_SINK_TEMPLATE_CAP));
-
 static ConfigParams
 make_bitrate_param (guint32 bitrate, gboolean is_input)
 {
@@ -2475,10 +2446,6 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 {
   GstVideoEncoderClass *video_encoder_class = GST_VIDEO_ENCODER_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-  GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
-
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_venc_sink_template));
 
   /* Set GObject class property */
   gobject_class->set_property = gst_qcodec2_venc_set_property;
