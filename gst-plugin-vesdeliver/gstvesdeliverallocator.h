@@ -6,6 +6,12 @@
 
 #include <gst/gst.h>
 #include <gst/allocators/allocators.h>
+#ifdef USE_DMAHEAP
+#include <BufferAllocator/BufferAllocatorWrapper.h>
+#else
+#include <ion/ion.h>
+#include <linux/msm_ion.h>
+#endif
 
 G_BEGIN_DECLS
 
@@ -24,19 +30,34 @@ G_BEGIN_DECLS
 typedef struct _GstVesDeliverAllocator GstVesDeliverAllocator;
 typedef struct _GstVesDeliverAllocatorClass GstVesDeliverAllocatorClass;
 
+#ifdef USE_DMAHEAP
+typedef BufferAllocator* (*create_allocator_func)();
+typedef void (*free_allocator_func) (BufferAllocator* buffer_allocator);
+typedef int (*alloc_func) (BufferAllocator* buffer_allocator, const char* heap_name, size_t len,
+                    unsigned int heap_flags, size_t legacy_align);
+#else
 typedef int (*ion_open_func) (void);
 typedef int (*ion_close_func) (int fd);
 typedef int (*ion_alloc_fd_func) (int fd, size_t len, size_t align, unsigned int heap_mask,
       unsigned int flags, int *handle_fd);
+#endif
 
 struct _GstVesDeliverAllocator {
   GstDmaBufAllocator parent;
   gboolean secure;
+
+  void *lib_handle;
+#ifdef USE_DMAHEAP
+  BufferAllocator *dmaheap_allocator;
+  create_allocator_func create_allocator;
+  free_allocator_func free_allocator;
+  alloc_func alloc_fd;
+#else
   int ion_fd;
-  void *ion_handle;
   ion_open_func ion_open;
   ion_close_func ion_close;
   ion_alloc_fd_func ion_alloc_fd;
+#endif
 };
 
 struct _GstVesDeliverAllocatorClass {
