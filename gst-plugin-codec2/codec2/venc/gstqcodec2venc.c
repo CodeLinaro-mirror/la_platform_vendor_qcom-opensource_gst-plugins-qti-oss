@@ -113,6 +113,17 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
 
+#define ENCODER_ELEMENT(codec, element) \
+  {"c2.qti." G_STRINGIFY (codec) ".encoder", \
+   "qcodec2" G_STRINGIFY (element) "enc", \
+   GST_RANK_PRIMARY + 10, \
+   gst_qcodec2_##element##_enc_get_type}
+
+static const ElementInfo kENCODER_ELEMENTS[] = {
+  ENCODER_ELEMENT (avc, h264),
+  ENCODER_ELEMENT (hevc, h265),
+};
+
 enum
 {
   /* actions */
@@ -367,9 +378,9 @@ make_intra_refresh_type_param (IR_MODE_TYPE mode)
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE;
   if (mode == IR_RANDOM) {
-    param.irMode.type = 0; // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
+    param.irMode.type = 0;      // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
   } else if (mode == IR_CYCLIC) {
-    param.irMode.type = 1; // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
+    param.irMode.type = 1;      // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
   }
 
   return param;
@@ -1390,7 +1401,6 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
-
 #ifdef GST_SUPPORT_QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
@@ -1803,6 +1813,10 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   outbuf = fill_output_buffer (enc, &state->info, desc);
   c2buffer_freed = free_output_c2buffer (enc, desc->index);
   frame->output_buffer = outbuf;
+  frame->pts = GST_BUFFER_PTS (outbuf);
+  frame->dts = GST_BUFFER_PTS (outbuf);
+  frame->duration = GST_BUFFER_DURATION (outbuf);
+
   if (NULL == outbuf) {
     GST_ERROR_OBJECT (enc, "failed to create outbuf");
     gst_video_encoder_finish_frame (encoder, frame);
@@ -2802,22 +2816,31 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
 }
 
 gboolean
-gst_qcodec2_venc_plugin_init (GstPlugin * plugin)
+gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array)
 {
   /* debug category for fltering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_venc_debug, "qcodec2venc",
       0, "GST QTI codec2.0 video encoder");
 
-  if (!gst_element_register (plugin, "qcodec2h264enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H264_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h264enc");
-    return FALSE;
-  }
-  if (!gst_element_register (plugin, "qcodec2h265enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H265_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h265enc");
-    return FALSE;
+  guint count = 0;
+  if (array) {
+    for (guint i = 0; i < array->len; i++) {
+      for (guint j = 0; j < G_N_ELEMENTS (kENCODER_ELEMENTS); j++) {
+        if (!strcmp (kENCODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
+          if (gst_element_register (plugin, kENCODER_ELEMENTS[j].element,
+                  kENCODER_ELEMENTS[j].rank,
+                  kENCODER_ELEMENTS[j].register_type ())) {
+            count++;
+            GST_INFO ("register element %s", kENCODER_ELEMENTS[j].element);
+          } else {
+            GST_ERROR ("failed to register element %s",
+                kENCODER_ELEMENTS[j].element);
+          }
+          break;
+        }
+      }
+    }
   }
 
-  return TRUE;
+  return count > 0 ? TRUE : FALSE;
 }

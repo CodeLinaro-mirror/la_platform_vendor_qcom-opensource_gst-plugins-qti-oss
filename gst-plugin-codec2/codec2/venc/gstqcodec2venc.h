@@ -179,7 +179,7 @@ GType gst_qcodec2_venc_get_type (void);
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
-gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin);
+gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array);
 
 G_END_DECLS
 #endif /* __GST_QCODEC2_VENC_H__ */

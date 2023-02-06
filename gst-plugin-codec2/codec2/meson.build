@@ -18,6 +18,11 @@ xml2_dep = dependency('libxml-2.0', version : '>= 2.8')
 # compile codec2 wrapper as another lib
 subdir('wrapper')
 
+if get_option('av1-dec').enabled()
+  gstqcodec2_sources += ['vdec/gstqcodec2av1dec.c']
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_AV1_DEC']
+endif
+
 gstqcodec2 = library('gstqcodec2',
   gstqcodec2_sources,
   c_args : gst_plugin_codec2_args,
