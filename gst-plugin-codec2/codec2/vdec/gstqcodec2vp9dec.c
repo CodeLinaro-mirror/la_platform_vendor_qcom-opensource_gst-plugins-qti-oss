@@ -39,17 +39,17 @@
 #include <gst/gst.h>
 #include "gstqcodec2vp9dec.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gst_qticodec2vdec_debug);
-#define GST_CAT_DEFAULT gst_qticodec2vdec_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
-static gboolean gst_qcodec2_vp9_dec_handle_frame (Gstqticodec2vdec * decoder,
+static gboolean gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     GstVideoCodecFrame * frame);
-static gboolean gst_qcodec2_vp9_dec_open (Gstqticodec2vdec * decoder);
-static gboolean gst_qcodec2_vp9_dec_set_format (Gstqticodec2vdec * decoder,
+static gboolean gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder);
+static gboolean gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state);
 
 /* class initialization */
-G_DEFINE_TYPE (GstQcodec2VP9Dec, gst_qcodec2_vp9_dec, GST_TYPE_QTICODEC2VDEC);
+G_DEFINE_TYPE (GstQcodec2VP9Dec, gst_qcodec2_vp9_dec, GST_TYPE_QCODEC2_VDEC);
 
 static GstStaticPadTemplate gst_qcodec2_vp9_dec_sink_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
@@ -63,7 +63,7 @@ gst_qcodec2_vp9_dec_class_init (GstQcodec2VP9DecClass * klass)
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_qcodec2_vp9_dec_sink_template));
-  Gstqticodec2vdecClass *qcodec2vdec_class = GST_QTICODEC2VDEC_CLASS (klass);
+  GstQcodec2VdecClass *qcodec2vdec_class = GST_QCODEC2_VDEC_CLASS (klass);
 
   qcodec2vdec_class->handle_frame = gst_qcodec2_vp9_dec_handle_frame;
   qcodec2vdec_class->set_format = gst_qcodec2_vp9_dec_set_format;
@@ -80,9 +80,9 @@ gst_qcodec2_vp9_dec_init (GstQcodec2VP9Dec * self)
 }
 
 static gboolean
-gst_qcodec2_vp9_dec_open (Gstqticodec2vdec * decoder)
+gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder)
 {
-  Gstqticodec2vdec *base_dec = decoder;
+  GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2VP9Dec *self = GST_QCODEC2_VP9_DEC (decoder);
   /* start C2 component later since checking VP9 10bit format */
   base_dec->delay_start = TRUE;
@@ -92,10 +92,10 @@ gst_qcodec2_vp9_dec_open (Gstqticodec2vdec * decoder)
 }
 
 static gboolean
-gst_qcodec2_vp9_dec_set_format (Gstqticodec2vdec * decoder,
+gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state)
 {
-  Gstqticodec2vdec *base_dec = decoder;
+  GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2VP9Dec *dec = GST_QCODEC2_VP9_DEC (decoder);
   GstStructure *s = NULL;
   guint bit_depth_luma, bit_depth_chroma;
@@ -147,10 +147,10 @@ gst_qcodec2_vp9_dec_set_format (Gstqticodec2vdec * decoder,
 }
 
 static gboolean
-gst_qcodec2_vp9_dec_handle_frame (Gstqticodec2vdec * decoder,
+gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     GstVideoCodecFrame * frame)
 {
-  Gstqticodec2vdec *base_dec = decoder;
+  GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2VP9Dec *dec = GST_QCODEC2_VP9_DEC (decoder);
   gboolean ret = TRUE;
   GstMapInfo mapinfo = { 0, };
@@ -220,7 +220,7 @@ gst_qcodec2_vp9_dec_handle_frame (Gstqticodec2vdec * decoder,
   }
 
   if (base_dec->delay_start) {
-    if (!gst_qticodec2vdec_start_comp_and_config_pool (base_dec)) {
+    if (!gst_qcodec2_vdec_start_comp_and_config_pool (base_dec)) {
       GST_ERROR_OBJECT (dec, "failed to start c2 comp or config pool");
       ret = FALSE;
       goto done;

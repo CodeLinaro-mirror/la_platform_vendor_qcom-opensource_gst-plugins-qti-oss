@@ -36,7 +36,7 @@
 #define __GST_QCODEC2_VP9_DEC_H__
 
 #include <gst/gst.h>
-#include "gstqticodec2vdec.h"
+#include "gstqcodec2vdec.h"
 #define GST_USE_UNSTABLE_API
 #include <gst/codecparsers/gstvp9parser.h>
 
@@ -58,13 +58,13 @@ typedef struct _GstQcodec2VP9DecClass GstQcodec2VP9DecClass;
 
 struct _GstQcodec2VP9Dec
 {
-  Gstqticodec2vdec parent;
+  GstQcodec2Vdec parent;
   gboolean check_vp9_10bit;
 };
 
 struct _GstQcodec2VP9DecClass
 {
-  Gstqticodec2vdecClass parent_class;
+  GstQcodec2VdecClass parent_class;
 };
 
 GType gst_qcodec2_vp9_dec_get_type (void);

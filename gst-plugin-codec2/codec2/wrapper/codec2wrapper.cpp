@@ -78,8 +78,8 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <C2AllocatorGBM.h>
 #include <ReflectedParamUpdater.h>
 
-GST_DEBUG_CATEGORY(gst_qticodec2wrapper_debug);
-#define GST_CAT_DEFAULT gst_qticodec2wrapper_debug
+GST_DEBUG_CATEGORY(gst_qcodec2_wrapper_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_wrapper_debug
 
 using namespace QTI;
 
@@ -126,6 +126,8 @@ std::unique_ptr<C2Param> setRoiRegion(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -157,6 +159,8 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_BITRATE_SAVING_MODE, setBitrateSavingMode },
     { CONFIG_FUNCTION_KEY_INTERLACE_INFO, setInterlaceInfo },
     { CONFIG_FUNCTION_KEY_DEINTERLACE, setDeInterlace },
+    { CONFIG_FUNCTION_KEY_IPB_QP_RANGE, setIPBQPRanges },
+    { CONFIG_FUNCTION_KEY_IPB_QP_INIT, setIPBQPInit },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -689,6 +693,68 @@ std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
     return C2Param::Copy(header_mode);
 }
 
+std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> qp_ranges;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value min_i_qp, max_i_qp, min_p_qp, max_p_qp, min_b_qp, max_b_qp;
+
+    min_i_qp.set((int32_t)config->qp_ranges.min_i_qp);
+    max_i_qp.set((int32_t)config->qp_ranges.max_i_qp);
+    min_p_qp.set((int32_t)config->qp_ranges.min_p_qp);
+    max_p_qp.set((int32_t)config->qp_ranges.max_p_qp);
+    min_b_qp.set((int32_t)config->qp_ranges.min_b_qp);
+    max_b_qp.set((int32_t)config->qp_ranges.max_b_qp);
+
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-i-min", min_i_qp);
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-i-max", max_i_qp);
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-p-min", min_p_qp);
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-p-max", max_p_qp);
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-b-min", min_b_qp);
+    kvpairs.emplace("vendor.qti-ext-enc-qp-range.qp-b-max", max_b_qp);
+
+    qp_ranges = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return qp_ranges;
+}
+
+std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> qp_init;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value qp_i, qp_i_enable, qp_p, qp_p_enable, qp_b, qp_b_enable;
+
+    qp_i.set((int32_t)config->qp_init.quant_i_frames);
+    qp_i_enable.set((int32_t)config->qp_init.quant_i_frames_enable);
+    qp_p.set((int32_t)config->qp_init.quant_p_frames);
+    qp_p_enable.set((int32_t)config->qp_init.quant_p_frames_enable);
+    qp_b.set((int32_t)config->qp_init.quant_b_frames);
+    qp_b_enable.set((int32_t)config->qp_init.quant_b_frames_enable);
+
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-i", qp_i);
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-i-enable", qp_i_enable);
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-p", qp_p);
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-p-enable", qp_p_enable);
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-b", qp_b);
+    kvpairs.emplace("vendor.qti-ext-enc-initial-qp.qp-b-enable", qp_b_enable);
+
+    qp_init = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return qp_init;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CodecCallback API handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -925,8 +991,8 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
 void* c2componentStore_create()
 {
 
-    GST_DEBUG_CATEGORY_INIT(gst_qticodec2wrapper_debug,
-        "qticodec2wrapper", 0, "QTI GST codec2.0 wrapper");
+    GST_DEBUG_CATEGORY_INIT(gst_qcodec2_wrapper_debug,
+        "qcodec2wrapper", 0, "GST QTI codec2.0 wrapper");
 
     LOG_MESSAGE("Creating component store");
     void* lib = dlopen("libqcodec2_core.so", RTLD_NOW);

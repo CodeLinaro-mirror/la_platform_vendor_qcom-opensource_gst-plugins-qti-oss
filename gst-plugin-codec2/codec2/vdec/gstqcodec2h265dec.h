@@ -36,7 +36,7 @@
 #define __GST_QCODEC2_H265_DEC_H__
 
 #include <gst/gst.h>
-#include "gstqticodec2vdec.h"
+#include "gstqcodec2vdec.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_QCODEC2_H265_DEC \
@@ -56,12 +56,12 @@ typedef struct _GstQcodec2H265DecClass GstQcodec2H265DecClass;
 
 struct _GstQcodec2H265Dec
 {
-  Gstqticodec2vdec parent;
+  GstQcodec2Vdec parent;
 };
 
 struct _GstQcodec2H265DecClass
 {
-  Gstqticodec2vdecClass parent_class;
+  GstQcodec2VdecClass parent_class;
 };
 
 GType gst_qcodec2_h265_dec_get_type (void);

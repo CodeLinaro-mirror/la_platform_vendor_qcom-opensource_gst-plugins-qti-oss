@@ -579,13 +579,16 @@ qvdein_dmabuf_get_size (const DmaBufDesc * desc)
 guint64
 qvdein_dmabuf_get_modifier (const DmaBufDesc * desc)
 {
-  uint64_t modifier = DRM_FORMAT_MOD_LINEAR;
+  uint64_t modifier = DRM_FORMAT_MOD_INVALID;
 
-  if (desc && desc->bo) {
+  if (desc) {
 #ifdef USE_GBM
-    modifier = gbm_bo_get_modifier (desc->bo);
+    if (desc->bo)
+      modifier = gbm_bo_get_modifier (desc->bo);
 #else
-    /* NOT implemented for Linux dmabuf heaps. */
+    /* Using Linux dmabuf heaps, assume only support linear format on x86. */
+    if ((int)desc->fd >= 0)
+      modifier = DRM_FORMAT_MOD_LINEAR;
 #endif
   }
 

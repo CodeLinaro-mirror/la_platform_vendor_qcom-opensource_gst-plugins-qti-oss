@@ -36,7 +36,7 @@
 #define __GST_QCODEC2_MPEG2_DEC_H__
 
 #include <gst/gst.h>
-#include "gstqticodec2vdec.h"
+#include "gstqcodec2vdec.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_QCODEC2_MPEG2_DEC \
@@ -56,12 +56,12 @@ typedef struct _GstQcodec2MPEG2DecClass GstQcodec2MPEG2DecClass;
 
 struct _GstQcodec2MPEG2Dec
 {
-  Gstqticodec2vdec parent;
+  GstQcodec2Vdec parent;
 };
 
 struct _GstQcodec2MPEG2DecClass
 {
-  Gstqticodec2vdecClass parent_class;
+  GstQcodec2VdecClass parent_class;
 };
 
 GType gst_qcodec2_mpeg2_dec_get_type (void);

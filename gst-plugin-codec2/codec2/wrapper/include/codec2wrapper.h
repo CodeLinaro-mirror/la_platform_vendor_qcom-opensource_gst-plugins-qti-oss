@@ -134,6 +134,8 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD "intraframes_period"
 #define CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST "intra_video_frame_request"
 #define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
+#define CONFIG_FUNCTION_KEY_IPB_QP_RANGE "IPB_qp_range"
+#define CONFIG_FUNCTION_KEY_IPB_QP_INIT "IPB_qp_init"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -489,6 +491,24 @@ typedef struct {
         } profileAndLevel;
 
         gfloat framerate;
+
+        struct {
+            guint32 min_i_qp;
+            guint32 max_i_qp;
+            guint32 min_p_qp;
+            guint32 max_p_qp;
+            guint32 min_b_qp;
+            guint32 max_b_qp;
+        } qp_ranges;
+
+        struct {
+            gboolean quant_i_frames_enable;
+            guint32 quant_i_frames;
+            gboolean quant_p_frames_enable;
+            guint32 quant_p_frames;
+            gboolean quant_b_frames_enable;
+            guint32 quant_b_frames;
+        } qp_init;
     };
 } ConfigParams;
 

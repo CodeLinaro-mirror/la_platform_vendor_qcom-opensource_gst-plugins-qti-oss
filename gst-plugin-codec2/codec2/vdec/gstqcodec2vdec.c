@@ -72,7 +72,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "gstqticodec2vdec.h"
+#include "gstqcodec2vdec.h"
 #include "gstqcodec2bufferpool.h"
 #include <dlfcn.h>
 #include <libdrm/drm_fourcc.h>
@@ -81,13 +81,13 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2vp9dec.h"
 #include "gstqcodec2mpeg2dec.h"
 
-GST_DEBUG_CATEGORY (gst_qticodec2vdec_debug);
-#define GST_CAT_DEFAULT gst_qticodec2vdec_debug
+GST_DEBUG_CATEGORY (gst_qcodec2_vdec_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
 /* class initialization */
-G_DEFINE_TYPE (Gstqticodec2vdec, gst_qticodec2vdec, GST_TYPE_VIDEO_DECODER);
+G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 
-#define parent_class gst_qticodec2vdec_parent_class
+#define parent_class gst_qcodec2_vdec_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
 #define QCODEC2_MIN_OUTBUFFERS 6
@@ -98,7 +98,7 @@ G_DEFINE_TYPE (Gstqticodec2vdec, gst_qticodec2vdec, GST_TYPE_VIDEO_DECODER);
 #define DEFAULT_LOW_LATENCY_MODE             (FALSE)
 #define DEFAULT_SECURE_MODE                  (FALSE)
 
-/* Function will be named qticodec2vdec_qdata_quark() */
+/* Function will be named gst_fbuf_modifier_qdata_quark() */
 static G_DEFINE_QUARK (FBufModifierQuark, gst_fbuf_modifier_qdata);
 
 
@@ -115,52 +115,52 @@ enum
 };
 
 /* GstVideoDecoder base class method */
-static gboolean gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
+static gboolean gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     GstVideoCodecState * state);
-static GstFlowReturn gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
+static GstFlowReturn gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
     GstVideoCodecFrame * frame);
-static GstFlowReturn gst_qticodec2vdec_finish (GstVideoDecoder * decoder);
-static GstFlowReturn gst_qticodec2vdec_flush (GstVideoDecoder * decoder);
-static gboolean gst_qticodec2vdec_open (GstVideoDecoder * decoder);
-static gboolean gst_qticodec2vdec_close (GstVideoDecoder * decoder);
-static gboolean gst_qticodec2vdec_stop (GstVideoDecoder * decoder);
-static gboolean gst_qticodec2vdec_decide_allocation (GstVideoDecoder * decoder,
+static GstFlowReturn gst_qcodec2_vdec_finish (GstVideoDecoder * decoder);
+static GstFlowReturn gst_qcodec2_vdec_flush (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_open (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_close (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_stop (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder,
     GstQuery * query);
-static gboolean gst_qticodec2vdec_src_event (GstVideoDecoder * decoder,
+static gboolean gst_qcodec2_vdec_src_event (GstVideoDecoder * decoder,
     GstEvent * event);
-static void gst_qticodec2vdec_set_property (GObject * object, guint prop_id,
+static void gst_qcodec2_vdec_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
-static void gst_qticodec2vdec_get_property (GObject * object, guint prop_id,
+static void gst_qcodec2_vdec_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
-static void gst_qticodec2vdec_finalize (GObject * object);
+static void gst_qcodec2_vdec_finalize (GObject * object);
 
-static gboolean gst_qticodec2vdec_create_component (GstVideoDecoder * decoder);
-static gboolean gst_qticodec2vdec_destroy_component (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder);
+static gboolean gst_qcodec2_vdec_destroy_component (GstVideoDecoder * decoder);
 static void handle_video_event (const void *handle, EVENT_TYPE type,
     void *data);
 
-static GstFlowReturn gst_qticodec2vdec_decode (GstVideoDecoder * decoder,
+static GstFlowReturn gst_qcodec2_vdec_decode (GstVideoDecoder * decoder,
     GstVideoCodecFrame * frame);
-static GstFlowReturn gst_qticodec2vdec_setup_output (GstVideoDecoder * decoder);
-static GstBuffer *gst_qticodec2vdec_wrap_output_buffer (GstVideoDecoder *
+static GstFlowReturn gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder);
+static GstBuffer *gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder *
     decoder, BufferDescriptor * buffer);
-static gboolean gst_qticodec2vdec_caps_has_feature (const GstCaps * caps,
+static gboolean gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps,
     const gchar * partten);
 
 /* pad templates */
-static GstStaticPadTemplate gst_qtivdec_src_template =
+static GstStaticPadTemplate gst_vdec_src_template =
     GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (QTICODEC2VDEC_RAW_CAPS_WITH_FEATURES
+    GST_STATIC_CAPS (QCODEC2_VDEC_RAW_CAPS_WITH_FEATURES
         (GST_CAPS_FEATURE_MEMORY_DMABUF, "{ NV12 }")
-        ";" QTICODEC2VDEC_RAW_CAPS ("{ NV12 }")
-        ";" QTICODEC2VDEC_RAW_CAPS_WITH_FEATURES
+        ";" QCODEC2_VDEC_RAW_CAPS ("{ NV12 }")
+        ";" QCODEC2_VDEC_RAW_CAPS_WITH_FEATURES
         (GST_CAPS_FEATURE_MEMORY_DMABUF, "{ NV12_10LE32 }")
-        ";" QTICODEC2VDEC_RAW_CAPS ("{ NV12_10LE32 }")
-        ";" QTICODEC2VDEC_RAW_CAPS_WITH_FEATURES
+        ";" QCODEC2_VDEC_RAW_CAPS ("{ NV12_10LE32 }")
+        ";" QCODEC2_VDEC_RAW_CAPS_WITH_FEATURES
         (GST_CAPS_FEATURE_MEMORY_DMABUF, "{ P010_10LE }")
-        ";" QTICODEC2VDEC_RAW_CAPS ("{ P010_10LE }")));
+        ";" QCODEC2_VDEC_RAW_CAPS ("{ P010_10LE }")));
 
 static gboolean
 _unfixed_caps_has_compression (const GstCaps * caps, const gchar * compression)
@@ -288,7 +288,7 @@ static gchar *
 get_c2_comp_name (GstVideoDecoder * decoder, GstStructure * s,
     gboolean low_latency)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   gchar *str = NULL;
   gchar *concat_str = NULL;
   gchar *str_low_latency = g_strdup (".low_latency");
@@ -346,10 +346,10 @@ get_c2_comp_name (GstVideoDecoder * decoder, GstStructure * s,
 }
 
 guint32
-gst_to_c2_pixelformat (Gstqticodec2vdec * decoder, GstVideoFormat format)
+gst_to_c2_pixelformat (GstQcodec2Vdec * decoder, GstVideoFormat format)
 {
   guint32 result = 0;
-  Gstqticodec2vdec *dec = decoder;
+  GstQcodec2Vdec *dec = decoder;
 
   switch (format) {
     case GST_VIDEO_FORMAT_NV12:
@@ -379,10 +379,10 @@ gst_to_c2_pixelformat (Gstqticodec2vdec * decoder, GstVideoFormat format)
 }
 
 static gboolean
-gst_qticodec2vdec_create_component (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
 {
   gboolean ret = FALSE;
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "create component");
 
@@ -419,10 +419,10 @@ gst_qticodec2vdec_create_component (GstVideoDecoder * decoder)
 }
 
 gboolean
-gst_qticodec2vdec_start_comp_and_config_pool (Gstqticodec2vdec * decoder)
+gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
 {
   gboolean ret = TRUE;
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "start component and config pool");
 
@@ -462,10 +462,10 @@ gst_qticodec2vdec_start_comp_and_config_pool (Gstqticodec2vdec * decoder)
 }
 
 static gboolean
-gst_qticodec2vdec_destroy_component (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_destroy_component (GstVideoDecoder * decoder)
 {
   gboolean ret = TRUE;
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "destroy_component");
 
@@ -478,9 +478,9 @@ gst_qticodec2vdec_destroy_component (GstVideoDecoder * decoder)
 }
 
 static GstFlowReturn
-gst_qticodec2vdec_setup_output (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstFlowReturn ret = GST_FLOW_OK;
   GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
 
@@ -550,7 +550,7 @@ gst_qticodec2vdec_setup_output (GstVideoDecoder * decoder)
   gst_caps_set_value (intersection, "height", &g_height);
 
   /* Check if fixed caps supports DMA buffer */
-  if (gst_qticodec2vdec_caps_has_feature (intersection,
+  if (gst_qcodec2_vdec_caps_has_feature (intersection,
           GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     dec->downstream_supports_dma = TRUE;
     GST_DEBUG_OBJECT (dec, "Downstream supports DMA buffer");
@@ -580,9 +580,9 @@ error_setup_output:
 
 /* Dispatch any pending remaining data at EOS. Class can refuse to decode new data after. */
 static GstFlowReturn
-gst_qticodec2vdec_finish (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   gint64 timeout;
   BufferDescriptor inBuf;
 
@@ -625,9 +625,9 @@ gst_qticodec2vdec_finish (GstVideoDecoder * decoder)
 }
 
 static GstFlowReturn
-gst_qticodec2vdec_flush (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_flush (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   gboolean ret = FALSE;
 
   GST_DEBUG_OBJECT (dec, "flush");
@@ -642,11 +642,11 @@ gst_qticodec2vdec_flush (GstVideoDecoder * decoder)
 /* Called to inform the caps describing input video data that decoder is about to receive.
   Might be called more than once, if changing input parameters require reconfiguration.*/
 static gboolean
-gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
+gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     GstVideoCodecState * state)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  Gstqticodec2vdecClass *dec_class = GST_QTICODEC2VDEC_GET_CLASS (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+  GstQcodec2VdecClass *dec_class = GST_QCODEC2_VDEC_GET_CLASS (decoder);
   GstStructure *structure;
   const gchar *mode;
   gint retval = 0;
@@ -710,7 +710,7 @@ gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
 
   dec->input_state = gst_video_codec_state_ref (state);
 
-  if (!gst_qticodec2vdec_create_component (decoder)) {
+  if (!gst_qcodec2_vdec_create_component (decoder)) {
     goto error_set_format;
   }
 
@@ -736,7 +736,7 @@ gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
   }
 
   /* Negotiate with downstream and setup output */
-  if (GST_FLOW_OK != gst_qticodec2vdec_setup_output (decoder)) {
+  if (GST_FLOW_OK != gst_qcodec2_vdec_setup_output (decoder)) {
     g_ptr_array_free (config, TRUE);
     goto error_set_format;
   } else if (dec->use_external_buf) {
@@ -771,7 +771,7 @@ gst_qticodec2vdec_set_format (GstVideoDecoder * decoder,
   }
 
   if (!dec->delay_start) {
-    ret = gst_qticodec2vdec_start_comp_and_config_pool (dec);
+    ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
     if (ret == FALSE) {
       GST_ERROR_OBJECT (dec, "failed to start component");
       goto error_set_format;
@@ -799,10 +799,10 @@ error_set_format:
 
 /* Called when the element changes to GST_STATE_READY */
 static gboolean
-gst_qticodec2vdec_open (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  Gstqticodec2vdecClass *dec_class = GST_QTICODEC2VDEC_GET_CLASS (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+  GstQcodec2VdecClass *dec_class = GST_QCODEC2_VDEC_GET_CLASS (decoder);
   gboolean ret = TRUE;
 
   dec->input_setup = FALSE;
@@ -843,9 +843,9 @@ gst_qticodec2vdec_open (GstVideoDecoder * decoder)
 }
 
 static gboolean
-gst_qticodec2vdec_stop (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "stop");
 
@@ -859,9 +859,9 @@ gst_qticodec2vdec_stop (GstVideoDecoder * decoder)
 
 /* Called when the element changes to GST_STATE_NULL */
 static gboolean
-gst_qticodec2vdec_close (GstVideoDecoder * decoder)
+gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "close");
 
@@ -871,7 +871,7 @@ gst_qticodec2vdec_close (GstVideoDecoder * decoder)
     gst_object_unref (dec->out_port_pool);
   }
 
-  if (!gst_qticodec2vdec_destroy_component (decoder)) {
+  if (!gst_qcodec2_vdec_destroy_component (decoder)) {
     GST_ERROR_OBJECT (dec, "Failed to delete component");
   }
 
@@ -905,7 +905,7 @@ gst_qticodec2vdec_close (GstVideoDecoder * decoder)
 static void
 insert_external_buf_to_hashtable (GstVideoDecoder *decoder, gint fd, GstBuffer *buffer)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GHashTable *buf_table = dec->buffer_table;
   gint key = fd;
   GstBuffer *gst_buf = NULL;
@@ -932,7 +932,7 @@ insert_external_buf_to_hashtable (GstVideoDecoder *decoder, gint fd, GstBuffer *
 static void
 acquire_external_buf_callback (GstVideoDecoder * decoder)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstFlowReturn ret;
   GstBuffer *buffer = NULL;
   GstMemory *memory = NULL;
@@ -1000,11 +1000,11 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
 
 /* Called whenever a input frame from the upstream is sent to decoder */
 static GstFlowReturn
-gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
+gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
     GstVideoCodecFrame * frame)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
-  Gstqticodec2vdecClass *dec_class = GST_QTICODEC2VDEC_GET_CLASS (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+  GstQcodec2VdecClass *dec_class = GST_QCODEC2_VDEC_GET_CLASS (decoder);
   GstFlowReturn ret = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (dec, "handle_frame");
@@ -1029,7 +1029,7 @@ gst_qticodec2vdec_handle_frame (GstVideoDecoder * decoder,
   }
 
   /* Decode frame */
-  ret = gst_qticodec2vdec_decode (decoder, frame);
+  ret = gst_qcodec2_vdec_decode (decoder, frame);
 
 done:
   gst_video_codec_frame_unref (frame);
@@ -1038,7 +1038,7 @@ done:
 }
 
 static gboolean
-gst_qticodec2vdec_caps_has_feature (const GstCaps * caps, const gchar * partten)
+gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps, const gchar * partten)
 {
   guint count = gst_caps_get_size (caps);
   gboolean ret = FALSE;
@@ -1059,7 +1059,7 @@ gst_qticodec2vdec_caps_has_feature (const GstCaps * caps, const gchar * partten)
 }
 
 static gboolean
-gst_qticodec2vdec_decide_allocation (GstVideoDecoder * decoder,
+gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder,
     GstQuery * query)
 {
   GstCaps *outcaps;
@@ -1072,7 +1072,7 @@ gst_qticodec2vdec_decide_allocation (GstVideoDecoder * decoder,
   GstBufferPoolInitParam param;
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
 
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "decide allocation");
 
@@ -1133,7 +1133,7 @@ gst_qticodec2vdec_decide_allocation (GstVideoDecoder * decoder,
         "use_external_buf flag to false");
   }
 
-  if (gst_qticodec2vdec_caps_has_feature (outcaps,
+  if (gst_qcodec2_vdec_caps_has_feature (outcaps,
           GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     use_dmabuf = TRUE;
     GST_INFO_OBJECT (dec, "downstream support DMA buffer");
@@ -1218,12 +1218,12 @@ cleanup:
 }
 
 static GstBuffer *
-gst_qticodec2vdec_wrap_output_buffer (GstVideoDecoder * decoder,
+gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
     BufferDescriptor * decode_buf)
 {
   GstBuffer *out_buf = NULL;
   GstVideoCodecState *state;
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   guint output_size = decode_buf->size;
   GstBufferPoolAcquireParamsExt param_ext;
   guint64 *p_modifier = NULL;
@@ -1304,7 +1304,7 @@ fail:
 static GstFlowReturn
 push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstBuffer *outbuf;
   GstVideoCodecFrame *frame;
   GstFlowReturn ret = GST_FLOW_OK;
@@ -1342,7 +1342,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     goto out;
   }
 
-  outbuf = gst_qticodec2vdec_wrap_output_buffer (decoder, decode_buf);
+  outbuf = gst_qcodec2_vdec_wrap_output_buffer (decoder, decode_buf);
   if (outbuf) {
     GST_BUFFER_PTS (outbuf) =
         gst_util_uint64_scale (decode_buf->timestamp, GST_SECOND,
@@ -1387,7 +1387,7 @@ static void
 handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) handle;
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstFlowReturn ret = GST_FLOW_OK;
 
   GST_LOG_OBJECT (dec, "handle_video_event");
@@ -1589,9 +1589,9 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
 /* Push frame to Codec2 */
 static GstFlowReturn
-gst_qticodec2vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
+gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstMapInfo mapinfo = { 0, };
   GstBuffer *buf = NULL;
   GstMemory *mem = NULL;
@@ -1651,12 +1651,12 @@ out:
 }
 
 static void
-gst_qticodec2vdec_set_property (GObject * object, guint prop_id,
+gst_qcodec2_vdec_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (object);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (object);
 
-  GST_DEBUG_OBJECT (dec, "qticodec2vdec_set_property");
+  GST_DEBUG_OBJECT (dec, "qcodec2_vdec_set_property");
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -1687,12 +1687,12 @@ gst_qticodec2vdec_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_qticodec2vdec_get_property (GObject * object, guint prop_id, GValue * value,
+gst_qcodec2_vdec_get_property (GObject * object, guint prop_id, GValue * value,
     GParamSpec * pspec)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (object);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (object);
 
-  GST_DEBUG_OBJECT (dec, "qticodec2vdec_get_property");
+  GST_DEBUG_OBJECT (dec, "qcodec2_vdec_get_property");
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -1723,9 +1723,9 @@ gst_qticodec2vdec_get_property (GObject * object, guint prop_id, GValue * value,
 }
 
 static gboolean
-gst_qticodec2vdec_src_event (GstVideoDecoder * decoder, GstEvent * event)
+gst_qcodec2_vdec_src_event (GstVideoDecoder * decoder, GstEvent * event)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (decoder);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   gboolean ret = TRUE;
   switch (GST_EVENT_TYPE (event)) {
@@ -1759,9 +1759,9 @@ gst_qticodec2vdec_src_event (GstVideoDecoder * decoder, GstEvent * event)
 
 /* Called during object destruction process */
 static void
-gst_qticodec2vdec_finalize (GObject * object)
+gst_qcodec2_vdec_finalize (GObject * object)
 {
-  Gstqticodec2vdec *dec = GST_QTICODEC2VDEC (object);
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (object);
 
   GST_DEBUG_OBJECT (dec, "finalize");
 
@@ -1780,21 +1780,20 @@ gst_qticodec2vdec_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-/* Initialize the qticodec2vdec's class */
 static void
-gst_qticodec2vdec_class_init (Gstqticodec2vdecClass * klass)
+gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 {
   GstVideoDecoderClass *video_decoder_class = GST_VIDEO_DECODER_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
 
   gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_qtivdec_src_template));
+      gst_static_pad_template_get (&gst_vdec_src_template));
 
   /* Set GObject class property */
-  gobject_class->set_property = gst_qticodec2vdec_set_property;
-  gobject_class->get_property = gst_qticodec2vdec_get_property;
-  gobject_class->finalize = gst_qticodec2vdec_finalize;
+  gobject_class->set_property = gst_qcodec2_vdec_set_property;
+  gobject_class->get_property = gst_qcodec2_vdec_get_property;
+  gobject_class->finalize = gst_qcodec2_vdec_finalize;
 
   /* Add property to this class */
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SILENT,
@@ -1849,18 +1848,18 @@ gst_qticodec2vdec_class_init (Gstqticodec2vdecClass * klass)
           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   video_decoder_class->set_format =
-      GST_DEBUG_FUNCPTR (gst_qticodec2vdec_set_format);
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_set_format);
   video_decoder_class->handle_frame =
-      GST_DEBUG_FUNCPTR (gst_qticodec2vdec_handle_frame);
-  video_decoder_class->finish = GST_DEBUG_FUNCPTR (gst_qticodec2vdec_finish);
-  video_decoder_class->open = GST_DEBUG_FUNCPTR (gst_qticodec2vdec_open);
-  video_decoder_class->close = GST_DEBUG_FUNCPTR (gst_qticodec2vdec_close);
-  video_decoder_class->stop = GST_DEBUG_FUNCPTR (gst_qticodec2vdec_stop);
-  video_decoder_class->flush = GST_DEBUG_FUNCPTR (gst_qticodec2vdec_flush);
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_handle_frame);
+  video_decoder_class->finish = GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_finish);
+  video_decoder_class->open = GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_open);
+  video_decoder_class->close = GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_close);
+  video_decoder_class->stop = GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_stop);
+  video_decoder_class->flush = GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_flush);
   video_decoder_class->decide_allocation =
-      GST_DEBUG_FUNCPTR (gst_qticodec2vdec_decide_allocation);
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_decide_allocation);
   video_decoder_class->src_event =
-      GST_DEBUG_FUNCPTR (gst_qticodec2vdec_src_event);
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_src_event);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "Codec2 video decoder", "Decoder/Video",
@@ -1871,7 +1870,7 @@ gst_qticodec2vdec_class_init (Gstqticodec2vdecClass * klass)
  * Initialize only those variables that do not change during state change.
  * For other variables, place initialization into function open.*/
 static void
-gst_qticodec2vdec_init (Gstqticodec2vdec * dec)
+gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) dec;
 
@@ -1910,11 +1909,11 @@ gst_qticodec2vdec_init (Gstqticodec2vdec * dec)
 }
 
 gboolean
-gst_qcodec2vdec_plugin_init (GstPlugin * plugin)
+gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
 {
   /* debug category for filtering log messages */
-  GST_DEBUG_CATEGORY_INIT (gst_qticodec2vdec_debug, "qticodec2vdec",
-      0, "QTI GST codec2.0 video decoder");
+  GST_DEBUG_CATEGORY_INIT (gst_qcodec2_vdec_debug, "qcodec2vdec",
+      0, "GST QTI codec2.0 video decoder");
 
   static gsize res = FALSE;
   static const gchar *tags[] = { NULL };

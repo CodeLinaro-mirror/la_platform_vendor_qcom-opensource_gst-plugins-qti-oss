@@ -103,7 +103,7 @@ static void
 gst_qcodec2_buffer_pool_init (GstQcodec2BufferPool * pool)
 {
   GST_DEBUG_CATEGORY_INIT (qcodec2bufferpool_debug,
-      "qcodec2pool", 0, "QTI GST codec2.0 decoder buffer pool");
+      "qcodec2pool", 0, "GST QTI codec2.0 buffer pool");
 }
 
 static const gchar **

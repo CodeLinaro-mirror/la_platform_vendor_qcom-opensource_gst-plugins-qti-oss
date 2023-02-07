@@ -69,8 +69,8 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "C2ComponentInterfaceAdapter.h"
 #include <gst/gst.h>
 
-GST_DEBUG_CATEGORY_EXTERN(gst_qticodec2wrapper_debug);
-#define GST_CAT_DEFAULT gst_qticodec2wrapper_debug
+GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
+#define GST_CAT_DEFAULT gst_qcodec2_wrapper_debug
 
 namespace QTI {
 
