@@ -35,9 +35,13 @@
 #include <C2PlatformSupport.h>
 #include <gst/gst.h>
 #include <C2AllocatorGBM.h>
-#include <C2AllocatorIon.h>
 #include <C2BlockInternal.h>
+#ifdef USE_DMAHEAP
+#include <C2DmaLinearAllocator.h>
+#else
+#include <C2AllocatorIon.h>
 #include <C2HandleIonInternal.h>
+#endif
 
 GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_wrapper_debug
@@ -77,7 +81,7 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
     mDataCopyFunc = nullptr;
     mDataCopyFuncParam = nullptr;
     mC2AllocatorGBM = nullptr;
-    mC2AllocatorIon = nullptr;
+    mC2LinearAllocator = nullptr;
 }
 
 C2ComponentAdapter::~C2ComponentAdapter()
@@ -95,7 +99,7 @@ C2ComponentAdapter::~C2ComponentAdapter()
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
     mC2AllocatorGBM = nullptr;
-    mC2AllocatorIon = nullptr;
+    mC2LinearAllocator = nullptr;
 }
 
 c2_status_t C2ComponentAdapter::setListenercallback(std::unique_ptr<EventCallback> callback,
@@ -773,7 +777,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             LOG_ERROR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else {
-            mC2AllocatorIon = std::dynamic_pointer_cast<android::C2AllocatorIon>(allocator);
+            mC2LinearAllocator = allocator;
         }
     } else if (poolType == C2BlockPool::BASIC_GRAPHIC) {
         ret = android::CreateCodec2BlockPool(C2AllocatorStore::DEFAULT_GRAPHIC, mComp, &mGraphicPool);
@@ -1061,23 +1065,29 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     std::shared_ptr<C2LinearBlock> linearBlock = nullptr;
     std::shared_ptr<C2LinearAllocation> allocation = nullptr;
     bool need_release = false;
+    C2Handle *linearHandle = nullptr;
 
     uint32_t alignSize = ALIGN (size, 4096);
     /* dup the external buffer fd to decouple decoder and upstream element, and the
      * input external buffer fd should be closed by upstream element after use, dup_fd
      * will be closed in the destructor of C2AllocationIon::Impl after passing to it */
     int dup_fd = dup(fd);
-    android::C2HandleIon *handleIon = new android::C2HandleIon (dup_fd, alignSize);
 
-    if (nullptr == mC2AllocatorIon || nullptr == handleIon) {
-        LOG_ERROR ("Invalid mC2AllocatorIon or handleIon");
+#ifdef USE_DMAHEAP
+    linearHandle = new android::C2DmaHandle (dup_fd, alignSize);
+#else
+    linearHandle = new android::C2HandleIon (dup_fd, alignSize);
+#endif
+
+    if (nullptr == mC2LinearAllocator || nullptr == linearHandle) {
+        LOG_ERROR ("Invalid mC2LinearAllocator or linearHandle");
         need_release = true;
         close(dup_fd);
         result = C2_NO_MEMORY;
         goto do_exit;
     }
-    /* handleIon will be released in priorLinearAllocation if return C2_OK */
-    result = mC2AllocatorIon->priorLinearAllocation (handleIon, &allocation);
+    /* linearHandle will be released in priorLinearAllocation if return C2_OK */
+    result = mC2LinearAllocator->priorLinearAllocation (linearHandle, &allocation);
     if (result != C2_OK) {
         LOG_ERROR ("Failed(%d) to call priorLinearAllocation", result);
         need_release = true;
@@ -1097,9 +1107,9 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     }
 
 do_exit:
-    if (need_release && handleIon) {
-        /* need to delete handleIon here if priorLinearAllocation failed */
-        delete handleIon;
+    if (need_release && linearHandle) {
+        /* need to delete linearHandle here if priorLinearAllocation failed */
+        delete linearHandle;
     }
 
     return result;

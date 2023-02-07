@@ -152,7 +152,7 @@ private:
     std::map<uint64_t, std::shared_ptr<C2Buffer> > mOutPendingBuffer;
     std::set<TrackBuffer*> mTrackBuffers;
     std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
-    std::shared_ptr<android::C2AllocatorIon> mC2AllocatorIon;
+    std::shared_ptr<C2Allocator> mC2LinearAllocator;
 
     uint32_t mNumPendingWorks;
     std::mutex mLock;
