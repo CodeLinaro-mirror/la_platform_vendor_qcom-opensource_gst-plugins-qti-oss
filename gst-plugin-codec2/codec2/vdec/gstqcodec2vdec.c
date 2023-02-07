@@ -451,7 +451,8 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
 
   /* Set to use external pool */
   if (dec->use_external_buf) {
-    ret = c2component_setUseExternalBuffer (dec->comp, BUFFER_POOL_BASIC_GRAPHIC, TRUE);
+    ret = c2component_setUseExternalBuffer (dec->comp,
+        BUFFER_POOL_BASIC_GRAPHIC, TRUE);
     if (ret == FALSE) {
       GST_ERROR_OBJECT (dec, "Failed to set component use external buffer");
       return FALSE;
@@ -515,7 +516,8 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
   }
 
   /* Secure mode only support UBWC output */
-  dec->is_ubwc = _unfixed_caps_has_compression (intersection, "ubwc") | dec->secure;
+  dec->is_ubwc =
+      _unfixed_caps_has_compression (intersection, "ubwc") | dec->secure;
 
   /* Fixate color format */
   intersection = gst_caps_truncate (intersection);
@@ -903,7 +905,8 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
 }
 
 static void
-insert_external_buf_to_hashtable (GstVideoDecoder *decoder, gint fd, GstBuffer *buffer)
+insert_external_buf_to_hashtable (GstVideoDecoder * decoder, gint fd,
+    GstBuffer * buffer)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GHashTable *buf_table = dec->buffer_table;
@@ -911,7 +914,7 @@ insert_external_buf_to_hashtable (GstVideoDecoder *decoder, gint fd, GstBuffer *
   GstBuffer *gst_buf = NULL;
 
   if (!buf_table) {
-    GST_ERROR_OBJECT(dec, "Buffer hash table is NULL");
+    GST_ERROR_OBJECT (dec, "Buffer hash table is NULL");
     return;
   }
   gst_buf = (GstBuffer *) g_hash_table_lookup (buf_table, &key);
@@ -949,7 +952,8 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
     if (dec->acquired_external_buf < dec->max_external_buf_cnt) {
       GstBufferPoolAcquireParams params = { 0 };
       params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-      ret = gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, &params);
+      ret =
+          gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, &params);
       if (buffer) {
         memory = gst_buffer_peek_memory (buffer, 0);
         if (memory) {
@@ -959,11 +963,12 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
               buffer, dec->out_port_pool);
 
           /* Attach the fd to c2component */
-          if (!c2component_attachExternalFd (dec->comp, BUFFER_POOL_BASIC_GRAPHIC, fd)) {
+          if (!c2component_attachExternalFd (dec->comp,
+                  BUFFER_POOL_BASIC_GRAPHIC, fd)) {
             GST_ERROR_OBJECT (dec, "Failed to attach fd to Codec2");
           }
           /* Insert the corresponding gstbuffer to hashtable */
-          insert_external_buf_to_hashtable(decoder, fd, buffer);
+          insert_external_buf_to_hashtable (decoder, fd, buffer);
 
           acquired = TRUE;
           dec->acquired_external_buf++;
@@ -987,7 +992,8 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
               timeout)) {
         if (!dec->eos_reached) {
           dec->max_external_buf_cnt++;
-          GST_WARNING_OBJECT (dec, "Timed out on wait for external buf! Updated "
+          GST_WARNING_OBJECT (dec,
+              "Timed out on wait for external buf! Updated "
               "max_external_buf_cnt to %u", dec->max_external_buf_cnt);
         }
         g_mutex_unlock (&dec->external_buf_lock);
@@ -1059,8 +1065,7 @@ gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps, const gchar * partten)
 }
 
 static gboolean
-gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder,
-    GstQuery * query)
+gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
 {
   GstCaps *outcaps;
   GstStructure *config;
@@ -1402,7 +1407,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
       if (!(out_buf->flag & FLAG_TYPE_END_OF_STREAM)) {
         if (!dec->use_external_buf && (!dec->output_setup ||
-            dec->width != out_buf->width || dec->height != out_buf->height)) {
+                dec->width != out_buf->width ||
+                dec->height != out_buf->height)) {
           if (dec->output_setup) {
             GST_DEBUG_OBJECT (dec,
                 "resolution change, width height:%d %d -> %u %u", dec->width,
@@ -1528,7 +1534,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     case EVENT_ACQUIRE_EXT_BUF:{
-      BufferResolution *resolution = (BufferResolution*) data;
+      BufferResolution *resolution = (BufferResolution *) data;
       GstVideoCodecState *output_state = NULL;
 
       if (dec->width != resolution->width || dec->height != resolution->height) {
@@ -1540,15 +1546,14 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (dec->buffer_table) {
           g_hash_table_destroy (dec->buffer_table);
           dec->buffer_table = NULL;
-          GST_DEBUG_OBJECT(dec, "Destroy outdated buffer hash table");
+          GST_DEBUG_OBJECT (dec, "Destroy outdated buffer hash table");
         }
 
         dec->width = resolution->width;
         dec->height = resolution->height;
         output_state =
             gst_video_decoder_set_output_state (decoder,
-            dec->output_format, dec->width, dec->height,
-            dec->input_state);
+            dec->output_format, dec->width, dec->height, dec->input_state);
         if (!output_state) {
           GST_ERROR_OBJECT (dec, "Failed to set output state");
           break;
@@ -1577,7 +1582,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
       }
 
-      acquire_external_buf_callback(decoder);
+      acquire_external_buf_callback (decoder);
       break;
     }
     default:{
@@ -1612,7 +1617,7 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
     inBuf.data = NULL;
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
     GST_DEBUG_OBJECT (dec, "Input dma buffer with fd=%d, size=%d",
-                      inBuf.fd, inBuf.size);
+        inBuf.fd, inBuf.size);
   } else {
     gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
     inBuf.fd = -1;

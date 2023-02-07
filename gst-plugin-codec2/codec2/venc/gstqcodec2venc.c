@@ -447,7 +447,7 @@ make_framerate_param (gfloat framerate)
 {
   ConfigParams param;
 
-  memset(&param, 0, sizeof(ConfigParams));
+  memset (&param, 0, sizeof (ConfigParams));
 
   param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
   param.framerate = framerate;
@@ -460,10 +460,10 @@ make_intraframes_period_param (guint32 interval, gfloat framerate)
 {
   ConfigParams param;
 
-  memset(&param, 0, sizeof(ConfigParams));
+  memset (&param, 0, sizeof (ConfigParams));
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD;
-  param.val.i64 = (gint64)(interval + 1) * 1e6 / framerate;
+  param.val.i64 = (gint64) (interval + 1) * 1e6 / framerate;
 
   return param;
 }
@@ -473,7 +473,7 @@ make_force_idr_param (gboolean force_idr)
 {
   ConfigParams param;
 
-  memset(&param, 0, sizeof(ConfigParams));
+  memset (&param, 0, sizeof (ConfigParams));
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST;
   param.force_idr = force_idr;
@@ -486,7 +486,7 @@ make_header_mode_param (gboolean header_mode)
 {
   ConfigParams param;
 
-  memset(&param, 0, sizeof(ConfigParams));
+  memset (&param, 0, sizeof (ConfigParams));
 
   param.config_name = CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE;
   param.inline_sps_pps_headers = header_mode;
@@ -514,7 +514,8 @@ make_qp_ranges_param (guint32 min_i_qp, guint32 max_i_qp, guint32 min_p_qp,
 }
 
 static ConfigParams
-make_qp_init_param (guint32 quant_i_frames, guint32 quant_p_frames, guint32 quant_b_frames)
+make_qp_init_param (guint32 quant_i_frames, guint32 quant_p_frames,
+    guint32 quant_b_frames)
 {
   ConfigParams param;
 
@@ -1253,8 +1254,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     goto error_output;
   }
 
-  if (enc->comp_name && strstr(enc->comp_name, "heic")) {
-      enc->is_heic = TRUE;
+  if (enc->comp_name && strstr (enc->comp_name, "heic")) {
+    enc->is_heic = TRUE;
   }
 
   if (!gst_video_encoder_negotiate (encoder)) {
@@ -1343,24 +1344,26 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->interval_intraframes != DEFAULT_INTERVAL_INTRAFRAMES) {
     gfloat fps = COMMON_FRAMERATE;
     if (0 != enc->input_info.fps_n && 0 != enc->input_info.fps_d) {
-      fps = (float)enc->input_info.fps_n / enc->input_info.fps_d;
+      fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
     }
     framerate = make_framerate_param (fps);
     g_ptr_array_add (config, &framerate);
 
-    intraframes_period = make_intraframes_period_param (enc->interval_intraframes, fps);
+    intraframes_period =
+        make_intraframes_period_param (enc->interval_intraframes, fps);
     g_ptr_array_add (config, &intraframes_period);
-    GST_DEBUG_OBJECT (enc, "set interval intraframes: %u, framerate: %f, intraframes period: %"
-        G_GINT64_FORMAT, enc->interval_intraframes, fps, intraframes_period.val.i64);
+    GST_DEBUG_OBJECT (enc,
+        "set interval intraframes: %u, framerate: %f, intraframes period: %"
+        G_GINT64_FORMAT, enc->interval_intraframes, fps,
+        intraframes_period.val.i64);
   }
 
   if (enc->inline_sps_pps_headers) {
-    inline_header = make_header_mode_param(enc->inline_sps_pps_headers);
+    inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
 
-  qp_ranges = make_qp_ranges_param (
-      enc->min_qp_i_frames, enc->max_qp_i_frames,
+  qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
   g_ptr_array_add (config, &qp_ranges);
@@ -1375,7 +1378,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     qp_init = make_qp_init_param (enc->quant_i_frames,
         enc->quant_p_frames, enc->quant_b_frames);
     g_ptr_array_add (config, &qp_init);
-    GST_DEBUG_OBJECT (enc, "set init quant I frames: %u, quant P frames: %u, quant B frmes: %u",
+    GST_DEBUG_OBJECT (enc,
+        "set init quant I frames: %u, quant P frames: %u, quant B frmes: %u",
         enc->quant_i_frames, enc->quant_p_frames, enc->quant_b_frames);
   }
 
@@ -1521,15 +1525,15 @@ gst_qcodec2_venc_close (GstVideoEncoder * encoder)
 }
 
 static GstFlowReturn
-gst_qcodec2_venc_force_idr(GstQcodec2Venc * encoder)
+gst_qcodec2_venc_force_idr (GstQcodec2Venc * encoder)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GST_DEBUG_OBJECT (encoder, "gst_qcodec2_venc_force_idr");
 
   GPtrArray *config = g_ptr_array_new ();
   if (config) {
-    ConfigParams force_idr = make_force_idr_param(TRUE);
-    g_ptr_array_add(config, &force_idr);
+    ConfigParams force_idr = make_force_idr_param (TRUE);
+    g_ptr_array_add (config, &force_idr);
 
     if (!c2componentInterface_config (encoder->comp_intf,
             config, BLOCK_MODE_MAY_BLOCK)) {
@@ -1568,7 +1572,7 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
 
   if (GST_VIDEO_CODEC_FRAME_IS_FORCE_KEYFRAME (frame)) {
     GST_INFO_OBJECT (enc, "Forcing key frame");
-    if (GST_FLOW_OK != gst_qcodec2_venc_force_idr(enc)) {
+    if (GST_FLOW_OK != gst_qcodec2_venc_force_idr (enc)) {
       GST_ERROR_OBJECT (enc, "Failed to force key frame");
     }
   }
@@ -2114,27 +2118,32 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       inBuf.stride[0], inBuf.width, inBuf.height);
 
   /* Check the input buffer stride/offset for NV12 linear dmabuf case */
-  if (inBuf.fd != -1 && !inBuf.ubwc_flag && GST_VIDEO_FORMAT_NV12 == inBuf.format) {
-    uint32_t y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12, inBuf.width);
-    uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_NV12, inBuf.width);
-    uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_NV12, inBuf.height);
+  if (inBuf.fd != -1 && !inBuf.ubwc_flag
+      && GST_VIDEO_FORMAT_NV12 == inBuf.format) {
+    uint32_t y_stride = VENUS_Y_STRIDE (COLOR_FMT_NV12, inBuf.width);
+    uint32_t uv_stride = VENUS_UV_STRIDE (COLOR_FMT_NV12, inBuf.width);
+    uint32_t y_scanlines = VENUS_Y_SCANLINES (COLOR_FMT_NV12, inBuf.height);
     uint32_t offset = y_stride * y_scanlines;
     unsigned int chk_result = 0;
 
     if (inBuf.stride[0] != y_stride || inBuf.stride[1] != uv_stride) {
       chk_result |= 1;
-      GST_ERROR_OBJECT (enc, "The input buffer stride<%u, %u> does not meet the "
+      GST_ERROR_OBJECT (enc,
+          "The input buffer stride<%u, %u> does not meet the "
           "requirements of encoder <%u, %u>", inBuf.stride[0], inBuf.stride[1],
           y_stride, uv_stride);
     }
 
     if (inBuf.offset[0] != 0 || inBuf.offset[1] != offset) {
       chk_result |= 2;
-      GST_ERROR_OBJECT (enc, "The input buffer offset<%" G_GSIZE_FORMAT ", %" G_GSIZE_FORMAT ">"
-          " does not meet the requirements of encoder <0, %u>", inBuf.offset[0], inBuf.offset[1], offset);
+      GST_ERROR_OBJECT (enc,
+          "The input buffer offset<%" G_GSIZE_FORMAT ", %" G_GSIZE_FORMAT ">"
+          " does not meet the requirements of encoder <0, %u>", inBuf.offset[0],
+          inBuf.offset[1], offset);
     }
 
-    g_warn_if_fail (!chk_result && "Input NV12 linear dmabuf layout does not meet HW enc requirement!");
+    g_warn_if_fail (!chk_result
+        && "Input NV12 linear dmabuf layout does not meet HW enc requirement!");
   }
 
   build_roi_meta (encoder, frame);
@@ -2681,13 +2690,10 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
-  gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] =
-      g_signal_new ("force-idr",
-          G_TYPE_FROM_CLASS (klass),
-          G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
-          G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
-          NULL, NULL, NULL,
-          GST_TYPE_FLOW_RETURN, 0, G_TYPE_NONE);
+  gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
+      G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
+      NULL, NULL, NULL, GST_TYPE_FLOW_RETURN, 0, G_TYPE_NONE);
 
   video_encoder_class->stop = GST_DEBUG_FUNCPTR (gst_qcodec2_venc_stop);
   video_encoder_class->set_format =
