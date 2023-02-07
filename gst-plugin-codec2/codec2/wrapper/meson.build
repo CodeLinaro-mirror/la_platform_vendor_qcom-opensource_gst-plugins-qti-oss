@@ -12,6 +12,10 @@ thread_dep = dependency('threads')
 
 codec2wrapper_args = ['-D_AGL_LINUX_' , '-DG_LOG_DOMAIN="codec2wrapper"' , '-std=c++17']
 codec2wrapper_args += color_fmt_args
+use_dmaheap = get_option('usedmaheap')
+if use_dmaheap
+  codec2wrapper_args += ['-DUSE_DMAHEAP']
+endif
 
 codec2wrapper = library('codec2wrapper',
   codec2wrapper_sources,
