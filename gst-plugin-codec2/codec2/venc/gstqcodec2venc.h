@@ -55,6 +55,21 @@ G_BEGIN_DECLS
 typedef struct _GstQcodec2Venc GstQcodec2Venc;
 typedef struct _GstQcodec2VencClass GstQcodec2VencClass;
 
+/* pad templates */
+#define GST_QC2VENC_CAPS_MAKE(format,min,max) \
+    "video/x-raw, "                           \
+    "format = (string) " format ", "          \
+    "width = (int) [" #min ", " #max "], "    \
+    "height = (int) [" #min ", " #max "],"    \
+    "framerate = " GST_VIDEO_FPS_RANGE
+
+#define GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(feature,format,min,max) \
+    "video/x-raw(" feature "), "                                    \
+    "format = (string) " format ", "                                \
+    "width = (int) [" #min ", " #max "], "                          \
+    "height = (int) [" #min ", " #max "],"                          \
+    "framerate = " GST_VIDEO_FPS_RANGE
+
 /* Maximum number of input frame queued */
 #define MAX_QUEUED_FRAME  32
 
@@ -114,6 +129,7 @@ struct _GstQcodec2Venc
   IR_MODE_TYPE intra_refresh_mode;
   guint32 intra_refresh_mbs;
   guint32 target_bitrate;
+  guint32 configured_target_bitrate;
   SLICE_MODE slice_mode;
   guint32 slice_size;
   GMutex pending_lock;

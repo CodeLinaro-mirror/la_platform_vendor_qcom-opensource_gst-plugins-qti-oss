@@ -50,7 +50,17 @@ G_DEFINE_TYPE (GstQcodec2H264Enc, gst_qcodec2_h264_enc, GST_TYPE_QCODEC2_VENC);
 static gboolean gst_qcodec2_h264_enc_set_format (GstQcodec2Venc * encoder,
     GstVideoCodecState * state);
 
-static GstStaticPadTemplate gst_venc_src_template =
+#define GST_QC2_H264_ENC_SINK_TEMPLATE_CAP \
+    GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF,"NV12",128,8192)";" \
+    GST_QC2VENC_CAPS_MAKE("NV12",128,8192)
+
+static GstStaticPadTemplate gst_qcodec2_h264_enc_sink_template =
+GST_STATIC_PAD_TEMPLATE (GST_VIDEO_ENCODER_SINK_NAME,
+    GST_PAD_SINK,
+    GST_PAD_ALWAYS,
+    GST_STATIC_CAPS (GST_QC2_H264_ENC_SINK_TEMPLATE_CAP));
+
+static GstStaticPadTemplate gst_qcodec2_h264_enc_src_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_ENCODER_SRC_NAME,
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -64,7 +74,9 @@ gst_qcodec2_h264_enc_class_init (GstQcodec2H264EncClass * klass)
   GstQcodec2VencClass *videoenc_class = GST_QCODEC2_VENC_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_venc_src_template));
+      gst_static_pad_template_get (&gst_qcodec2_h264_enc_sink_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_qcodec2_h264_enc_src_template));
 
   videoenc_class->set_format =
       GST_DEBUG_FUNCPTR (gst_qcodec2_h264_enc_set_format);

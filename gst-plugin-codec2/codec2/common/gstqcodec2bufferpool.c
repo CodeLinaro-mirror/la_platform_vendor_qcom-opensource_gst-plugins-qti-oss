@@ -429,12 +429,15 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
         stride);
 
     /* Attach QTI video decoder meta */
-    GstCustomMeta *qvd_meta = gst_buffer_add_custom_meta (gst_buf, "GstQVDMeta");
+    GstCustomMeta *qvd_meta =
+        gst_buffer_add_custom_meta (gst_buf, "GstQVDMeta");
     if (qvd_meta) {
       GstStructure *s = gst_custom_meta_get_structure (qvd_meta);
       if (s) {
-        gst_structure_set (s, "gbm-meta-fd", G_TYPE_INT, param_ext->meta_fd, NULL);
-        GST_DEBUG_OBJECT (bpool, "attach QVDMeta, add meta-fd:%d", param_ext->meta_fd);
+        gst_structure_set (s, "gbm-meta-fd", G_TYPE_INT, param_ext->meta_fd,
+            NULL);
+        GST_DEBUG_OBJECT (bpool, "attach QVDMeta, add meta-fd:%d",
+            param_ext->meta_fd);
       }
     }
 
