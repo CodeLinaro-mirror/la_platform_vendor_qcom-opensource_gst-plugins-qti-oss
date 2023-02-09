@@ -34,7 +34,17 @@
 
 #include "c2-component.h"
 
+#ifndef DISPLAY_MEDIA_HEADER_2
 #include <media/msm_media_info.h>
+#else
+#include <display/media/mmm_color_fmt.h>
+#define COLOR_FMT_NV12         MMM_COLOR_FMT_NV12
+#define COLOR_FMT_NV12_UBWC    MMM_COLOR_FMT_NV12_UBWC
+#define VENUS_Y_STRIDE         MMM_COLOR_FMT_Y_STRIDE
+#define VENUS_Y_SCANLINES      MMM_COLOR_FMT_Y_SCANLINES
+#define VENUS_UV_STRIDE        MMM_COLOR_FMT_UV_STRIDE
+#define VENUS_BUFFER_SIZE_USED MMM_COLOR_FMT_BUFFER_SIZE_USED
+#endif
 
 #define MAX_PENDING_WORK 6
 

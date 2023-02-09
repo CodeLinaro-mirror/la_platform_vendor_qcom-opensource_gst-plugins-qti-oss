@@ -9,6 +9,7 @@ add_library(${GST_QTI_C2_ENGINE} SHARED
 
 target_compile_definitions(${GST_QTI_C2_ENGINE} PRIVATE
   $<$<BOOL:${CODEC2_QPR_API_2}>:CODEC2_QPR_API_2>
+  $<$<BOOL:${DISPLAY_MEDIA_HEADER_2}>:DISPLAY_MEDIA_HEADER_2>
 )
 
 target_include_directories(${GST_QTI_C2_ENGINE} PUBLIC
