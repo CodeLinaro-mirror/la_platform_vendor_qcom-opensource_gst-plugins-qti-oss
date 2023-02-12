@@ -1364,6 +1364,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &inline_header);
   }
 
+#ifdef QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1372,6 +1373,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
       enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
+#endif
 
   if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
       (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
