@@ -1,5 +1,11 @@
-# GStreamer camera-metadata-example example
-set(GST_EXAMPLE_BIN gst-camera-metadata-example)
+cmake_minimum_required(VERSION 3.8.2)
+
+# Get the pkgconfigs exported by the automake tools
+pkg_check_modules(GST
+  REQUIRED gstreamer-1.0>=${GST_VERSION_REQUIRED})
+
+# GStreamer gst-snpe-yolo-ssd-display-example
+set(GST_EXAMPLE_BIN gst-snpe-yolo-ssd-display-example)
 
 add_executable(${GST_EXAMPLE_BIN}
   main.cc
@@ -11,9 +17,6 @@ target_include_directories(${GST_EXAMPLE_BIN} PRIVATE
 
 target_link_libraries(${GST_EXAMPLE_BIN} PRIVATE
   ${GST_LIBRARIES}
-  $<$<BOOL:${CAMERA_CLIENT_DISABLED}>:camera_metadata>
-  $<$<NOT:$<BOOL:${CAMERA_CLIENT_DISABLED}>>:camera_client>
-  utils
 )
 
 install(
