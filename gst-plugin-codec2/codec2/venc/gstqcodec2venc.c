@@ -198,7 +198,6 @@ static void build_roi_meta (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame);
 static void add_roi_to_frame (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, GstStructure * roimeta);
-static void gst_qcodec2_venc_release_frames (GstVideoEncoder * encoder);
 
 static gboolean
 gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
@@ -1094,8 +1093,6 @@ gst_qcodec2_venc_stop (GstVideoEncoder * encoder)
     c2component_stop (enc->comp);
   }
 
-  gst_qcodec2_venc_release_frames (encoder);
-
   return TRUE;
 }
 
@@ -1456,23 +1453,6 @@ error_config:
   return TRUE;
 }
 
-static void
-gst_qcodec2_venc_release_frames (GstVideoEncoder * encoder)
-{
-  GList *frames;
-
-  GST_DEBUG_OBJECT (encoder, "release remain frames");
-  frames = gst_video_encoder_get_frames (encoder);
-  /* First unref is used for decreasing ref_count since gst_video_encoder_get_frames.
-   * Second one is used for decreasing ref_count for remain frames which
-   * have not released. Since c2 component has been stoped by accident, e.g.
-   * element state change to NULL. It leads to C2 listener closed. Further,
-   * function gst_video_encoder_finish_frame in function handle_video_event
-   * will not be called. */
-  g_list_foreach (frames, (GFunc) gst_video_codec_frame_unref, NULL);
-  g_list_free_full (frames, (GDestroyNotify) gst_video_codec_frame_unref);
-}
-
 /* Called when the element changes to GST_STATE_READY */
 static gboolean
 gst_qcodec2_venc_open (GstVideoEncoder * encoder)
@@ -1705,26 +1685,74 @@ cleanup:
   return FALSE;
 }
 
+static GstBuffer *
+fill_output_buffer (GstVideoEncoder * encoder, GstVideoInfo * vinfo,
+    BufferDescriptor * desc)
+{
+  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
+  gboolean has_config_data = ! !(desc->flag & FLAG_TYPE_CODEC_CONFIG);
+  GstBuffer *buf;
+  guint32 size;
+  GstStructure *structure;
+
+  if (G_UNLIKELY (has_config_data))
+    size = desc->size + desc->config_size;
+  else
+    size = desc->size;
+
+  buf = gst_buffer_new_and_alloc (size);
+  if (NULL == buf) {
+    GST_ERROR_OBJECT (enc, "buffer alloc error");
+    goto out;
+  }
+
+  if (G_UNLIKELY (has_config_data)) {
+    GST_DEBUG_OBJECT (enc, "codec config size:%d, first frame size:%d",
+        desc->config_size, desc->size);
+    gst_buffer_fill (buf, 0, desc->config_data, desc->config_size);
+    gst_buffer_fill (buf, desc->config_size, desc->data, desc->size);
+  } else {
+    gst_buffer_fill (buf, 0, desc->data, desc->size);
+  }
+
+  GST_BUFFER_PTS (buf) = gst_util_uint64_scale (desc->timestamp,
+      GST_SECOND, C2_TICKS_PER_SECOND);
+
+  if (vinfo->fps_n > 0) {
+    GST_BUFFER_DURATION (buf) = gst_util_uint64_scale (GST_SECOND,
+        vinfo->fps_d, vinfo->fps_n);
+  }
+
+  GST_DEBUG_OBJECT (enc, "gstbuf:%p, PTS:%lu, duration:%lu, fps_d:%d, "
+      "fps_n:%d", buf, GST_BUFFER_PTS (buf), GST_BUFFER_DURATION (buf),
+      vinfo->fps_d, vinfo->fps_n);
+
+  structure = gst_structure_new_empty ("BUFFER");
+  gst_structure_set (structure, "encoder", G_TYPE_POINTER, encoder,
+      "index", G_TYPE_UINT64, desc->index, NULL);
+  /* Set a notification function to free the buffer when no longer used. */
+  gst_mini_object_set_qdata (GST_MINI_OBJECT (buf), qcodec2_venc_qdata_quark (),
+      structure, (GDestroyNotify) gst_qcodec2_venc_buffer_release);
+
+out:
+  return buf;
+}
+
 /* Push encoded frame to downstream element */
 static GstFlowReturn
 push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
 {
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
-  GstFlowReturn ret = GST_FLOW_OK;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   GstVideoCodecFrame *frame = NULL;
   GstBuffer *outbuf = NULL;
   GstVideoCodecState *state = NULL;
-  GstVideoInfo *vinfo = NULL;
-  GstStructure *structure = NULL;
 
   GST_DEBUG_OBJECT (enc, "push frame downstream");
 
   state = gst_video_encoder_get_output_state (encoder);
-  if (state) {
-    vinfo = &state->info;
-  } else {
+  if (NULL == state) {
     GST_ERROR_OBJECT (enc, "video codec state is NULL, unexpected!");
-    ret = GST_FLOW_ERROR;
     goto out;
   }
 
@@ -1733,59 +1761,22 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
     GST_ERROR_OBJECT (enc,
         "Error in gst_video_encoder_get_frame, frame number: %lu",
         encode_buf->index);
-    ret = GST_FLOW_ERROR;
     goto out;
   }
 
-  if (encode_buf->flag & FLAG_TYPE_CODEC_CONFIG) {
-    GST_DEBUG_OBJECT (enc, "fill codec config size:%d first frame size:%d",
-        encode_buf->config_size, encode_buf->size);
-    outbuf =
-        gst_buffer_new_and_alloc (encode_buf->size + encode_buf->config_size);
-    gst_buffer_fill (outbuf, 0, encode_buf->config_data,
-        encode_buf->config_size);
-    gst_buffer_fill (outbuf, encode_buf->config_size, encode_buf->data,
-        encode_buf->size);
-  } else {
-    outbuf = gst_buffer_new_and_alloc (encode_buf->size);
-    gst_buffer_fill (outbuf, 0, encode_buf->data, encode_buf->size);
+  outbuf = fill_output_buffer (encoder, &state->info, encode_buf);
+  frame->output_buffer = outbuf;
+  if (NULL == outbuf) {
+    GST_ERROR_OBJECT (enc, "Failed to create outbuf");
+    gst_video_encoder_finish_frame (encoder, frame);
+    goto out;
   }
 
-  if (outbuf) {
-    GST_BUFFER_TIMESTAMP (outbuf) =
-        gst_util_uint64_scale (encode_buf->timestamp, GST_SECOND,
-        C2_TICKS_PER_SECOND);
-
-    if (vinfo->fps_n > 0) {
-      GST_BUFFER_DURATION (outbuf) = gst_util_uint64_scale (GST_SECOND,
-          vinfo->fps_d, vinfo->fps_n);
-    }
-
-    GST_DEBUG_OBJECT (enc,
-        "out buffer: %p, PTS: %lu, duration: %lu, fps_d: %d, fps_n: %d", outbuf,
-        GST_BUFFER_PTS (outbuf), GST_BUFFER_DURATION (outbuf), vinfo->fps_d,
-        vinfo->fps_n);
-
-    /* Creates a new, empty GstStructure with the given name */
-    structure = gst_structure_new_empty ("BUFFER");
-    gst_structure_set (structure,
-        "encoder", G_TYPE_POINTER, encoder,
-        "index", G_TYPE_UINT64, encode_buf->index, NULL);
-    /* Set a notification function to signal when the buffer is no longer used. */
-    gst_mini_object_set_qdata (GST_MINI_OBJECT (outbuf),
-        qcodec2_venc_qdata_quark (), structure,
-        (GDestroyNotify) gst_qcodec2_venc_buffer_release);
-
-    frame->output_buffer = outbuf;
-    ret = gst_video_encoder_finish_frame (encoder, frame);
-    if (ret == GST_FLOW_FLUSHING) {
-      GST_WARNING_OBJECT (enc, "downstream is flushing");
-    } else if (ret != GST_FLOW_OK) {
-      GST_ERROR_OBJECT (enc, "Failed to finish frame, outbuf: %p", outbuf);
-    }
-  } else {
-    GST_ERROR_OBJECT (enc, "Failed to create outbuf");
-    ret = GST_FLOW_ERROR;
+  ret = gst_video_encoder_finish_frame (encoder, frame);
+  if (ret == GST_FLOW_FLUSHING) {
+    GST_WARNING_OBJECT (enc, "downstream is flushing");
+  } else if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (enc, "Failed to finish frame, outbuf: %p", outbuf);
   }
 
 out:
