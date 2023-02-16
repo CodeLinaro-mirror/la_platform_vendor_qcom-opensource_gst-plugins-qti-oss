@@ -1,0 +1,3 @@
+option('mmmcolorfmt', type : 'boolean', value : 'false', yield : true, description: 'Use display mmm_color_fmts enum')
+option('interlace', type : 'feature', value : 'enabled', yield : true, description: 'Enable interlace support')
+option('qprange', type : 'feature', value : 'enabled', yield : true, description: 'Set QP range for I/P/B frames')
