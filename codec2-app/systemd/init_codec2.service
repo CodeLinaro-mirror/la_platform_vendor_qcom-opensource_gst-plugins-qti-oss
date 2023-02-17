@@ -32,7 +32,6 @@
 
 [Unit]
 Description=Init APP codec2-caps
-After=smack-rule-loader.service
 
 [Service]
 User=codec2
@@ -42,4 +41,4 @@ Restart=no
 ExecStart=/usr/bin/codec2-caps
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=basic.target
