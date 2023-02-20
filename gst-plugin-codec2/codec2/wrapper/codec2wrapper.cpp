@@ -1653,6 +1653,18 @@ gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gbo
     return ret;
 }
 
+void c2component_cancelPendingWork(void* const comp)
+{
+    LOG_MESSAGE("unblock waiting for pending C2 works");
+
+    if (comp) {
+        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
+        comp_wrapper->cancelPendingWork();
+    } else {
+        LOG_ERROR("Component is null");
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ComponentInterface API handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

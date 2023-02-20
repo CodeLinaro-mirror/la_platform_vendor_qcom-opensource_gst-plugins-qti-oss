@@ -112,6 +112,7 @@ public:
     c2_status_t attachExternalFd(BUFFER_POOL_TYPE type, int fd);
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
     void acquireExtBuf(uint32_t width, uint32_t height);
+    void cancelPendingWork();
 
 private:
     c2_status_t prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf, BufferDescriptor* buffer);

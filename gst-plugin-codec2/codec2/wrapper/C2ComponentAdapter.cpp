@@ -1146,6 +1146,13 @@ void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height)
     mCallback->onAcquireExtBuffer(width, height);
 }
 
+void C2ComponentAdapter::cancelPendingWork()
+{
+    LOG_MESSAGE("Component(%p) cancelPendingWork", this);
+
+    mCondition.notify_all();
+}
+
 C2ComponentListenerAdapter::C2ComponentListenerAdapter(C2ComponentAdapter* comp)
 {
 

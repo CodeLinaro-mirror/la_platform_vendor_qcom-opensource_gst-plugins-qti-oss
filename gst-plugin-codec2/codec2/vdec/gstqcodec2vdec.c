@@ -160,6 +160,8 @@ static GstBuffer *gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder *
     decoder, BufferDescriptor * buffer);
 static gboolean gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps,
     const gchar * partten);
+static GstStateChangeReturn gst_qcodec2_vdec_change_state (GstElement * element,
+    GstStateChange transition);
 
 /* pad templates */
 static GstStaticPadTemplate gst_vdec_src_template =
@@ -1789,6 +1791,24 @@ gst_qcodec2_vdec_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+static GstStateChangeReturn
+gst_qcodec2_vdec_change_state (GstElement * element, GstStateChange transition)
+{
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_LOG_OBJECT (dec, "decoder state change from PAUSED to READY");
+      if (dec->comp) {
+        c2component_cancelPendingWork (dec->comp);
+      }
+      break;
+    default:
+      break;
+  }
+  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+}
+
 static void
 gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 {
@@ -1798,6 +1818,9 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_vdec_src_template));
+
+  gstelement_class->change_state =
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_change_state);
 
   /* Set GObject class property */
   gobject_class->set_property = gst_qcodec2_vdec_set_property;
