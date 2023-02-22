@@ -275,7 +275,7 @@ gbm_device_alloc (GstImageBufferPool * vpool)
 {
   GstImageBufferPoolPrivate *priv = vpool->priv;
   struct gbm_bo *bo = NULL;
-  GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_DONT_CLOSE;
+  GstFdMemoryFlags flags = 0;
   gint fd, format, usage = 0;
 
   format = gst_video_format_to_gbm_format (GST_VIDEO_INFO_FORMAT (&priv->info));
