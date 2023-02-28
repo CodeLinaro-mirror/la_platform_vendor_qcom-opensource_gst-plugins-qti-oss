@@ -12,10 +12,18 @@
 #include "gstqcodec2vdec.h"
 #include "gstqcodec2venc.h"
 
+GST_DEBUG_CATEGORY (qcodec2utils_debug);
+GST_DEBUG_CATEGORY (qcodec2bufferpool_debug);
+
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
   GST_INFO ("qcodec2 plugin init");
+
+  GST_DEBUG_CATEGORY_INIT (qcodec2utils_debug,
+      "qcodec2utils", 0, "GST Qcodec2.0 utils");
+  GST_DEBUG_CATEGORY_INIT (qcodec2bufferpool_debug,
+      "qcodec2pool", 0, "GST Qcodec2.0 buffer pool");
 
   if (!gst_qcodec2_vdec_plugin_init (plugin)) {
     GST_ERROR ("qcodec2vdec plugin init error");

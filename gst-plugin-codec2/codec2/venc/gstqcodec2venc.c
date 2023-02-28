@@ -998,7 +998,7 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
 
   if (TRUE == ret) {
     if (G_UNLIKELY (enc->gst_c2_comp)) {
-      gst_object_unref (enc->gst_c2_comp);
+      gst_c2_comp_unref (enc->gst_c2_comp);
       GST_DEBUG_OBJECT (enc, "unref previous gst c2 component");
     }
     enc->gst_c2_comp = gst_c2_comp_create (enc->comp);
@@ -1523,7 +1523,7 @@ gst_qcodec2_venc_close (GstVideoEncoder * encoder)
   GST_DEBUG_OBJECT (enc, "qcodec2_venc_close");
 
   if (enc->gst_c2_comp) {
-    gst_object_unref (enc->gst_c2_comp);
+    gst_c2_comp_unref (enc->gst_c2_comp);
     enc->gst_c2_comp = NULL;
   }
 
@@ -1669,7 +1669,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   /* Propose GBM backed memory if upstream has dmabuf feature */
   if (gst_qcodec2_caps_has_feature (caps, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     param.is_ubwc = enc->is_ubwc;
-    param.gst_c2_comp = gst_object_ref (enc->gst_c2_comp);
+    param.gst_c2_comp = gst_c2_comp_ref (enc->gst_c2_comp);
     param.info = info;
     param.mode = DMABUF_MODE;
     enc->pool = gst_qcodec2_buffer_pool_new (&param);

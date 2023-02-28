@@ -1,6 +1,7 @@
 gstqcodec2_sources = [
   'plugin.c',
   'common/gstqcodec2bufferpool.c',
+  'common/gstqcodec2utils.c',
   'vdec/gstqcodec2h264dec.c',
   'vdec/gstqcodec2h265dec.c',
   'vdec/gstqcodec2mpeg2dec.c',

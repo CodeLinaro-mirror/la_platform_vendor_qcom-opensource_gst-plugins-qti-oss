@@ -415,7 +415,7 @@ gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
 
   if (TRUE == ret) {
     if (G_UNLIKELY (dec->gst_c2_comp)) {
-      gst_object_unref (dec->gst_c2_comp);
+      gst_c2_comp_unref (dec->gst_c2_comp);
       GST_DEBUG_OBJECT (dec, "unref previous gst c2 component");
     }
 
@@ -876,7 +876,7 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
   }
 
   if (dec->gst_c2_comp) {
-    gst_object_unref (dec->gst_c2_comp);
+    gst_c2_comp_unref (dec->gst_c2_comp);
     dec->gst_c2_comp = NULL;
   }
 
@@ -1158,7 +1158,7 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
 
     param.is_ubwc = dec->is_ubwc;
     param.info = dec->output_state->info;
-    param.gst_c2_comp = gst_object_ref (dec->gst_c2_comp);
+    param.gst_c2_comp = gst_c2_comp_ref (dec->gst_c2_comp);
     param.mode = use_dmabuf ? DMABUF_WRAP_MODE : FDBUF_WRAP_MODE;
     pool = gst_qcodec2_buffer_pool_new (&param);
 
