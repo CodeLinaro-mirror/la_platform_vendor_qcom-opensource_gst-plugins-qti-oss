@@ -24,7 +24,6 @@
 
 #include <gst/video/video.h>
 #include <gst/allocators/gstdmabuf.h>
-#include <vidc/media/msm_media_info.h>
 
 GST_DEBUG_CATEGORY (gst_qvdeinterlace_debug);
 #define GST_CAT_DEFAULT gst_qvdeinterlace_debug
@@ -461,16 +460,17 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
   GST_INFO_OBJECT (self, "%" GST_PTR_FORMAT, query);
 
+  /* Take downstream proposed max no. of buffer if provided. */
   if (gst_query_get_n_allocation_pools (query) > 0) {
     gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
-    GST_INFO_OBJECT (self, "downstream pool %p, size %u, min %u, max %u",
+    GST_INFO_OBJECT (self, "downstream proposed pool %p,size %u,min %u,max %u",
         pool, size, min, max);
 
     update_pool = TRUE;
   } else {
     GST_INFO_OBJECT (self, "downstream not propose pool");
-
     size = 0;
+    max = 16;
     update_pool = FALSE;
   }
 
@@ -479,7 +479,6 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
   GST_INFO_OBJECT (self, "size %u, info size %u", size, (guint) info->size);
   size = MAX (size, info->size);
   min = 2;
-  max = 0;
 
   GST_INFO_OBJECT (self, "size %u, min %u, max %u", size, min, max);
 

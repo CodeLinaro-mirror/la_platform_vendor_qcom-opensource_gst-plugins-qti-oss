@@ -73,7 +73,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 
 #include "gstqcodec2vdec.h"
-#include "gstqcodec2bufferpool.h"
 #include <dlfcn.h>
 #include <libdrm/drm_fourcc.h>
 #include "gstqcodec2h264dec.h"
@@ -135,7 +134,6 @@ static void gst_qcodec2_vdec_get_property (GObject * object, guint prop_id,
 static void gst_qcodec2_vdec_finalize (GObject * object);
 
 static gboolean gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder);
-static gboolean gst_qcodec2_vdec_destroy_component (GstVideoDecoder * decoder);
 static void handle_video_event (const void *handle, EVENT_TYPE type,
     void *data);
 
@@ -415,6 +413,25 @@ gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
     GST_ERROR_OBJECT (dec, "Component store is Null");
   }
 
+  if (TRUE == ret) {
+    if (G_UNLIKELY (dec->gst_c2_comp)) {
+      gst_object_unref (dec->gst_c2_comp);
+      GST_DEBUG_OBJECT (dec, "unref previous gst c2 component");
+    }
+
+    dec->gst_c2_comp = gst_c2_comp_create (dec->comp);
+    if (!dec->gst_c2_comp) {
+      ret = FALSE;
+      GST_ERROR_OBJECT (dec, "failed to create gst c2 comp");
+    }
+  } else {
+    if (dec->comp) {
+      c2component_delete (dec->comp);
+      dec->comp = NULL;
+      GST_ERROR_OBJECT (dec, "clean up c2 comp adapter since error happened");
+    }
+  }
+
   return ret;
 }
 
@@ -457,22 +474,6 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
       GST_ERROR_OBJECT (dec, "Failed to set component use external buffer");
       return FALSE;
     }
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_qcodec2_vdec_destroy_component (GstVideoDecoder * decoder)
-{
-  gboolean ret = TRUE;
-  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-
-  GST_DEBUG_OBJECT (dec, "destroy_component");
-
-  if (dec->comp) {
-    c2component_delete (dec->comp);
-    dec->comp = NULL;
   }
 
   return ret;
@@ -721,7 +722,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   resolution = make_resolution_param (width, height, TRUE);
   g_ptr_array_add (config, &resolution);
 
-#ifndef DISABLE_INTERLACE
+#ifdef GST_SUPPORT_INTERLACE
   interlace = make_interlace_param (c2interlace_mode, FALSE);
   g_ptr_array_add (config, &interlace);
 #endif
@@ -822,6 +823,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->buffer_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
   dec->acquired_external_buf = 0;
+  dec->gst_c2_comp = NULL;
 
   memset (dec->queued_frame, 0, MAX_QUEUED_FRAME);
   memset (&dec->start_time, 0, sizeof (struct timeval));
@@ -873,8 +875,9 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
     gst_object_unref (dec->out_port_pool);
   }
 
-  if (!gst_qcodec2_vdec_destroy_component (decoder)) {
-    GST_ERROR_OBJECT (dec, "Failed to delete component");
+  if (dec->gst_c2_comp) {
+    gst_object_unref (dec->gst_c2_comp);
+    dec->gst_c2_comp = NULL;
   }
 
   if (dec->comp_name) {
@@ -1155,7 +1158,7 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
 
     param.is_ubwc = dec->is_ubwc;
     param.info = dec->output_state->info;
-    param.c2_comp = dec->comp;
+    param.gst_c2_comp = gst_object_ref (dec->gst_c2_comp);
     param.mode = use_dmabuf ? DMABUF_WRAP_MODE : FDBUF_WRAP_MODE;
     pool = gst_qcodec2_buffer_pool_new (&param);
 

@@ -32,8 +32,28 @@
 #include <types.h>
 #include <C2Config.h>
 #include <codec2wrapper.h>
+#include <QC2Constants.h>
 
 namespace QTI {
+
+typedef enum {
+    // RGB-Alpha 8 bit per channel
+    C2_PIXEL_FORMAT_RGBA8888 = qc2::PixFormat::RGBA8888,
+    // RGBA 8 bit compressed
+    C2_PIXEL_FORMAT_RGBA8888_UBWC = qc2::PixFormat::RGBA8888_UBWC,
+    // NV12 EXT with 128 width and height alignment
+    C2_PIXEL_FORMAT_VENUS_NV12 = qc2::PixFormat::VENUS_NV12,
+    // NV12 EXT with UBWC compression
+    C2_PIXEL_FORMAT_VENUS_NV12_UBWC = qc2::PixFormat::VENUS_NV12_UBWC,
+    // NV12 EXT with 512 width and height alignment (used by HEIC tile encoder)
+    C2_PIXEL_FORMAT_VENUS_NV12_512 = qc2::PixFormat::VENUS_NV12_512,
+    // 10-bit Tightly-packed and compressed YUV
+    C2_PIXEL_FORMAT_VENUS_TP10 = qc2::PixFormat::VENUS_TP10,
+    // Venus 10-bit YUV 4:2:0 Planar format
+    C2_PIXEL_FORMAT_VENUS_P010 = qc2::PixFormat::VENUS_P010,
+    ///< canonical YVU 4:2:0 Planar (YV12)
+    C2_PIXEL_FORMAT_YV12 = qc2::PixFormat::YV12,
+} C2_PIXEL_FORMAT;
 
 uint32_t toC2InterlaceType(INTERLACE_MODE_TYPE interlace_type)
 {

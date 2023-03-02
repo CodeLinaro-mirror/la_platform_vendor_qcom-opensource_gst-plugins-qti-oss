@@ -128,6 +128,7 @@ std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf)
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -161,6 +162,7 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_DEINTERLACE, setDeInterlace },
     { CONFIG_FUNCTION_KEY_IPB_QP_RANGE, setIPBQPRanges },
     { CONFIG_FUNCTION_KEY_IPB_QP_INIT, setIPBQPInit },
+    { CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE, setIntraRefreshType },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -452,6 +454,26 @@ std::unique_ptr<C2Param> setIntraRefresh(gpointer param)
     intraRefreshMode.mode = (C2Config::intra_refresh_mode_t)config->irMode.type;
     intraRefreshMode.period = (float)config->irMode.intra_refresh_mbs;
     return C2Param::Copy(intraRefreshMode);
+}
+
+std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> ir_type;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value type;
+    type.set((int32_t)config->irMode.type);
+    kvpairs.emplace("vendor.qti-ext-enc-intra-refresh-type.value", type);
+
+    ir_type = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return ir_type;
 }
 
 std::unique_ptr<C2Param> setBlurMode(gpointer param, void* const comp_intf)

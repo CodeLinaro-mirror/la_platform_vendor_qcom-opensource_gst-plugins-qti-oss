@@ -118,6 +118,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_RATECONTROL "ratecontrol"
 #define CONFIG_FUNCTION_KEY_DEC_LOW_LATENCY "dec_low_latency"
 #define CONFIG_FUNCTION_KEY_INTRAREFRESH "intra_refresh"
+#define CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE "intra_refresh_type"
 #define CONFIG_FUNCTION_KEY_OUTPUT_PICTURE_ORDER_MODE "output_picture_order_mode"
 #define CONFIG_FUNCTION_KEY_DOWNSCALE "downscale"
 #define CONFIG_FUNCTION_KEY_ENC_CSC "enc_colorspace_conversion"
@@ -201,25 +202,6 @@ typedef enum {
     PIXEL_FORMAT_TP10_UBWC,
     PIXEL_FORMAT_NV12_512
 } PIXEL_FORMAT_TYPE;
-
-typedef enum {
-    // RGB-Alpha 8 bit per channel
-    C2_PIXEL_FORMAT_RGBA8888 = 1,
-    // RGBA 8 bit compressed
-    C2_PIXEL_FORMAT_RGBA8888_UBWC = 0xC2000000,
-    // NV12 EXT with 128 width and height alignment
-    C2_PIXEL_FORMAT_VENUS_NV12 = 0x7FA30C04,
-    // NV12 EXT with UBWC compression
-    C2_PIXEL_FORMAT_VENUS_NV12_UBWC = 0x7FA30C06,
-    // NV12 EXT with 512 width and height alignment (used by HEIC tile encoder)
-    C2_PIXEL_FORMAT_VENUS_NV12_512 = 0x116,
-    // 10-bit Tightly-packed and compressed YUV
-    C2_PIXEL_FORMAT_VENUS_TP10 = 0x7FA30C09,
-    // Venus 10-bit YUV 4:2:0 Planar format
-    C2_PIXEL_FORMAT_VENUS_P010 = 0x7FA30C0A,
-    ///< canonical YVU 4:2:0 Planar (YV12)
-    C2_PIXEL_FORMAT_YV12 = 842094169,
-} C2_PIXEL_FORMAT;
 
 typedef enum {
     EVENT_OUTPUTS_DONE = 0,
@@ -311,6 +293,7 @@ typedef enum {
 typedef enum {
     IR_NONE = 0,
     IR_RANDOM,
+    IR_CYCLIC,
 } IR_MODE_TYPE;
 
 typedef enum {
