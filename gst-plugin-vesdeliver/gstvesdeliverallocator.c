@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #include <dlfcn.h>
-#include <ion/ion.h>
-#include <linux/msm_ion.h>
 #include "gstvesdeliverallocator.h"
 
 /* Dynamically load libs by dlopen. */
-static const char *ion_lib_name  = "libion.so.0";
+#ifdef USE_DMAHEAP
+static const char *lib_name  = "libdmabufheap.so.0";
+#else
+static const char *lib_name  = "libion.so.0";
+#endif
 
 GST_DEBUG_CATEGORY_EXTERN (vesdeliver_debug);
 #define GST_CAT_DEFAULT vesdeliver_debug
@@ -25,27 +27,48 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator *alloc)
   allocator->mem_type = GST_ALLOCATOR_VESDELIVER;
   GST_OBJECT_FLAG_SET (alloc, GST_ALLOCATOR_FLAG_CUSTOM_ALLOC);
 
-  alloc->ion_handle = dlopen (ion_lib_name, RTLD_NOW);
-  if (NULL == alloc->ion_handle) {
+  alloc->lib_handle = dlopen (lib_name, RTLD_NOW);
+  if (NULL == alloc->lib_handle) {
     const char *dlerr = dlerror();
     if (NULL == dlerr)
         dlerr = "NULL";
-    GST_ERROR ("dlopen %s error: %s", ion_lib_name, dlerr);
+    GST_ERROR ("dlopen %s error: %s", lib_name, dlerr);
     return;
   }
 
-  alloc->ion_open = dlsym (alloc->ion_handle, "ion_open");
-  alloc->ion_close = dlsym (alloc->ion_handle, "ion_close");
-  alloc->ion_alloc_fd = dlsym (alloc->ion_handle, "ion_alloc_fd");
+#ifdef USE_DMAHEAP
+  alloc->create_allocator = dlsym (alloc->lib_handle, "CreateDmabufHeapBufferAllocator");
+  alloc->free_allocator = dlsym (alloc->lib_handle, "FreeDmabufHeapBufferAllocator");
+  alloc->alloc_fd = dlsym (alloc->lib_handle, "DmabufHeapAlloc");
+
+  if (!alloc->create_allocator || !alloc->free_allocator || !alloc->alloc_fd) {
+    GST_ERROR ("dlsym failed with create_allocator: %p, free_allocator: %p, alloc_fd: %p",
+          alloc->create_allocator, alloc->free_allocator, alloc->alloc_fd);
+    dlclose (alloc->lib_handle);
+    alloc->lib_handle = NULL;
+    return;
+  } else {
+    GST_INFO_OBJECT (alloc, "open %s(%p) successfully", lib_name, alloc->lib_handle);
+  }
+
+  alloc->dmaheap_allocator = alloc->create_allocator();
+  if (!alloc->dmaheap_allocator) {
+    GST_ERROR ("Failed to create dma heap allocator");
+    return;
+  }
+#else
+  alloc->ion_open = dlsym (alloc->lib_handle, "ion_open");
+  alloc->ion_close = dlsym (alloc->lib_handle, "ion_close");
+  alloc->ion_alloc_fd = dlsym (alloc->lib_handle, "ion_alloc_fd");
 
   if (!alloc->ion_open || !alloc->ion_close || !alloc->ion_alloc_fd) {
     GST_ERROR ("dlsym failed with ion_open: %p, ion_close: %p, ion_alloc_fd: %p",
           alloc->ion_open, alloc->ion_close, alloc->ion_alloc_fd);
-    dlclose (alloc->ion_handle);
-    alloc->ion_handle = NULL;
+    dlclose (alloc->lib_handle);
+    alloc->lib_handle = NULL;
     return;
   } else {
-    GST_INFO_OBJECT (alloc, "open %s(%p) successfully", ion_lib_name, alloc->ion_handle);
+    GST_INFO_OBJECT (alloc, "open %s(%p) successfully", lib_name, alloc->lib_handle);
   }
 
   alloc->ion_fd = alloc->ion_open();
@@ -53,6 +76,7 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator *alloc)
     GST_ERROR ("Open ION device failed with %d", alloc->ion_fd);
     return;
   }
+#endif
 }
 
 GstAllocator *
@@ -77,14 +101,24 @@ void
 gst_vesdeliver_allocator_finalize (GObject *object)
 {
   GstVesDeliverAllocator* allocator = GST_VESDELIVER_ALLOCATOR_CAST(object);
+
+#ifdef USE_DMAHEAP
+  if (allocator->dmaheap_allocator)
+  {
+    allocator->free_allocator (allocator->dmaheap_allocator);
+    allocator->dmaheap_allocator = NULL;
+  }
+#else
   if (allocator->ion_fd > 0) {
     allocator->ion_close (allocator->ion_fd);
     allocator->ion_fd = -1;
   }
+#endif
 
-  if (allocator->ion_handle) {
-    GST_INFO_OBJECT (allocator, "dlclose %s(%p)", ion_lib_name, allocator->ion_handle);
-    dlclose (allocator->ion_handle);
+  if (allocator->lib_handle)
+  {
+    GST_INFO_OBJECT (allocator, "dlclose %s(%p)", lib_name, allocator->lib_handle);
+    dlclose (allocator->lib_handle);
   }
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -95,12 +129,27 @@ gst_vesdeliver_allocator_alloc (GstAllocator *allocator, gsize size,
     GstAllocationParams *params)
 {
   GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (allocator);
-  int rc = -EINVAL;
   GstMemory *mem = NULL;
-  guint flags = 0;
-  guint heap_mask = ION_HEAP (ION_SYSTEM_HEAP_ID);
-  gint buf_fd = -1;
   gsize alloc_size = ALIGN (size, 4096);
+  gint buf_fd = -1;
+  GstFlowReturn ret = GST_FLOW_OK;
+
+#ifdef USE_DMAHEAP
+  if (alloc->secure) {
+    buf_fd = alloc->alloc_fd(alloc->dmaheap_allocator, "system-secure", alloc_size, 0, 0);
+  } else {
+    buf_fd = alloc->alloc_fd(alloc->dmaheap_allocator, "qcom,system-uncached", alloc_size, 0, 0);
+  }
+
+  if (buf_fd < 0) {
+    GST_ERROR ("failed to allocate buffer from DMA %s heap", alloc->secure?
+        "system-secure" : "system-uncached");
+    ret = GST_FLOW_ERROR;
+  }
+#else
+  guint heap_mask = ION_HEAP (ION_SYSTEM_HEAP_ID);
+  guint flags = 0;
+  int rc = -EINVAL;
 
   if (alloc->secure) {
     flags = ION_FLAG_SECURE | ION_FLAG_CP_BITSTREAM;
@@ -111,13 +160,16 @@ gst_vesdeliver_allocator_alloc (GstAllocator *allocator, gsize size,
 
   if (rc || buf_fd < 0) {
     GST_ERROR ("ion_alloc_fd failed with rc = %d", rc);
-    return NULL;
+    ret = GST_FLOW_ERROR;
   }
+#endif
 
-  mem = gst_dmabuf_allocator_alloc (allocator, buf_fd, alloc_size);
-  if (mem) {
-    GST_INFO_OBJECT (alloc, "Allocate %s gstmemory with size = %" G_GSIZE_FORMAT ", fd = %d",
-        alloc->secure ? "secure" : "normal", alloc_size, buf_fd);
+  if (ret == GST_FLOW_OK) {
+    mem = gst_dmabuf_allocator_alloc (allocator, buf_fd, alloc_size);
+    if (mem) {
+      GST_INFO_OBJECT (alloc, "Allocate %s gstmemory with size = %" G_GSIZE_FORMAT ", fd = %d",
+          alloc->secure ? "secure" : "normal", alloc_size, buf_fd);
+    }
   }
 
   return mem;

@@ -113,9 +113,6 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
 
-/* Function will be named qcodec2_venc_qdata_quark() */
-static G_DEFINE_QUARK (Qcodec2EncoderQuark, qcodec2_venc_qdata);
-
 enum
 {
   /* actions */
@@ -180,7 +177,6 @@ static void gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
 static void gst_qcodec2_venc_finalize (GObject * object);
 
 static gboolean gst_qcodec2_venc_create_component (GstVideoEncoder * encoder);
-static gboolean gst_qcodec2_venc_destroy_component (GstVideoEncoder * encoder);
 static void handle_video_event (const void *handle, EVENT_TYPE type,
     void *data);
 
@@ -188,7 +184,6 @@ static GstFlowReturn gst_qcodec2_venc_encode (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame);
 static GstFlowReturn gst_qcodec2_venc_setup_output (GstVideoEncoder * encoder,
     GstVideoCodecState * state);
-static void gst_qcodec2_venc_buffer_release (GstStructure * structure);
 
 static void gst_qcodec2_venc_build_roi_array (GstVideoEncoder * encoder,
     const GValue * value);
@@ -198,7 +193,6 @@ static void build_roi_meta (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame);
 static void add_roi_to_frame (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, GstStructure * roimeta);
-static void gst_qcodec2_venc_release_frames (GstVideoEncoder * encoder);
 
 static gboolean
 gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
@@ -363,6 +357,24 @@ make_intra_refresh_param (IR_MODE_TYPE mode, guint32 intra_refresh_mbs)
 
   return param;
 }
+
+static ConfigParams
+make_intra_refresh_type_param (IR_MODE_TYPE mode)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE;
+  if (mode == IR_RANDOM) {
+    param.irMode.type = 0; // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
+  } else if (mode == IR_CYCLIC) {
+    param.irMode.type = 1; // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
+  }
+
+  return param;
+}
+
 
 static ConfigParams
 make_blur_mode_param (BLUR_MODE mode, gboolean is_input)
@@ -783,6 +795,7 @@ gst_qcodec2_venc_intra_refresh_mode_get_type (void)
     static const GEnumValue values[] = {
       {IR_NONE, "None", "none"},
       {IR_RANDOM, "Random", "random"},
+      {IR_CYCLIC, "Cyclic", "cyclic"},
       {0, NULL, NULL}
     };
 
@@ -983,20 +996,22 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
     GST_DEBUG_OBJECT (enc, "Component store is Null");
   }
 
-  return ret;
-}
-
-static gboolean
-gst_qcodec2_venc_destroy_component (GstVideoEncoder * encoder)
-{
-  gboolean ret = FALSE;
-  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
-
-  GST_DEBUG_OBJECT (enc, "destroy_component");
-
-  if (enc->comp) {
-    c2component_delete (enc->comp);
-    enc->comp = NULL;
+  if (TRUE == ret) {
+    if (G_UNLIKELY (enc->gst_c2_comp)) {
+      gst_object_unref (enc->gst_c2_comp);
+      GST_DEBUG_OBJECT (enc, "unref previous gst c2 component");
+    }
+    enc->gst_c2_comp = gst_c2_comp_create (enc->comp);
+    if (!enc->gst_c2_comp) {
+      ret = FALSE;
+      GST_ERROR_OBJECT (enc, "failed to create gst c2 comp");
+    }
+  } else {
+    if (enc->comp) {
+      c2component_delete (enc->comp);
+      enc->comp = NULL;
+      GST_ERROR_OBJECT (enc, "clean up c2 comp adapter since error happened");
+    }
   }
 
   return ret;
@@ -1094,8 +1109,6 @@ gst_qcodec2_venc_stop (GstVideoEncoder * encoder)
     c2component_stop (enc->comp);
   }
 
-  gst_qcodec2_venc_release_frames (encoder);
-
   return TRUE;
 }
 
@@ -1186,6 +1199,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams color_space_conversion;
   ConfigParams color_aspects;
   ConfigParams intra_refresh;
+  ConfigParams intra_refresh_type;
   ConfigParams bitrate;
   gboolean update_bitrate = FALSE;
   ConfigParams slice_mode;
@@ -1328,6 +1342,16 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->intra_refresh_mode && enc->intra_refresh_mbs) {
     GST_DEBUG_OBJECT (enc, "set intra refresh mode: %d, mbs:%d",
         enc->intra_refresh_mode, enc->intra_refresh_mbs);
+
+#ifdef GST_SUPPORT_IR_CYCLIC
+    /* cyclic mode is supported on lemans;
+     * setting intra refresh type qc2::IntraRefreshMode
+     */
+    intra_refresh_type =
+        make_intra_refresh_type_param (enc->intra_refresh_mode);
+    g_ptr_array_add (config, &intra_refresh_type);
+#endif
+
     intra_refresh =
         make_intra_refresh_param (enc->intra_refresh_mode,
         enc->intra_refresh_mbs);
@@ -1367,6 +1391,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &inline_header);
   }
 
+#ifdef GST_SUPPORT_QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1375,6 +1400,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
       enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
+#endif
 
   if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
       (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
@@ -1456,23 +1482,6 @@ error_config:
   return TRUE;
 }
 
-static void
-gst_qcodec2_venc_release_frames (GstVideoEncoder * encoder)
-{
-  GList *frames;
-
-  GST_DEBUG_OBJECT (encoder, "release remain frames");
-  frames = gst_video_encoder_get_frames (encoder);
-  /* First unref is used for decreasing ref_count since gst_video_encoder_get_frames.
-   * Second one is used for decreasing ref_count for remain frames which
-   * have not released. Since c2 component has been stoped by accident, e.g.
-   * element state change to NULL. It leads to C2 listener closed. Further,
-   * function gst_video_encoder_finish_frame in function handle_video_event
-   * will not be called. */
-  g_list_foreach (frames, (GFunc) gst_video_codec_frame_unref, NULL);
-  g_list_free_full (frames, (GDestroyNotify) gst_video_codec_frame_unref);
-}
-
 /* Called when the element changes to GST_STATE_READY */
 static gboolean
 gst_qcodec2_venc_open (GstVideoEncoder * encoder)
@@ -1495,6 +1504,7 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
   enc->frame_index = 0;
   enc->num_input_queued = 0;
   enc->num_output_done = 0;
+  enc->gst_c2_comp = NULL;
 
   memset (enc->queued_frame, 0, MAX_QUEUED_FRAME);
 
@@ -1512,7 +1522,10 @@ gst_qcodec2_venc_close (GstVideoEncoder * encoder)
 
   GST_DEBUG_OBJECT (enc, "qcodec2_venc_close");
 
-  gst_qcodec2_venc_destroy_component (GST_VIDEO_ENCODER (enc));
+  if (enc->gst_c2_comp) {
+    gst_object_unref (enc->gst_c2_comp);
+    enc->gst_c2_comp = NULL;
+  }
 
   if (enc->comp_store) {
     c2componentStore_delete (enc->comp_store);
@@ -1656,7 +1669,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   /* Propose GBM backed memory if upstream has dmabuf feature */
   if (gst_qcodec2_caps_has_feature (caps, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     param.is_ubwc = enc->is_ubwc;
-    param.c2_comp = enc->comp;
+    param.gst_c2_comp = gst_object_ref (enc->gst_c2_comp);
     param.info = info;
     param.mode = DMABUF_MODE;
     enc->pool = gst_qcodec2_buffer_pool_new (&param);
@@ -1705,118 +1718,112 @@ cleanup:
   return FALSE;
 }
 
-/* Push encoded frame to downstream element */
-static GstFlowReturn
-push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * encode_buf)
+static GstBuffer *
+fill_output_buffer (GstQcodec2Venc * enc, GstVideoInfo * vinfo,
+    BufferDescriptor * desc)
 {
-  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstVideoCodecFrame *frame = NULL;
-  GstBuffer *outbuf = NULL;
-  GstVideoCodecState *state = NULL;
-  GstVideoInfo *vinfo = NULL;
-  GstStructure *structure = NULL;
+  gboolean has_config_data = ! !(desc->flag & FLAG_TYPE_CODEC_CONFIG);
+  GstBuffer *buf;
+  guint32 size;
 
-  GST_DEBUG_OBJECT (enc, "push frame downstream");
+  if (G_UNLIKELY (has_config_data))
+    size = desc->size + desc->config_size;
+  else
+    size = desc->size;
 
-  state = gst_video_encoder_get_output_state (encoder);
-  if (state) {
-    vinfo = &state->info;
-  } else {
-    GST_ERROR_OBJECT (enc, "video codec state is NULL, unexpected!");
-    ret = GST_FLOW_ERROR;
+  buf = gst_buffer_new_and_alloc (size);
+  if (NULL == buf) {
+    GST_ERROR_OBJECT (enc, "buffer alloc error");
     goto out;
   }
 
-  frame = gst_video_encoder_get_frame (encoder, encode_buf->index);
-  if (frame == NULL) {
-    GST_ERROR_OBJECT (enc,
-        "Error in gst_video_encoder_get_frame, frame number: %lu",
-        encode_buf->index);
-    ret = GST_FLOW_ERROR;
-    goto out;
-  }
-
-  if (encode_buf->flag & FLAG_TYPE_CODEC_CONFIG) {
-    GST_DEBUG_OBJECT (enc, "fill codec config size:%d first frame size:%d",
-        encode_buf->config_size, encode_buf->size);
-    outbuf =
-        gst_buffer_new_and_alloc (encode_buf->size + encode_buf->config_size);
-    gst_buffer_fill (outbuf, 0, encode_buf->config_data,
-        encode_buf->config_size);
-    gst_buffer_fill (outbuf, encode_buf->config_size, encode_buf->data,
-        encode_buf->size);
+  if (G_UNLIKELY (has_config_data)) {
+    GST_LOG_OBJECT (enc, "codec config size:%d, first frame size:%d",
+        desc->config_size, desc->size);
+    gst_buffer_fill (buf, 0, desc->config_data, desc->config_size);
+    gst_buffer_fill (buf, desc->config_size, desc->data, desc->size);
   } else {
-    outbuf = gst_buffer_new_and_alloc (encode_buf->size);
-    gst_buffer_fill (outbuf, 0, encode_buf->data, encode_buf->size);
+    gst_buffer_fill (buf, 0, desc->data, desc->size);
   }
 
-  if (outbuf) {
-    GST_BUFFER_TIMESTAMP (outbuf) =
-        gst_util_uint64_scale (encode_buf->timestamp, GST_SECOND,
-        C2_TICKS_PER_SECOND);
+  GST_BUFFER_PTS (buf) = gst_util_uint64_scale (desc->timestamp,
+      GST_SECOND, C2_TICKS_PER_SECOND);
 
-    if (vinfo->fps_n > 0) {
-      GST_BUFFER_DURATION (outbuf) = gst_util_uint64_scale (GST_SECOND,
-          vinfo->fps_d, vinfo->fps_n);
-    }
-
-    GST_DEBUG_OBJECT (enc,
-        "out buffer: %p, PTS: %lu, duration: %lu, fps_d: %d, fps_n: %d", outbuf,
-        GST_BUFFER_PTS (outbuf), GST_BUFFER_DURATION (outbuf), vinfo->fps_d,
-        vinfo->fps_n);
-
-    /* Creates a new, empty GstStructure with the given name */
-    structure = gst_structure_new_empty ("BUFFER");
-    gst_structure_set (structure,
-        "encoder", G_TYPE_POINTER, encoder,
-        "index", G_TYPE_UINT64, encode_buf->index, NULL);
-    /* Set a notification function to signal when the buffer is no longer used. */
-    gst_mini_object_set_qdata (GST_MINI_OBJECT (outbuf),
-        qcodec2_venc_qdata_quark (), structure,
-        (GDestroyNotify) gst_qcodec2_venc_buffer_release);
-
-    frame->output_buffer = outbuf;
-    ret = gst_video_encoder_finish_frame (encoder, frame);
-    if (ret == GST_FLOW_FLUSHING) {
-      GST_WARNING_OBJECT (enc, "downstream is flushing");
-    } else if (ret != GST_FLOW_OK) {
-      GST_ERROR_OBJECT (enc, "Failed to finish frame, outbuf: %p", outbuf);
-    }
-  } else {
-    GST_ERROR_OBJECT (enc, "Failed to create outbuf");
-    ret = GST_FLOW_ERROR;
+  if (vinfo->fps_n > 0) {
+    GST_BUFFER_DURATION (buf) = gst_util_uint64_scale (GST_SECOND,
+        vinfo->fps_d, vinfo->fps_n);
   }
+
+  GST_LOG_OBJECT (enc, "gstbuf:%p, PTS:%lu, duration:%lu, fps_d:%d, fps_n:%d",
+      buf, GST_BUFFER_PTS (buf), GST_BUFFER_DURATION (buf),
+      vinfo->fps_d, vinfo->fps_n);
 
 out:
-  if (state)
-    gst_video_codec_state_unref (state);
+  return buf;
+}
+
+static inline gboolean
+free_output_c2buffer (GstQcodec2Venc * enc, guint64 index)
+{
+  gboolean ret = c2component_freeOutBuffer (enc->comp, index);
+  if (ret) {
+    GST_LOG_OBJECT (enc, "released pending buffer %lu", index);
+  } else {
+    GST_ERROR_OBJECT (enc, "failed to release the buffer %lu", index);
+  }
 
   return ret;
 }
 
-static void
-gst_qcodec2_venc_buffer_release (GstStructure * structure)
+/* Push encoded frame to downstream element */
+static GstFlowReturn
+push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
 {
-  GstVideoEncoder *encoder = NULL;
-  guint64 index = 0;
+  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
+  GstFlowReturn ret = GST_FLOW_ERROR;
+  GstVideoCodecFrame *frame = NULL;
+  GstBuffer *outbuf = NULL;
+  GstVideoCodecState *state = NULL;
+  gboolean c2buffer_freed = FALSE;
 
-  gst_structure_get (structure, "encoder", G_TYPE_POINTER, &encoder, NULL);
-  gst_structure_get_uint64 (structure, "index", &index);
+  GST_LOG_OBJECT (enc, "push frame downstream");
 
-  if (encoder) {
-    GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
-
-    GST_LOG_OBJECT (enc, "gst_qcodec2_venc_buffer_release");
-
-    if (!c2component_freeOutBuffer (enc->comp, index)) {
-      GST_ERROR_OBJECT (enc, "Failed to release the buffer (%lu)", index);
-    }
-  } else {
-    GST_ERROR ("Null encoder");
+  state = gst_video_encoder_get_output_state (encoder);
+  if (NULL == state) {
+    GST_ERROR_OBJECT (enc, "video codec state is NULL, unexpected!");
+    goto out;
   }
 
-  gst_structure_free (structure);
+  frame = gst_video_encoder_get_frame (encoder, desc->index);
+  if (frame == NULL) {
+    GST_ERROR_OBJECT (enc, "failed to get frame by index: %lu", desc->index);
+    goto out;
+  }
+
+  outbuf = fill_output_buffer (enc, &state->info, desc);
+  c2buffer_freed = free_output_c2buffer (enc, desc->index);
+  frame->output_buffer = outbuf;
+  if (NULL == outbuf) {
+    GST_ERROR_OBJECT (enc, "failed to create outbuf");
+    gst_video_encoder_finish_frame (encoder, frame);
+    goto out;
+  }
+
+  ret = gst_video_encoder_finish_frame (encoder, frame);
+  if (ret == GST_FLOW_FLUSHING) {
+    GST_WARNING_OBJECT (enc, "downstream is flushing");
+  } else if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (enc, "failed to finish frame, outbuf: %p", outbuf);
+  }
+
+out:
+  if (!c2buffer_freed)
+    free_output_c2buffer (enc, desc->index);
+
+  if (state)
+    gst_video_codec_state_unref (state);
+
+  return ret;
 }
 
 /* Handle event from Codec2 */
@@ -1833,9 +1840,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     case EVENT_OUTPUTS_DONE:{
       BufferDescriptor *outBuffer = (BufferDescriptor *) data;
 
-      GST_DEBUG_OBJECT (enc,
-          "Event output done, va: %p, offsets: %" G_GSIZE_FORMAT " %"
-          G_GSIZE_FORMAT ", index: %lu, fd: %u,"
+      GST_LOG_OBJECT (enc, "Event output done, va: %p, offsets: %"
+          G_GSIZE_FORMAT " %" G_GSIZE_FORMAT ", index: %lu, fd: %u,"
           "filled len: %u, buffer size: %u, timestamp: %lu, flag: %x",
           outBuffer->data, outBuffer->offset[0], outBuffer->offset[1],
           outBuffer->index, outBuffer->fd, outBuffer->size, outBuffer->capacity,
