@@ -14,7 +14,14 @@ gstqvdeinterlace_sources = [
   'qvdeindmabuf.c',
 ]
 
-gstqvdeinterlace_c_args = ['-DHAVE_CONFIG_H']
+use_mmmcolorfmt = get_option('mmmcolorfmt')
+if use_mmmcolorfmt
+  color_fmt_args = ['-DGST_USE_MMM_COLOR_FMT']
+else
+  color_fmt_args = []
+endif
+
+gstqvdeinterlace_c_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
 gstqvdeinterlace_link_args = [ ]
 
 # comment out below 5 lines for testing on Ubuntu

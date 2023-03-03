@@ -150,10 +150,12 @@ gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
         pixel_format.pixelFormat.fmt);
     g_ptr_array_add (config, &pixel_format);
 
+#ifdef GST_SUPPORT_INTERLACE
     deinterlace = make_deinterlace_param (base_dec->deinterlace);
     GST_DEBUG_OBJECT (dec, "set deinterlace param");
 
     g_ptr_array_add (config, &deinterlace);
+#endif
 
     if (!c2componentInterface_config (decoder->comp_intf,
             config, BLOCK_MODE_MAY_BLOCK)) {

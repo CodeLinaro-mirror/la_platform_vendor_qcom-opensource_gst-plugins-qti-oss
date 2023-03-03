@@ -177,7 +177,6 @@ static void gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
 static void gst_qcodec2_venc_finalize (GObject * object);
 
 static gboolean gst_qcodec2_venc_create_component (GstVideoEncoder * encoder);
-static gboolean gst_qcodec2_venc_destroy_component (GstVideoEncoder * encoder);
 static void handle_video_event (const void *handle, EVENT_TYPE type,
     void *data);
 
@@ -358,6 +357,24 @@ make_intra_refresh_param (IR_MODE_TYPE mode, guint32 intra_refresh_mbs)
 
   return param;
 }
+
+static ConfigParams
+make_intra_refresh_type_param (IR_MODE_TYPE mode)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE;
+  if (mode == IR_RANDOM) {
+    param.irMode.type = 0; // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
+  } else if (mode == IR_CYCLIC) {
+    param.irMode.type = 1; // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
+  }
+
+  return param;
+}
+
 
 static ConfigParams
 make_blur_mode_param (BLUR_MODE mode, gboolean is_input)
@@ -778,6 +795,7 @@ gst_qcodec2_venc_intra_refresh_mode_get_type (void)
     static const GEnumValue values[] = {
       {IR_NONE, "None", "none"},
       {IR_RANDOM, "Random", "random"},
+      {IR_CYCLIC, "Cyclic", "cyclic"},
       {0, NULL, NULL}
     };
 
@@ -978,20 +996,22 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
     GST_DEBUG_OBJECT (enc, "Component store is Null");
   }
 
-  return ret;
-}
-
-static gboolean
-gst_qcodec2_venc_destroy_component (GstVideoEncoder * encoder)
-{
-  gboolean ret = FALSE;
-  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
-
-  GST_DEBUG_OBJECT (enc, "destroy_component");
-
-  if (enc->comp) {
-    c2component_delete (enc->comp);
-    enc->comp = NULL;
+  if (TRUE == ret) {
+    if (G_UNLIKELY (enc->gst_c2_comp)) {
+      gst_object_unref (enc->gst_c2_comp);
+      GST_DEBUG_OBJECT (enc, "unref previous gst c2 component");
+    }
+    enc->gst_c2_comp = gst_c2_comp_create (enc->comp);
+    if (!enc->gst_c2_comp) {
+      ret = FALSE;
+      GST_ERROR_OBJECT (enc, "failed to create gst c2 comp");
+    }
+  } else {
+    if (enc->comp) {
+      c2component_delete (enc->comp);
+      enc->comp = NULL;
+      GST_ERROR_OBJECT (enc, "clean up c2 comp adapter since error happened");
+    }
   }
 
   return ret;
@@ -1179,6 +1199,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams color_space_conversion;
   ConfigParams color_aspects;
   ConfigParams intra_refresh;
+  ConfigParams intra_refresh_type;
   ConfigParams bitrate;
   gboolean update_bitrate = FALSE;
   ConfigParams slice_mode;
@@ -1321,6 +1342,16 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->intra_refresh_mode && enc->intra_refresh_mbs) {
     GST_DEBUG_OBJECT (enc, "set intra refresh mode: %d, mbs:%d",
         enc->intra_refresh_mode, enc->intra_refresh_mbs);
+
+#ifdef GST_SUPPORT_IR_CYCLIC
+    /* cyclic mode is supported on lemans;
+     * setting intra refresh type qc2::IntraRefreshMode
+     */
+    intra_refresh_type =
+        make_intra_refresh_type_param (enc->intra_refresh_mode);
+    g_ptr_array_add (config, &intra_refresh_type);
+#endif
+
     intra_refresh =
         make_intra_refresh_param (enc->intra_refresh_mode,
         enc->intra_refresh_mbs);
@@ -1360,7 +1391,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &inline_header);
   }
 
-#ifdef QPRANGE
+#ifdef GST_SUPPORT_QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1473,6 +1504,7 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
   enc->frame_index = 0;
   enc->num_input_queued = 0;
   enc->num_output_done = 0;
+  enc->gst_c2_comp = NULL;
 
   memset (enc->queued_frame, 0, MAX_QUEUED_FRAME);
 
@@ -1490,7 +1522,10 @@ gst_qcodec2_venc_close (GstVideoEncoder * encoder)
 
   GST_DEBUG_OBJECT (enc, "qcodec2_venc_close");
 
-  gst_qcodec2_venc_destroy_component (GST_VIDEO_ENCODER (enc));
+  if (enc->gst_c2_comp) {
+    gst_object_unref (enc->gst_c2_comp);
+    enc->gst_c2_comp = NULL;
+  }
 
   if (enc->comp_store) {
     c2componentStore_delete (enc->comp_store);
@@ -1634,7 +1669,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   /* Propose GBM backed memory if upstream has dmabuf feature */
   if (gst_qcodec2_caps_has_feature (caps, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     param.is_ubwc = enc->is_ubwc;
-    param.c2_comp = enc->comp;
+    param.gst_c2_comp = gst_object_ref (enc->gst_c2_comp);
     param.info = info;
     param.mode = DMABUF_MODE;
     enc->pool = gst_qcodec2_buffer_pool_new (&param);

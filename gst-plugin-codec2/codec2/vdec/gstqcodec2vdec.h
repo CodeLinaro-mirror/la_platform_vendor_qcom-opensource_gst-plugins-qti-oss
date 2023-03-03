@@ -36,6 +36,7 @@
 #include <gst/video/gstvideopool.h>
 #include <gst/allocators/allocators.h>
 #include "codec2wrapper.h"
+#include "gstqcodec2bufferpool.h"
 
 G_BEGIN_DECLS
 #define COMMON_VIDEO_CAPS(min, max) \
@@ -105,6 +106,9 @@ struct _GstQcodec2Vdec
   void *comp;
   void *comp_intf;
   gchar *comp_name;
+
+  /* manage the lifetime of C2 component adapter */
+  GstC2Comp *gst_c2_comp;
 
   guint64 queued_frame[MAX_QUEUED_FRAME];
   gboolean downstream_supports_gbm;
