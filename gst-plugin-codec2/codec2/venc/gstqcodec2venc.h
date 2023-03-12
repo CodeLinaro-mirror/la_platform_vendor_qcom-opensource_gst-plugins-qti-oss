@@ -148,6 +148,7 @@ struct _GstQcodec2Venc
   BITRATE_SAVING_MODE bitrate_saving_mode;
   gboolean is_heic;
   guint32 interval_intraframes;
+  guint32 configured_interval_intraframes;
   gboolean inline_sps_pps_headers;
   guint32 min_qp_i_frames;
   guint32 max_qp_i_frames;

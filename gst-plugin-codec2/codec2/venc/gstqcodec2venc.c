@@ -112,6 +112,9 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define EOS_WAITING_TIMEOUT 5
 #define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
+#define DYNAMIC_PROP_BIT(x) ((1) << (x))
+#define DYNAMIC_PROP_BITRATE DYNAMIC_PROP_BIT(0)
+#define DYNAMIC_PROP_IFRAME DYNAMIC_PROP_BIT(1)
 
 enum
 {
@@ -1202,6 +1205,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams intra_refresh_type;
   ConfigParams bitrate;
   gboolean update_bitrate = FALSE;
+  gboolean update_i_interval = FALSE;
   ConfigParams slice_mode;
   ConfigParams blur_info;
   ConfigParams bitrate_saving_mode;
@@ -1384,6 +1388,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
         "set interval intraframes: %u, framerate: %f, intraframes period: %"
         G_GINT64_FORMAT, enc->interval_intraframes, fps,
         intraframes_period.val.i64);
+    update_i_interval = TRUE;
   }
 
   if (enc->inline_sps_pps_headers) {
@@ -1433,6 +1438,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   } else {
     if (update_bitrate) {
       enc->configured_target_bitrate = enc->target_bitrate;
+    }
+
+    if (update_i_interval) {
+      enc->configured_interval_intraframes = enc->interval_intraframes;
     }
   }
 
@@ -1572,29 +1581,61 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
 {
   GPtrArray *config = NULL;
   ConfigParams bitrate;
-  gboolean update_bitrate = FALSE;
+  ConfigParams intraframes_period;
+  gfloat fps = COMMON_FRAMERATE;
+  guint32 update_prop_mask = 0;
+
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
   if ((enc->target_bitrate > 0) &&
       (enc->target_bitrate != enc->configured_target_bitrate)) {
-    config = g_ptr_array_new ();
     bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
-    g_ptr_array_add (config, &bitrate);
     GST_DEBUG_OBJECT (enc, "Dynamically configure target bitrate to %u from %u",
         enc->target_bitrate, enc->configured_target_bitrate);
-    update_bitrate = TRUE;
+    update_prop_mask |= DYNAMIC_PROP_BITRATE;
   }
 
-  if (config) {
-    if (!c2componentInterface_config (enc->comp_intf,
-            config, BLOCK_MODE_MAY_BLOCK)) {
-      GST_WARNING_OBJECT (enc,
-          "Failed to set encoder config for target bitrate");
-    } else {
-      if (update_bitrate) {
-        enc->configured_target_bitrate = enc->target_bitrate;
-      }
+  if (enc->interval_intraframes != enc->configured_interval_intraframes) {
+    if (0 != enc->input_info.fps_n && 0 != enc->input_info.fps_d) {
+      fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
     }
-    g_ptr_array_free (config, TRUE);
+
+    intraframes_period =
+        make_intraframes_period_param (enc->interval_intraframes, fps);
+    GST_DEBUG_OBJECT (enc,
+        "Dynamically configure interval intraframes: %u, framerate: %f, "
+        "intraframes period: %" G_GINT64_FORMAT, enc->interval_intraframes, fps,
+        intraframes_period.val.i64);
+    update_prop_mask |= DYNAMIC_PROP_IFRAME;
+  }
+
+  if (update_prop_mask) {
+    config = g_ptr_array_new ();
+
+    if (config) {
+      if (update_prop_mask & DYNAMIC_PROP_BITRATE) {
+        g_ptr_array_add (config, &bitrate);
+      }
+
+      if (update_prop_mask & DYNAMIC_PROP_IFRAME) {
+        g_ptr_array_add (config, &intraframes_period);
+      }
+
+      if (!c2componentInterface_config (enc->comp_intf,
+              config, BLOCK_MODE_MAY_BLOCK)) {
+        GST_WARNING_OBJECT (enc,
+            "Failed to set encoder config for prop_mask 0x%x",
+            update_prop_mask);
+      } else {
+        if (update_prop_mask & DYNAMIC_PROP_BITRATE) {
+          enc->configured_target_bitrate = enc->target_bitrate;
+        }
+
+        if (update_prop_mask & DYNAMIC_PROP_IFRAME) {
+          enc->configured_interval_intraframes = enc->interval_intraframes;
+        }
+      }
+      g_ptr_array_free (config, TRUE);
+    }
   }
 }
 
@@ -2664,7 +2705,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           0, G_MAXUINT,
           DEFAULT_INTERVAL_INTRAFRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
-          GST_PARAM_MUTABLE_READY));
+          GST_PARAM_MUTABLE_PLAYING));
 
   g_object_class_install_property (gobject_class, PROP_INLINE_SPSPPS_HEADERS,
       g_param_spec_boolean ("inline-header",
@@ -2785,6 +2826,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->silent = FALSE;
   enc->is_heic = FALSE;
   enc->interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
+  enc->configured_interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
   enc->inline_sps_pps_headers = DEFAULT_INLINE_HEADERS;
 
   enc->min_qp_i_frames = 0;
