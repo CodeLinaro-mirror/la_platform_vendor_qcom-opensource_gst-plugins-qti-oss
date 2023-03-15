@@ -233,7 +233,8 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
 {
   ::qmmf::recorder::Recorder *recorder = context->recorder;
   ::camera::CameraMetadata meta;
-  camera_metadata_entry entry;
+  camera_metadata_entry entry, entry_max_res;
+  gboolean meta_entry_found, meta_entry_max_res_found;
   gint width = 0, height = 0, format = 0;
   gboolean supported = FALSE;
   guint idx = 0;
@@ -277,7 +278,7 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
       QMMFSRC_RETURN_VAL_IF_FAIL (NULL, format == GST_BAYER_FORMAT_RGGB,
           FALSE, "Invalid bayer matrix format, expected format 'rggb' !");
       break;
-#if defined(CAMERA_METADATA_1_1)
+#if defined(CAMERA_METADATA_1_1) || defined(CAMERA_METADATA_1_0_NS)
     case ANDROID_SENSOR_INFO_COLOR_FILTER_ARRANGEMENT_MONO:
       QMMFSRC_RETURN_VAL_IF_FAIL (NULL, format == GST_BAYER_FORMAT_MONO,
           FALSE, "Invalid bayer matrix format, expected format 'mono' !");
@@ -288,24 +289,56 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
       return FALSE;
   }
 
-  if (!meta.exists (ANDROID_SENSOR_OPAQUE_RAW_SIZE)) {
-    GST_WARNING ("There is no camera bayer size information!");
-    return FALSE;
+  meta_entry_found = FALSE;
+  meta_entry_max_res_found = FALSE;
+
+#if defined(CAMERA_METADATA_1_0_NS)
+  if (meta.exists(ANDROID_SENSOR_OPAQUE_RAW_SIZE_MAXIMUM_RESOLUTION)) {
+    entry_max_res = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE_MAXIMUM_RESOLUTION);
+    meta_entry_max_res_found = TRUE;
+  }
+#endif
+
+  if (meta.exists (ANDROID_SENSOR_OPAQUE_RAW_SIZE)) {
+    entry = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE);
+    meta_entry_found = TRUE;
   }
 
-  entry = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE);
+  if ((meta_entry_found == FALSE) && (meta_entry_max_res_found == FALSE)) {
+      GST_WARNING ("There is no camera bayer size information!");
+      return FALSE;
+  }
 
-  for (idx = 0; idx < entry.count; idx += 3) {
-    if (width == static_cast<gint> (entry.data.i32[idx+0]) &&
-      height == static_cast<gint> (entry.data.i32[idx+1])) {
-      supported = true;
-      break;
+  if (meta_entry_max_res_found == TRUE) {
+    for (idx = 0; idx < entry_max_res.count; idx += 3) {
+
+      GST_WARNING ("valid bayer resolution %dx%d",
+          entry_max_res.data.i32[idx+0], entry_max_res.data.i32[idx+1]);
+
+      if (width == static_cast<gint> (entry_max_res.data.i32[idx+0]) &&
+        height == static_cast<gint> (entry_max_res.data.i32[idx+1])) {
+        supported = TRUE;
+        break;
+      }
+    }
+  }
+
+  if ((supported == FALSE) && (meta_entry_found == TRUE)) {
+    for (idx = 0; idx < entry.count; idx += 3) {
+
+      GST_WARNING ("valid bayer resolution %dx%d",
+          entry.data.i32[idx+0], entry.data.i32[idx+1]);
+
+      if (width == static_cast<gint> (entry.data.i32[idx+0]) &&
+        height == static_cast<gint> (entry.data.i32[idx+1])) {
+        supported = TRUE;
+        break;
+      }
     }
   }
 
   QMMFSRC_RETURN_VAL_IF_FAIL (NULL, supported, FALSE,
-      "Invalid bayer resolution, expected %dx%d !", entry.data.i32[0],
-      entry.data.i32[1]);
+      "Invalid bayer resolution!");
 
   return TRUE;
 }
