@@ -149,7 +149,7 @@ gst_qcodec2_h264_dec_set_format (GstQcodec2Vdec * decoder,
         pixel_format.pixelFormat.fmt);
     g_ptr_array_add (config, &pixel_format);
 
-#ifdef GST_SUPPORT_INTERLACE
+#ifdef GST_SUPPORT_C2DEC_DEINTERLACE
     deinterlace = make_deinterlace_param (base_dec->deinterlace);
     GST_DEBUG_OBJECT (dec, "set deinterlace param");
 
