@@ -159,6 +159,7 @@ struct _GstQcodec2Venc
   guint32 quant_i_frames;
   guint32 quant_p_frames;
   guint32 quant_b_frames;
+  gboolean report_average_frame_qp;
 };
 
 /*
