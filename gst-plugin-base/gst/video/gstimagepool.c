@@ -71,18 +71,17 @@
 
 #include <gbm.h>
 #include <gbm_priv.h>
-#ifdef USE_ION_BUFFER_POOL
 #include <linux/ion.h>
 #include <linux/msm_ion.h>
-#endif
-#ifndef DISPLAY_MEDIA_HEADER_2
-#include <media/msm_media_info.h>
-#else
+
+#ifdef HAVE_MMM_COLOR_FMT_H
 #include <display/media/mmm_color_fmt.h>
-#define COLOR_FMT_NV12_UBWC     MMM_COLOR_FMT_NV12_UBWC
-#define MSM_MEDIA_ALIGN         MMM_COLOR_FMT_ALIGN
-#define VENUS_Y_META_STRIDE     MMM_COLOR_FMT_Y_META_STRIDE
-#define VENUS_Y_META_SCANLINES  MMM_COLOR_FMT_Y_META_SCANLINES
+#else
+#include <media/msm_media_info.h>
+#define MMM_COLOR_FMT_NV12_UBWC COLOR_FMT_NV12_UBWC
+#define MMM_COLOR_FMT_ALIGN MSM_MEDIA_ALIGN
+#define MMM_COLOR_FMT_Y_META_STRIDE VENUS_Y_META_STRIDE
+#define MMM_COLOR_FMT_Y_META_SCANLINES VENUS_Y_META_SCANLINES
 #endif
 
 GST_DEBUG_CATEGORY_STATIC (gst_image_pool_debug);
@@ -90,10 +89,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_image_pool_debug);
 
 #define GST_IS_GBM_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_GBM))
-#ifdef USE_ION_BUFFER_POOL
 #define GST_IS_ION_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_ION))
-#endif
 
 #define DEFAULT_PAGE_ALIGNMENT 4096
 
@@ -320,7 +317,6 @@ gbm_device_free (GstImageBufferPool * vpool, gint fd)
   priv->gbm_bo_destroy (bo);
 }
 
-#ifdef USE_ION_BUFFER_POOL
 static gboolean
 open_ion_device (GstImageBufferPool * vpool)
 {
@@ -425,7 +421,6 @@ ion_device_free (GstImageBufferPool * vpool, gint fd)
 
   close (fd);
 }
-#endif
 
 static const gchar **
 gst_image_buffer_pool_get_options (GstBufferPool * pool)
@@ -537,12 +532,12 @@ gst_image_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
       if (priv->isubwc && (bufinfo.format = GBM_FORMAT_NV12)) {
         guint metastride, metascanline;
 
-        metastride = VENUS_Y_META_STRIDE (COLOR_FMT_NV12_UBWC, bufinfo.width);
-        metascanline = VENUS_Y_META_SCANLINES (COLOR_FMT_NV12_UBWC, bufinfo.height);
+        metastride = MMM_COLOR_FMT_Y_META_STRIDE (MMM_COLOR_FMT_NV12_UBWC, bufinfo.width);
+        metascanline = MMM_COLOR_FMT_Y_META_SCANLINES (MMM_COLOR_FMT_NV12_UBWC, bufinfo.height);
 
         GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 1) =
-            MSM_MEDIA_ALIGN (stride * scanline, DEFAULT_PAGE_ALIGNMENT) +
-            MSM_MEDIA_ALIGN (metastride * metascanline, DEFAULT_PAGE_ALIGNMENT);
+            MMM_COLOR_FMT_ALIGN (stride * scanline, DEFAULT_PAGE_ALIGNMENT) +
+            MMM_COLOR_FMT_ALIGN (metastride * metascanline, DEFAULT_PAGE_ALIGNMENT);
       }
     }
 
@@ -578,10 +573,8 @@ gst_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     memory = gbm_device_alloc (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     memory = ion_device_alloc (vpool);
-#endif
   }
 
   if (NULL == memory) {
@@ -618,10 +611,8 @@ gst_image_buffer_pool_free (GstBufferPool * pool, GstBuffer * buffer)
 
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     gbm_device_free (vpool, fd);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     ion_device_free (vpool, fd);
-#endif
   }
   gst_buffer_unref (buffer);
 }
@@ -653,10 +644,8 @@ gst_image_buffer_pool_finalize (GObject * object)
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     close_gbm_device (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     close_ion_device (vpool);
-#endif
   }
 
   g_mutex_clear (&priv->lock);
@@ -705,11 +694,9 @@ gst_image_buffer_pool_new (const gchar * type)
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using GBM memory");
     success = open_gbm_device (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using ION memory");
     success = open_ion_device (vpool);
-#endif
   } else {
     GST_ERROR_OBJECT (vpool, "Invalid memory type %s!",
         g_quark_to_string (vpool->priv->memtype));

@@ -18,7 +18,7 @@ set_target_properties(${GST_QTI_VIDEO_BASE} PROPERTIES PUBLIC_HEADER
 )
 
 target_compile_definitions(${GST_QTI_VIDEO_BASE} PRIVATE
-  $<$<BOOL:${DISPLAY_MEDIA_HEADER_2}>:DISPLAY_MEDIA_HEADER_2>
+  $<$<BOOL:${HAVE_MMM_COLOR_FMT_H}>:HAVE_MMM_COLOR_FMT_H>
 )
 
 target_include_directories(${GST_QTI_VIDEO_BASE} PUBLIC

@@ -68,10 +68,8 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-#ifdef USE_ION_BUFFER_POOL
 #include <linux/ion.h>
 #include <linux/msm_ion.h>
-#endif
 
 #include "gstmlmeta.h"
 
@@ -79,10 +77,8 @@
 GST_DEBUG_CATEGORY_STATIC (gst_ml_pool_debug);
 #define GST_CAT_DEFAULT gst_ml_pool_debug
 
-#ifdef USE_ION_BUFFER_POOL
 #define GST_IS_ION_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_ML_BUFFER_POOL_TYPE_ION))
-#endif
 #define GST_IS_SYSTEM_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_ML_BUFFER_POOL_TYPE_SYSTEM))
 
@@ -113,7 +109,6 @@ struct _GstMLBufferPoolPrivate
 G_DEFINE_TYPE_WITH_PRIVATE (GstMLBufferPool, gst_ml_buffer_pool,
     GST_TYPE_BUFFER_POOL);
 
-#ifdef USE_ION_BUFFER_POOL
 static gboolean
 open_ion_device (GstMLBufferPool * mlpool)
 {
@@ -220,7 +215,6 @@ ion_device_free (GstMLBufferPool * mlpool, gint fd)
 
   close (fd);
 }
-#endif
 
 static const gchar **
 gst_ml_buffer_pool_get_options (GstBufferPool * pool)
@@ -271,12 +265,10 @@ gst_ml_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
   if (!gst_buffer_pool_config_get_allocator (config, &allocator, &params)) {
     GST_ERROR_OBJECT (mlpool, "Allocator missing from configuration");
     return FALSE;
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype) &&
       !GST_IS_FD_ALLOCATOR (allocator)) {
     GST_ERROR_OBJECT (mlpool, "Allocator %p is not FD backed!", allocator);
     return FALSE;
-#endif
   } else if (GST_IS_SYSTEM_MEMORY_TYPE (priv->memtype) &&
       GST_IS_FD_ALLOCATOR (allocator)) {
     GST_ERROR_OBJECT (mlpool, "Allocator %p cannot be FD backed!", allocator);
@@ -329,10 +321,8 @@ gst_ml_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
 
     if (GST_IS_SYSTEM_MEMORY_TYPE (priv->memtype))
       mem = gst_allocator_alloc (priv->allocator, size, NULL);
-#ifdef USE_ION_BUFFER_POOL
     else if (GST_IS_ION_MEMORY_TYPE (priv->memtype))
       mem = ion_device_alloc (mlpool, size);
-#endif
 
     if (NULL == mem) {
       GST_WARNING_OBJECT (mlpool, "Failed to allocate memory!");
@@ -371,13 +361,10 @@ gst_ml_buffer_pool_free (GstBufferPool * pool, GstBuffer * buffer)
   guint idx = 0;
 
   for (idx = 0; idx < gst_buffer_n_memory (buffer); idx++) {
-#ifdef USE_ION_BUFFER_POOL
     if (GST_IS_ION_MEMORY_TYPE (mlpool->priv->memtype)) {
       gint fd = gst_fd_memory_get_fd (gst_buffer_peek_memory (buffer, idx));
       ion_device_free (mlpool, fd);
-    } else
-#endif
-    if (GST_IS_SYSTEM_MEMORY_TYPE (mlpool->priv->memtype)) {
+    } else if (GST_IS_SYSTEM_MEMORY_TYPE (mlpool->priv->memtype)) {
       // No additional handling is needed.
     }
   }
@@ -398,10 +385,8 @@ gst_ml_buffer_pool_finalize (GObject * object)
     gst_object_unref (priv->allocator);
   }
 
-#ifdef USE_ION_BUFFER_POOL
   if (GST_IS_ION_MEMORY_TYPE (priv->memtype))
     close_ion_device (mlpool);
-#endif
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -443,13 +428,10 @@ gst_ml_buffer_pool_new (const gchar * memtype)
   mlpool->priv->addmeta = FALSE;
   mlpool->priv->continuous = FALSE;
 
-#ifdef USE_ION_BUFFER_POOL
   if (GST_IS_ION_MEMORY_TYPE (mlpool->priv->memtype)) {
     GST_INFO_OBJECT (mlpool, "Using ION memory");
     success = open_ion_device (mlpool);
-  } else
-#endif
-  if (GST_IS_SYSTEM_MEMORY_TYPE (mlpool->priv->memtype)) {
+  } else if (GST_IS_SYSTEM_MEMORY_TYPE (mlpool->priv->memtype)) {
     GST_INFO_OBJECT (mlpool, "Using SYSTEM memory");
     success = TRUE;
   } else {

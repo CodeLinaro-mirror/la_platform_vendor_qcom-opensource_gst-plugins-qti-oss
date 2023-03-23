@@ -902,7 +902,7 @@ setQPRanges (gpointer param)
   if (param == NULL)
     return nullptr;
 
-#ifndef CODEC2_QPR_API_2
+#ifndef QP_RANGES_VERSION_2_0
   config_params_t *config = (config_params_t*) param;
   qc2::C2VideoQPRangeSetting::output qp_ranges;
   qp_ranges.miniqp = config->qp_ranges.miniqp;
