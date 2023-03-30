@@ -70,9 +70,6 @@ typedef struct _GstQcodec2VencClass GstQcodec2VencClass;
     "height = (int) [" #min ", " #max "],"                          \
     "framerate = " GST_VIDEO_FPS_RANGE
 
-/* Maximum number of input frame queued */
-#define MAX_QUEUED_FRAME  32
-
 typedef struct
 {
   const gchar *profile;
@@ -100,8 +97,6 @@ struct _GstQcodec2Venc
   /* manage the lifetime of C2 component adapter */
   GstC2Comp *gst_c2_comp;
 
-  guint64 queued_frame[MAX_QUEUED_FRAME];
-
   GstBufferPool *pool;
   GstVideoCodecState *input_state;
   GstVideoCodecState *output_state;
@@ -115,7 +110,6 @@ struct _GstQcodec2Venc
   GstVideoFormat input_format;
   GstVideoInfo input_info;
   guint64 frame_index;
-  guint64 num_input_queued;
   guint64 num_output_done;
 
   GstVideoInterlaceMode interlace_mode;

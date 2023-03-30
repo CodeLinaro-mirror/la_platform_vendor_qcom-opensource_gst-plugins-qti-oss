@@ -1623,11 +1623,8 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
   enc->width = 0;
   enc->height = 0;
   enc->frame_index = 0;
-  enc->num_input_queued = 0;
   enc->num_output_done = 0;
   enc->gst_c2_comp = NULL;
-
-  memset (enc->queued_frame, 0, MAX_QUEUED_FRAME);
 
   /* Create component store */
   enc->comp_store = c2componentStore_create ();
@@ -2019,6 +2016,9 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (ret != GST_FLOW_FLUSHING && ret != GST_FLOW_OK) {
           GST_ERROR_OBJECT (enc, "Failed to push frame downstream");
         }
+
+        enc->num_output_done++;
+        GST_LOG_OBJECT (enc, "output done, count: %lu", enc->num_output_done);
       } else if (outBuffer->flag & FLAG_TYPE_END_OF_STREAM) {
         GST_INFO_OBJECT (enc, "Encoder reached EOS");
         g_mutex_lock (&enc->pending_lock);
@@ -2437,10 +2437,6 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
   handle_ltr (encoder, frame);
 
-  /* Keep track of queued frame */
-  enc->queued_frame[(enc->frame_index) % MAX_QUEUED_FRAME] =
-      frame->system_frame_number;
-
   /* Queue buffer to Codec2 */
   status = c2component_queue (enc->comp, &inBuf);
 
@@ -2452,7 +2448,6 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
   g_mutex_lock (&(enc->pending_lock));
   enc->frame_index += 1;
-  enc->num_input_queued++;
   g_mutex_unlock (&(enc->pending_lock));
 
 out:

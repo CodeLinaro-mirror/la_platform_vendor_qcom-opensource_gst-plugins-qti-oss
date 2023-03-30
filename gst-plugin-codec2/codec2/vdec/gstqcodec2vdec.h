@@ -96,8 +96,6 @@ ConfigParams make_pixel_format_param (guint32 fmt, gboolean is_input);
 guint32 gst_to_c2_pixelformat (GstQcodec2Vdec * decoder, GstVideoFormat format);
 gboolean gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder);
 
-/* Maximum number of input frame queued */
-#define MAX_QUEUED_FRAME  64
 #define DEFAULT_DEINTERLACE TRUE
 
 struct _GstQcodec2Vdec
@@ -115,9 +113,6 @@ struct _GstQcodec2Vdec
   /* manage the lifetime of C2 component adapter */
   GstC2Comp *gst_c2_comp;
 
-  guint64 queued_frame[MAX_QUEUED_FRAME];
-  gboolean downstream_supports_gbm;
-
   GstVideoCodecState *input_state;
   GstVideoCodecState *output_state;
 
@@ -130,7 +125,6 @@ struct _GstQcodec2Vdec
   guint64 frame_index;
   GstVideoInterlaceMode interlace_mode;
   GstVideoFormat output_format;
-  guint64 num_input_queued;
   guint64 num_output_done;
   gboolean downstream_supports_dma;
   gboolean output_picture_order_mode;
