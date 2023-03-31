@@ -28,6 +28,9 @@
 GST_DEBUG_CATEGORY (gst_qvdeinterlace_debug);
 #define GST_CAT_DEFAULT gst_qvdeinterlace_debug
 
+#define QVDEINTERLACE_MIN_OUT_BUF 2
+#define QVDEINTERLACE_MAX_OUT_BUF 16
+
 /* Filter signals and args */
 enum
 {
@@ -455,12 +458,12 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
   GstCaps *outcaps = NULL;
   GstAllocator *allocator;
   GstStructure *config;
-  guint min, max, size;
+  guint min = 0, max = 0, size = 0;
   gboolean update_pool;
 
   GST_INFO_OBJECT (self, "%" GST_PTR_FORMAT, query);
 
-  /* Take downstream proposed max no. of buffer if provided. */
+  /* Consider downstream proposed min/max/size if provided. */
   if (gst_query_get_n_allocation_pools (query) > 0) {
     gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
     GST_INFO_OBJECT (self, "downstream proposed pool %p,size %u,min %u,max %u",
@@ -469,8 +472,6 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     update_pool = TRUE;
   } else {
     GST_INFO_OBJECT (self, "downstream not propose pool");
-    size = 0;
-    max = 16;
     update_pool = FALSE;
   }
 
@@ -478,9 +479,10 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
   GST_INFO_OBJECT (self, "size %u, info size %u", size, (guint) info->size);
   size = MAX (size, info->size);
-  min = 2;
+  min = MAX (min, QVDEINTERLACE_MIN_OUT_BUF);
+  max = MAX (MAX (min, max), QVDEINTERLACE_MAX_OUT_BUF);
 
-  GST_INFO_OBJECT (self, "size %u, min %u, max %u", size, min, max);
+  GST_INFO_OBJECT (self, "pool size %u, min %u, max %u", size, min, max);
 
   if (pool)
     gst_object_unref (pool);
