@@ -674,9 +674,9 @@ gst_qcodec2_venc_rate_control_get_type (void)
     static const GEnumValue values[] = {
       {RC_OFF, "Disable RC", "disable"},
       {RC_CONST, "Constant bitrate, constant framerate, CBR-CFR", "constant"},
-      {RC_CBR_VFR, "Constant bitrate, variable framerate", "CBR-VFR"},
+      {RC_CBR_VFR, "Constant bitrate, variable framerate(skip frame if bit budget not enough)", "CBR-VFR"},
       {RC_VBR_CFR, "Variable bitrate, constant framerate", "VBR-CFR"},
-      {RC_VBR_VFR, "Variable bitrate, variable framerate", "VBR-VFR"},
+      {RC_VBR_VFR, "Variable bitrate, variable framerate(skip frame if bit budget not enough)", "VBR-VFR"},
       {RC_CQ, "Constant quality", "CQ"},
       {0, NULL, NULL}
     };
