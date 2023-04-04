@@ -108,10 +108,10 @@ std::unique_ptr<C2Param> setIntraRefresh(gpointer param);
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param);
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param);
 std::unique_ptr<C2Param> setVideoProfileLevel(gpointer param);
-std::unique_ptr<C2Param> setVideoFramerate (gpointer param);
-std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param);
-std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param);
-std::unique_ptr<C2Param> setVideoHeaderMode (gpointer param);
+std::unique_ptr<C2Param> setVideoFramerate(gpointer param);
+std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param);
+std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param);
+std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -126,8 +126,8 @@ std::unique_ptr<C2Param> setRoiRegion(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
@@ -642,26 +642,26 @@ std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
     return deinterlace;
 }
 
-std::unique_ptr<C2Param> setVideoFramerate (gpointer param)
+std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
 {
-  if (param == NULL) {
-      return nullptr;
-  }
+    if (param == NULL) {
+        return nullptr;
+    }
 
-  ConfigParams* config = (ConfigParams*)param;
+    ConfigParams* config = (ConfigParams*)param;
 
-  if (config->isInput) {
-      LOG_WARNING("setVideoFramerate input not implemented");
-  } else {
-      C2StreamFrameRateInfo::output framerate;
-      framerate.value = config->framerate;
-      return C2Param::Copy(framerate);
-  }
+    if (config->isInput) {
+        LOG_WARNING("setVideoFramerate input not implemented");
+    } else {
+        C2StreamFrameRateInfo::output framerate;
+        framerate.value = config->framerate;
+        return C2Param::Copy(framerate);
+    }
 
-  return nullptr;
+    return nullptr;
 }
 
-std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
+std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param)
 {
     if (param == NULL) {
         return nullptr;
@@ -680,7 +680,7 @@ std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
     return nullptr;
 }
 
-std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param)
+std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param)
 {
     if (param == NULL) {
         return nullptr;
@@ -715,7 +715,7 @@ std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
     return C2Param::Copy(header_mode);
 }
 
-std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf)
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
@@ -746,7 +746,7 @@ std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf)
     return qp_ranges;
 }
 
-std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf)
+std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
@@ -1123,7 +1123,7 @@ gboolean c2componentStore_listComponents(void* const comp_store, GPtrArray* arra
         for (auto component : components) {
             g_ptr_array_add(array, (gpointer)component->name.c_str());
         }
-        ret = true;
+        ret = TRUE;
     }
 
     return ret;
