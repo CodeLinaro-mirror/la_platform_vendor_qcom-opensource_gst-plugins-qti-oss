@@ -122,6 +122,7 @@ gst_qeavb_pcm_src_init (GstQeavbPcmSrc * qeavbpcmsrc)
   memset(&(qeavbpcmsrc->hdr), 0, sizeof(eavb_ioctl_hdr_t));
   memset(&(qeavbpcmsrc->stream_info), 0, sizeof(eavb_ioctl_stream_info_t));
   g_mutex_init (&qeavbpcmsrc->lock);
+  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %u, hdr addr %p off %u, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
   kpi_place_marker("M - qeavbpcmsrc init");
 }
 
@@ -273,6 +274,7 @@ gst_qeavb_pcm_src_start (GstBaseSrc * basesrc)
   GST_INFO_OBJECT(qeavbpcmsrc,"qeavb pcm src start");
   kpi_place_marker("M - qeavbpcmsrc start");
   qeavbpcmsrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
+  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %u val %d, hdr addr %p off %u, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
   if (qeavbpcmsrc->eavb_fd < 0) {
     GST_ERROR_OBJECT (qeavbpcmsrc,"open eavb fd error, exit!");
     return FALSE;
@@ -284,25 +286,29 @@ gst_qeavb_pcm_src_start (GstBaseSrc * basesrc)
     goto error_close;
   }
 
+  GST_DEBUG_OBJECT (qeavbpcmsrc,"will get stream info");
+  err = qeavb_get_stream_info(qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), &(qeavbpcmsrc->stream_info));
+  if (0 != err) {
+    GST_ERROR_OBJECT (qeavbpcmsrc,"get stream info error %d, exit!", err);
+    goto error_destroy;
+  }
+  GST_DEBUG_OBJECT (qeavbpcmsrc, "QEAVB PCM source stream info pcm_bit_depth %d, num_pcm_channels %d, sample_rate %d, endianness %d, max_buffer_size %d, pkts_per_wake %d", qeavbpcmsrc->stream_info.pcm_bit_depth,
+    qeavbpcmsrc->stream_info.num_pcm_channels, qeavbpcmsrc->stream_info.sample_rate, qeavbpcmsrc->stream_info.endianness, qeavbpcmsrc->stream_info.max_buffer_size, qeavbpcmsrc->stream_info.pkts_per_wake);
+
   err = qeavb_connect_stream(qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr));
   if (0 != err) {
     GST_ERROR_OBJECT (qeavbpcmsrc,"connect stream error %d, exit!", err);
     goto error_destroy;
   }
-  GST_DEBUG_OBJECT (qeavbpcmsrc,"get stream info");
-
-  err = qeavb_get_stream_info(qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), &(qeavbpcmsrc->stream_info));
-  if (0 != err) {
-    GST_ERROR_OBJECT (qeavbpcmsrc,"get stream info error %d, exit!", err);
-    goto error_disconnect;
-  }
-  GST_DEBUG_OBJECT (qeavbpcmsrc, "QEAVB PCM source stream info pcm_bit_depth %d, num_pcm_channels %d, sample_rate %d, endianness %d, max_buffer_size %d, pkts_per_wake %d", qeavbpcmsrc->stream_info.pcm_bit_depth,
-    qeavbpcmsrc->stream_info.num_pcm_channels, qeavbpcmsrc->stream_info.sample_rate, qeavbpcmsrc->stream_info.endianness, qeavbpcmsrc->stream_info.max_buffer_size, qeavbpcmsrc->stream_info.pkts_per_wake);
 
   if (0 != qeavbpcmsrc->stream_info.max_buffer_size && 0 != qeavbpcmsrc->stream_info.pkts_per_wake)
     gst_base_src_set_blocksize (basesrc, qeavbpcmsrc->stream_info.max_buffer_size * qeavbpcmsrc->stream_info.pkts_per_wake);
-  // mmap
-  qeavbpcmsrc->eavb_addr = mmap(NULL, qeavbpcmsrc->stream_info.max_buffer_size * qeavbpcmsrc->stream_info.pkts_per_wake, PROT_READ | PROT_WRITE, MAP_SHARED, qeavbpcmsrc->eavb_fd, 0);
+
+  qeavbpcmsrc->eavb_addr = g_malloc0(qeavbpcmsrc->stream_info.max_buffer_size * qeavbpcmsrc->stream_info.pkts_per_wake);
+  if (qeavbpcmsrc->eavb_addr == NULL) {
+    GST_ERROR_OBJECT (qeavbpcmsrc,"alloc buffer error, exit!");
+    goto error_disconnect;
+  }
   qeavbpcmsrc->started = TRUE;
   kpi_place_marker("M - qeavbpcmsrc started successful");
   GST_DEBUG_OBJECT (qeavbpcmsrc, "QEAVB PCM source started");
@@ -335,8 +341,9 @@ gst_qeavb_pcm_src_stop (GstBaseSrc * basesrc)
 
   g_mutex_lock(&qeavbpcmsrc->lock);
   if (qeavbpcmsrc->started) {
-    munmap(qeavbpcmsrc->eavb_addr, qeavbpcmsrc->stream_info.max_buffer_size * qeavbpcmsrc->stream_info.pkts_per_wake);
-
+    if (qeavbpcmsrc->eavb_addr)
+      g_free(qeavbpcmsrc->eavb_addr);
+    qeavbpcmsrc->eavb_addr = NULL;
     GST_DEBUG_OBJECT (qeavbpcmsrc,"desconnect stream");
     err = qeavb_disconnect_stream(qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr));
     if (0 != err) {

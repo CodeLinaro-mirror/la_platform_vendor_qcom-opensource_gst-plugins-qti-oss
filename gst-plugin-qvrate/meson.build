@@ -1,4 +1,4 @@
-project('gst-plugin-qvdeinterlace', 'c',
+project('gst-plugin-qvrate', 'c',
   version : '1.0',
   meson_version : '>= 0.47',
   default_options : [ 'warning_level=1',
@@ -7,40 +7,25 @@ project('gst-plugin-qvdeinterlace', 'c',
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 plugins_pkgconfig_install_dir = join_paths(plugins_install_dir, 'pkgconfig')
 
-gstqvdeinterlace_sources = [
-  'gstqvdeinterlace.c',
-  'gstqvdeinpool.c',
-  'gpudeinterlace.c',
-  'qvdeindmabuf.c',
+gstqvrate_sources = [
+  'gstqvrate.c',
+  'gstqvratepool.c',
+  'gstqvratevpp.c',
+  'gstqvratedmabuf.c',
 ]
 
-use_mmmcolorfmt = get_option('mmmcolorfmt')
-if use_mmmcolorfmt
-  color_fmt_args = ['-DGST_USE_MMM_COLOR_FMT']
-else
-  color_fmt_args = []
-endif
+gstqvrate_c_args = ['-DHAVE_CONFIG_H']
+gstqvrate_link_args = [ ]
 
-gstqvdeinterlace_c_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
-gstqvdeinterlace_link_args = [ ]
-
-# comment out below 5 lines for testing on Ubuntu
-gstqvdeinterlace_c_args += ['-DQTI_PLATFORM']
-gstqvdeinterlace_c_args += ['-DUSE_GBM']
-#gstqvdeinterlace_link_args += ['-lgbm']
-# comment out below 2 lines for testing without GPU deinterlace
-gstqvdeinterlace_c_args += ['-DUSE_GPU_DEINTERLACE']
-#gstqvdeinterlace_link_args += ['-L.', '-lgpudi']
+gstqvrate_link_args += ['-lgbm']
+gstqvrate_link_args += ['-L.', '-lhyp_vpp_fe']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
-core_conf.set_quoted('PACKAGE', 'gst-plugin-qvdeinterlace')
-core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvdeinterlace')
+core_conf.set_quoted('PACKAGE', 'gst-plugin-qvrate')
+core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvrate')
 core_conf.set_quoted('PACKAGE_VERSION', '1.0')
 configure_file(output : 'config.h', configuration : core_conf)
-
-#gbm_dep = dependency('gbm')
-#gpudi_dep = dependency('gpudi')
 
 gst_dep = dependency('gstreamer-1.0',
   fallback : ['gstreamer', 'gst_dep'])
@@ -52,10 +37,10 @@ gstallocators_dep = dependency('gstreamer-allocators-1.0',
   fallback : ['gst-plugins-base', 'allocators_dep'])
 glib_dep = dependency('glib-2.0', version: '>= 2.44', required: false)
 
-gstqvdeinterlace = library('gstqvdeinterlace',
-  gstqvdeinterlace_sources,
-  c_args : [gstqvdeinterlace_c_args, '-Wall'],
-  link_args : [gstqvdeinterlace_link_args, '-ldl'],
+gstqvrate = library('gstqvrate',
+  gstqvrate_sources,
+  c_args : [gstqvrate_c_args, '-Wall'],
+  link_args : [gstqvrate_link_args, '-ldl'],
   include_directories : [configinc],
   dependencies : [glib_dep, gst_dep, gstbase_dep, gstvideo_dep, gstallocators_dep],
   install : true,

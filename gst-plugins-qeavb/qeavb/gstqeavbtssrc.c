@@ -115,6 +115,7 @@ gst_qeavb_ts_src_init (GstQeavbTsSrc * qeavbtssrc)
   memset(&(qeavbtssrc->hdr), 0, sizeof(eavb_ioctl_hdr_t));
   memset(&(qeavbtssrc->stream_info), 0, sizeof(eavb_ioctl_stream_info_t));
   g_mutex_init (&qeavbtssrc->lock);
+  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %u, hdr addr %p off %u, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
   kpi_place_marker("M - qeavbtssrc init");
 }
 
@@ -202,6 +203,7 @@ gst_qeavb_ts_src_start (GstBaseSrc * basesrc)
   GST_INFO_OBJECT(qeavbtssrc,"qeavb ts src start");
   kpi_place_marker("M - qeavbtssrc start");
   qeavbtssrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
+  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %u val %d, hdr addr %p off %u, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
   if (qeavbtssrc->eavb_fd < 0) {
     GST_ERROR_OBJECT (qeavbtssrc,"open eavb fd error, exit!");
     return FALSE;
@@ -213,26 +215,29 @@ gst_qeavb_ts_src_start (GstBaseSrc * basesrc)
     goto error_close;
   }
 
+  GST_DEBUG_OBJECT (qeavbtssrc,"will get stream info");
+  err = qeavb_get_stream_info(qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), &(qeavbtssrc->stream_info));
+  if (0 != err) {
+    GST_ERROR_OBJECT (qeavbtssrc,"get stream info error %d, exit!", err);
+    goto error_destroy;
+  }
+
+  GST_DEBUG_OBJECT (qeavbtssrc, "QEAVB TS source stream info max_buffer_size %d, pkts_per_wake %d", qeavbtssrc->stream_info.max_buffer_size, qeavbtssrc->stream_info.pkts_per_wake);
+
   err = qeavb_connect_stream(qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr));
   if (0 != err) {
     GST_ERROR_OBJECT (qeavbtssrc,"connect stream error %d, exit!", err);
     goto error_destroy;
   }
-  GST_DEBUG_OBJECT (qeavbtssrc,"get stream info");
-
-  err = qeavb_get_stream_info(qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), &(qeavbtssrc->stream_info));
-  if (0 != err) {
-    GST_ERROR_OBJECT (qeavbtssrc,"get stream info error %d, exit!", err);
-    goto error_disconnect;
-  }
-
-  GST_DEBUG_OBJECT (qeavbtssrc, "QEAVB TS source stream info max_buffer_size %d, pkts_per_wake %d", qeavbtssrc->stream_info.max_buffer_size, qeavbtssrc->stream_info.pkts_per_wake);
 
   if (0 != qeavbtssrc->stream_info.max_buffer_size && 0 != qeavbtssrc->stream_info.pkts_per_wake)
     gst_base_src_set_blocksize (basesrc, qeavbtssrc->stream_info.max_buffer_size * qeavbtssrc->stream_info.pkts_per_wake);
 
-  // mmap
-  qeavbtssrc->eavb_addr = mmap(NULL, qeavbtssrc->stream_info.max_buffer_size * qeavbtssrc->stream_info.pkts_per_wake, PROT_READ | PROT_WRITE, MAP_SHARED, qeavbtssrc->eavb_fd, 0);
+  qeavbtssrc->eavb_addr = g_malloc0(qeavbtssrc->stream_info.max_buffer_size * qeavbtssrc->stream_info.pkts_per_wake);
+  if (qeavbtssrc->eavb_addr == NULL) {
+    GST_ERROR_OBJECT (qeavbtssrc,"alloc buffer error, exit!");
+    goto error_disconnect;
+  }
   qeavbtssrc->started = TRUE;
   kpi_place_marker("M - qeavbtssrc started successful");
   GST_DEBUG_OBJECT (qeavbtssrc, "QEAVB ts source started");
@@ -265,8 +270,9 @@ gst_qeavb_ts_src_stop (GstBaseSrc * basesrc)
 
   g_mutex_lock(&qeavbtssrc->lock);
   if (qeavbtssrc->started) {
-    munmap(qeavbtssrc->eavb_addr, qeavbtssrc->stream_info.max_buffer_size * qeavbtssrc->stream_info.pkts_per_wake);
-
+    if (qeavbtssrc->eavb_addr)
+      g_free(qeavbtssrc->eavb_addr);
+    qeavbtssrc->eavb_addr = NULL;
     GST_DEBUG_OBJECT (qeavbtssrc,"desconnect stream");
     err = qeavb_disconnect_stream(qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr));
     if (0 != err) {
