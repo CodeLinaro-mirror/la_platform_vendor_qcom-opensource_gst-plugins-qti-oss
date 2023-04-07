@@ -37,10 +37,6 @@ gboolean qvratevpp_get_buf_requirements(void *ctx, struct vpp_requirements *req)
 
 gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *buf);
 
-gboolean qvratevpp_reconfigure(void *ctx,
-                         struct vpp_port_param input_param,
-                         struct vpp_port_param output_param);
-
 gboolean qvratevpp_flush(void *ctx, enum vpp_port port);
 
 gboolean qvratevpp_set_vid_prop(void *ctx, struct video_property prop);
