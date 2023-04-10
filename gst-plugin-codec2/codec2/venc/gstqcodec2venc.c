@@ -1854,10 +1854,6 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   outbuf = fill_output_buffer (enc, &state->info, desc);
   c2buffer_freed = free_output_c2buffer (enc, desc->index);
   frame->output_buffer = outbuf;
-  frame->pts = GST_BUFFER_PTS (outbuf);
-  frame->dts = GST_BUFFER_PTS (outbuf);
-  frame->duration = GST_BUFFER_DURATION (outbuf);
-
   if (NULL == outbuf) {
     GST_ERROR_OBJECT (enc, "failed to create outbuf");
     gst_video_encoder_finish_frame (encoder, frame);
