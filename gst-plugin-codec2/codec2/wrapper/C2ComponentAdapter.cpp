@@ -848,6 +848,26 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
     return interlace;
 }
 
+uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate)
+{
+    uint32_t frameQP = 0;
+    android::ReflectedParamUpdater::Dict paramsMap;
+    android::ReflectedParamUpdater::Value paramVal;
+    C2Value c2Value;
+
+    paramsMap = mIntf->getParams(configUpdate);
+    if (paramsMap.find("vendor.qti-ext-enc-info-coded_avgqp.frameQP") != paramsMap.end()) {
+        paramVal = paramsMap["vendor.qti-ext-enc-info-coded_avgqp.frameQP"];
+        if (paramVal.find(&c2Value)) {
+            if (c2Value.get(&frameQP)) {
+                LOG_DEBUG("get average frame QP: %u", frameQP);
+            }
+        }
+    }
+
+    return frameQP;
+}
+
 void C2ComponentAdapter::handleWorkDone(
     std::weak_ptr<C2Component> component,
     std::list<std::unique_ptr<C2Work> > workItems)
@@ -879,6 +899,7 @@ void C2ComponentAdapter::handleWorkDone(
         C2FrameData::flags_t outputFrameFlag = worklet->output.flags;
         uint64_t timestamp = worklet->output.ordinal.timestamp.peeku();
         uint32_t interlace = getInterlaceMode(worklet->output.configUpdate);
+        uint32_t frame_qp = getAvgFrameQP(worklet->output.configUpdate);
 
         while (!worklet->output.configUpdate.empty()) {
             std::unique_ptr<C2Param> param;
@@ -924,11 +945,11 @@ void C2ComponentAdapter::handleWorkDone(
                 mOutPendingBuffer[bufferIdx] = buffer;
             }
 
-            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlace, outputFrameFlag);
+            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
                 LOG_MESSAGE("Component(%p) reached EOS on output", this);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, outputFrameFlag);
+                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",

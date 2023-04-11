@@ -137,6 +137,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
 #define CONFIG_FUNCTION_KEY_IPB_QP_RANGE "IPB_qp_range"
 #define CONFIG_FUNCTION_KEY_IPB_QP_INIT "IPB_qp_init"
+#define CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP "report_average_frame_qp"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -391,6 +392,7 @@ typedef struct {
     gboolean secure;
     guint32 interlaceMode;
     gboolean heic_flag;
+    guint32 avg_frame_qp;
 } BufferDescriptor;
 
 typedef struct {
@@ -407,6 +409,7 @@ typedef struct {
         gboolean deinterlace;
         gboolean force_idr;
         gboolean inline_sps_pps_headers;
+        gboolean report_average_frame_qp;
 
         union {
             guint32 u32;

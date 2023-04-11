@@ -170,6 +170,7 @@ enum
   PROP_INIT_QUANT_I_FRAMES,
   PROP_INIT_QUANT_P_FRAMES,
   PROP_INIT_QUANT_B_FRAMES,
+  PROP_REPORT_AVERAGE_FRAME_QP,
 };
 
 /* GstVideoEncoder base class method */
@@ -562,6 +563,19 @@ make_qp_init_param (guint32 quant_i_frames, guint32 quant_p_frames,
     param.qp_init.quant_b_frames_enable = TRUE;
     param.qp_init.quant_b_frames = quant_b_frames;
   }
+
+  return param;
+}
+
+static ConfigParams
+make_report_avg_frame_qp_param (gboolean enable)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP;
+  param.report_average_frame_qp = enable;
 
   return param;
 }
@@ -1225,6 +1239,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams inline_header;
   ConfigParams qp_ranges;
   ConfigParams qp_init;
+  ConfigParams report_frame_qp;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1426,6 +1441,11 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     GST_DEBUG_OBJECT (enc,
         "set init quant I frames: %u, quant P frames: %u, quant B frmes: %u",
         enc->quant_i_frames, enc->quant_p_frames, enc->quant_b_frames);
+  }
+
+  if (enc->report_average_frame_qp) {
+    report_frame_qp = make_report_avg_frame_qp_param (TRUE);
+    g_ptr_array_add (config, &report_frame_qp);
   }
 
   /* Create component */
@@ -1808,6 +1828,20 @@ fill_output_buffer (GstQcodec2Venc * enc, GstVideoInfo * vinfo,
   GST_LOG_OBJECT (enc, "gstbuf:%p, PTS:%lu, duration:%lu, fps_d:%d, fps_n:%d",
       buf, GST_BUFFER_PTS (buf), GST_BUFFER_DURATION (buf),
       vinfo->fps_d, vinfo->fps_n);
+
+  /* Attach QTI video encoder meta */
+  if (enc->report_average_frame_qp) {
+    GstCustomMeta *qve_meta = gst_buffer_add_custom_meta (buf, "GstQVEMeta");
+    if (qve_meta) {
+      GstStructure *s = gst_custom_meta_get_structure (qve_meta);
+      if (s) {
+        gst_structure_set (s, "avg-frame-qp", G_TYPE_INT, desc->avg_frame_qp,
+            NULL);
+        GST_DEBUG_OBJECT (enc, "attach QVEMeta, add avg-frame-qp:%d",
+            desc->avg_frame_qp);
+      }
+    }
+  }
 
 out:
   return buf;
@@ -2398,6 +2432,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_INIT_QUANT_B_FRAMES:
       enc->quant_b_frames = g_value_get_uint (value);
       break;
+    case PROP_REPORT_AVERAGE_FRAME_QP:
+      enc->report_average_frame_qp = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2506,6 +2543,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INIT_QUANT_B_FRAMES:
       g_value_set_uint (value, enc->quant_b_frames);
+      break;
+    case PROP_REPORT_AVERAGE_FRAME_QP:
+      g_value_set_boolean (value, enc->report_average_frame_qp);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2788,6 +2828,13 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_REPORT_AVERAGE_FRAME_QP,
+      g_param_spec_boolean ("report-frame-qp", "Report Frame QP",
+          "Return average frame QP for each output frame and attach it to gstbuffer",
+          FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -2848,6 +2895,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->quant_i_frames = DEFAULT_INIT_QUANT_I_FRAMES;
   enc->quant_p_frames = DEFAULT_INIT_QUANT_P_FRAMES;
   enc->quant_b_frames = DEFAULT_INIT_QUANT_B_FRAMES;
+  enc->report_average_frame_qp = FALSE;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
@@ -2859,6 +2907,13 @@ gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array)
   /* debug category for fltering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_venc_debug, "qcodec2venc",
       0, "GST QTI codec2.0 video encoder");
+
+  static gsize res = FALSE;
+  static const gchar *tags[] = { NULL };
+  if (g_once_init_enter (&res)) {
+    gst_meta_register_custom ("GstQVEMeta", tags, NULL, NULL, NULL);
+    g_once_init_leave (&res, TRUE);
+  }
 
   guint count = 0;
   if (array) {
