@@ -112,6 +112,7 @@ std::unique_ptr<C2Param> setVideoFramerate(gpointer param);
 std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param);
 std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param);
 std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param);
+std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -145,6 +146,7 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD, setIntraframesPeriod },
     { CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST, setIntraVideoFrameRequest },
     { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
+    { CONFIG_FUNCTION_KEY_TEMPORAL_LAYER, setVideoTemporalLayer },
 };
 
 // Function map for vendor parameter configuration
@@ -715,6 +717,29 @@ std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
         C2Config::PREPEND_HEADER_TO_NONE;
 
     return C2Param::Copy(header_mode);
+}
+
+std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    auto pTemporalLayering = C2StreamTemporalLayeringTuning::output::AllocUnique(
+            config->temporalLayer.ratioSize);
+    pTemporalLayering->m.layerCount = config->temporalLayer.layerCount;
+    pTemporalLayering->m.bLayerCount = config->temporalLayer.bLayerCount;
+
+    if (config->temporalLayer.ratios) {
+        for (uint32_t i = 0; i < config->temporalLayer.ratioSize; i++) {
+            pTemporalLayering->m.bitrateRatios[i] = config->temporalLayer.ratios[i];
+            LOG_MESSAGE("bitrateRatios[%d]=%.2f", i, config->temporalLayer.ratios[i]);
+        }
+    }
+
+    return C2Param::Copy(*pTemporalLayering);
 }
 
 std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf)

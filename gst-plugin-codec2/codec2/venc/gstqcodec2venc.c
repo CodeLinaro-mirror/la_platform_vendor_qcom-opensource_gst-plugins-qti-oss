@@ -171,6 +171,9 @@ enum
   PROP_INIT_QUANT_P_FRAMES,
   PROP_INIT_QUANT_B_FRAMES,
   PROP_REPORT_AVERAGE_FRAME_QP,
+  PROP_HIER_P,
+  PROP_HIER_B,
+  PROP_BITRATE_RATIOS,
 };
 
 /* GstVideoEncoder base class method */
@@ -216,6 +219,27 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
 static void gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder);
 
 static guint gst_qcodec2_venc_signals[LAST_SIGNAL] = { 0 };
+
+static ConfigParams
+make_temporallayer_param (guint32 hierp_layers, guint32 hierb_layers,
+    guint32 size, gfloat *ratios)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_TEMPORAL_LAYER;
+
+  param.temporalLayer.layerCount = hierp_layers + hierb_layers;
+  param.temporalLayer.bLayerCount = hierb_layers;
+  param.temporalLayer.ratioSize = size;
+
+  if (ratios) {
+    param.temporalLayer.ratios = ratios;
+  }
+
+  return param;
+}
 
 static ConfigParams
 make_bitrate_param (guint32 bitrate, gboolean is_input)
@@ -1240,6 +1264,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams qp_ranges;
   ConfigParams qp_init;
   ConfigParams report_frame_qp;
+  ConfigParams temporal_layer;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1446,6 +1471,12 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->report_average_frame_qp) {
     report_frame_qp = make_report_avg_frame_qp_param (TRUE);
     g_ptr_array_add (config, &report_frame_qp);
+  }
+
+  if (enc->hierp_layers > 0 || enc->hierb_layers > 0) {
+    temporal_layer = make_temporallayer_param (enc->hierp_layers,
+        enc->hierb_layers, enc->ratio_size, enc->bitrate_ratios);
+    g_ptr_array_add (config, &temporal_layer);
   }
 
   /* Create component */
@@ -2435,6 +2466,27 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_REPORT_AVERAGE_FRAME_QP:
       enc->report_average_frame_qp = g_value_get_boolean (value);
       break;
+    case PROP_HIER_P:
+      enc->hierp_layers = g_value_get_uint (value);
+      break;
+    case PROP_HIER_B:
+      enc->hierb_layers = g_value_get_uint (value);
+      break;
+    case PROP_BITRATE_RATIOS:
+      if (enc->bitrate_ratios) {
+        g_free (enc->bitrate_ratios);
+        enc->bitrate_ratios = NULL;
+      }
+
+      enc->ratio_size = gst_value_array_get_size (value);
+      enc->bitrate_ratios = g_new (gfloat, enc->ratio_size);
+      if (enc->bitrate_ratios) {
+        for (gint i = 0; i < enc->ratio_size; i++) {
+          const GValue *ratio = gst_value_array_get_value (value, i);
+          enc->bitrate_ratios[i] = g_value_get_float (ratio);
+        }
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2568,6 +2620,11 @@ gst_qcodec2_venc_finalize (GObject * object)
 
   if (enc->comp_name) {
     enc->comp_name = NULL;
+  }
+
+  if (enc->bitrate_ratios) {
+    g_free (enc->bitrate_ratios);
+    enc->bitrate_ratios = NULL;
   }
 
   if (enc->roi_array) {
@@ -2835,6 +2892,30 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HIER_P,
+      g_param_spec_uint ("hier-p", "Hier-P",
+          "total number of P layers",
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HIER_B,
+      g_param_spec_uint ("hier-b", "Hier-B",
+          "total number of B layers",
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_BITRATE_RATIOS,
+      gst_param_spec_array ("bitrate-ratios", "Bitrate ratios",
+          "Bitrate ratio array for each layer",
+          g_param_spec_float ("bitrate-ratio", "Bitrate ratio",
+              "Bitrate budgets for each layer and the layers below, " \
+              "given as a ratio of the total, stream bitrate",
+              0.0, 1.0, 0.0,
+              G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS),
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -2896,6 +2977,10 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->quant_p_frames = DEFAULT_INIT_QUANT_P_FRAMES;
   enc->quant_b_frames = DEFAULT_INIT_QUANT_B_FRAMES;
   enc->report_average_frame_qp = FALSE;
+  enc->hierp_layers = 0;
+  enc->hierb_layers = 0;
+  enc->ratio_size = 0;
+  enc->bitrate_ratios = NULL;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
