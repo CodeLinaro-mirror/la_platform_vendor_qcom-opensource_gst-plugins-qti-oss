@@ -28,7 +28,7 @@
  *
  * Changes from Qualcomm Innovation Center are provided under the following license:
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted (subject to the limitations in the
@@ -71,30 +71,33 @@
 
 #include <gbm.h>
 #include <gbm_priv.h>
-#ifdef USE_ION_BUFFER_POOL
-#include <linux/ion.h>
-#include <linux/msm_ion.h>
-#endif
 
 #ifdef HAVE_MMM_COLOR_FMT_H
 #include <display/media/mmm_color_fmt.h>
 #else
 #include <media/msm_media_info.h>
 #define MMM_COLOR_FMT_NV12_UBWC COLOR_FMT_NV12_UBWC
+#define MMM_COLOR_FMT_NV12_BPP10_UBWC COLOR_FMT_NV12_BPP10_UBWC
+#define MMM_COLOR_FMT_P010_UBWC COLOR_FMT_P010_UBWC
 #define MMM_COLOR_FMT_ALIGN MSM_MEDIA_ALIGN
 #define MMM_COLOR_FMT_Y_META_STRIDE VENUS_Y_META_STRIDE
 #define MMM_COLOR_FMT_Y_META_SCANLINES VENUS_Y_META_SCANLINES
-#endif
+#endif // HAVE_MMM_COLOR_FMT_H
+
+#if defined(HAVE_LINUX_DMA_HEAP_H)
+#include <linux/dma-heap.h>
+#else
+#include <linux/ion.h>
+#include <linux/msm_ion.h>
+#endif // HAVE_LINUX_DMA_HEAP_H
 
 GST_DEBUG_CATEGORY_STATIC (gst_image_pool_debug);
 #define GST_CAT_DEFAULT gst_image_pool_debug
 
 #define GST_IS_GBM_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_GBM))
-#ifdef USE_ION_BUFFER_POOL
 #define GST_IS_ION_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_IMAGE_BUFFER_POOL_TYPE_ION))
-#endif
 
 #define DEFAULT_PAGE_ALIGNMENT 4096
 
@@ -109,7 +112,7 @@ struct _GstImageBufferPoolPrivate
   GstAllocationParams params;
   GQuark              memtype;
 
-  // Either ION or GBM device FD.
+  // Either ION, DMA or GBM device FD.
   gint                devfd;
 
   // GBM library handle;
@@ -149,6 +152,11 @@ gst_video_format_to_gbm_format (GstVideoFormat format)
       return GBM_FORMAT_YCrCb_422_I;
     case GST_VIDEO_FORMAT_UYVY:
       return GBM_FORMAT_UYVY;
+    case GST_VIDEO_FORMAT_P010_10LE:
+      return GBM_FORMAT_YCbCr_420_P010_VENUS;
+    case GST_VIDEO_FORMAT_NV12_10LE32:
+      // TODO: Hack due to missing TP10 format
+      return GBM_FORMAT_YCbCr_420_TP10_UBWC;
     case GST_VIDEO_FORMAT_BGRx:
       return GBM_FORMAT_BGRX8888;
     case GST_VIDEO_FORMAT_BGRA:
@@ -242,11 +250,11 @@ open_gbm_device (GstImageBufferPool * vpool)
   }
 
   GST_INFO_OBJECT (vpool, "Open /dev/dma_heap/qcom,system");
-  priv->devfd = open ("/dev/dma_heap/qcom,system", O_RDWR);
+  priv->devfd = open ("/dev/dma_heap/qcom,system", O_RDONLY | O_CLOEXEC);
 
   if (priv->devfd < 0) {
     GST_WARNING_OBJECT (vpool, "Falling back to /dev/ion");
-    priv->devfd = open ("/dev/ion", O_RDWR);
+    priv->devfd = open ("/dev/ion", O_RDONLY | O_CLOEXEC);
   }
 
   if (priv->devfd < 0) {
@@ -275,13 +283,24 @@ gbm_device_alloc (GstImageBufferPool * vpool)
 {
   GstImageBufferPoolPrivate *priv = vpool->priv;
   struct gbm_bo *bo = NULL;
-  GstFdMemoryFlags flags = 0;
   gint fd, format, usage = 0;
+
+#ifdef GBM_FREE_FD
+  GstFdMemoryFlags flags = 0;
+#else
+  GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_DONT_CLOSE;
+#endif
 
   format = gst_video_format_to_gbm_format (GST_VIDEO_INFO_FORMAT (&priv->info));
   g_return_val_if_fail (format >= 0, NULL);
 
-  usage |= priv->isubwc ? GBM_BO_USAGE_UBWC_ALIGNED_QTI : 0;
+  if (GST_VIDEO_INFO_FORMAT (&priv->info) == GST_VIDEO_FORMAT_P010_10LE)
+    usage |= GBM_BO_USAGE_10BIT_QTI;
+  else if (GST_VIDEO_INFO_FORMAT (&priv->info) == GST_VIDEO_FORMAT_NV12_10LE32)
+    usage |= GBM_BO_USAGE_10BIT_TP_QTI;
+
+  if (priv->isubwc)
+    usage |= GBM_BO_USAGE_UBWC_ALIGNED_QTI;
 
   bo = priv->gbm_bo_create (priv->gbmdevice, GST_VIDEO_INFO_WIDTH (&priv->info),
        GST_VIDEO_INFO_HEIGHT (&priv->info), format, usage);
@@ -321,21 +340,27 @@ gbm_device_free (GstImageBufferPool * vpool, gint fd)
   priv->gbm_bo_destroy (bo);
 }
 
-#ifdef USE_ION_BUFFER_POOL
 static gboolean
 open_ion_device (GstImageBufferPool * vpool)
 {
   GstImageBufferPoolPrivate *priv = vpool->priv;
 
-  priv->devfd = open ("/dev/ion", O_RDWR);
+  GST_INFO_OBJECT (vpool, "Open /dev/dma_heap/qcom,system");
+  priv->devfd = open ("/dev/dma_heap/qcom,system", O_RDONLY | O_CLOEXEC);
+
+  if (priv->devfd < 0) {
+    GST_WARNING_OBJECT (vpool, "Falling back to /dev/ion");
+    priv->devfd = open ("/dev/ion", O_RDONLY | O_CLOEXEC);
+  }
+
   if (priv->devfd < 0) {
     GST_ERROR_OBJECT (vpool, "Failed to open ION device FD!");
     return FALSE;
   }
 
-#ifndef TARGET_ION_ABI_VERSION
+#if !defined(HAVE_LINUX_DMA_HEAP_H) && !defined(TARGET_ION_ABI_VERSION)
   priv->datamap = g_hash_table_new (NULL, NULL);
-#endif
+#endif // TARGET_ION_ABI_VERSION
 
   GST_INFO_OBJECT (vpool, "Opened ION device FD %d", priv->devfd);
   return TRUE;
@@ -351,9 +376,9 @@ close_ion_device (GstImageBufferPool * vpool)
     close (priv->devfd);
   }
 
-#ifndef TARGET_ION_ABI_VERSION
+#if !defined(HAVE_LINUX_DMA_HEAP_H) && !defined(TARGET_ION_ABI_VERSION)
   g_hash_table_destroy (priv->datamap);
-#endif
+#endif // TARGET_ION_ABI_VERSION
 }
 
 static GstMemory *
@@ -363,25 +388,43 @@ ion_device_alloc (GstImageBufferPool * vpool)
   GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_DONT_CLOSE;
   gint result = 0, fd = -1;
 
-#ifndef TARGET_ION_ABI_VERSION
-  struct ion_fd_data fd_data;
-#endif
+#if defined(HAVE_LINUX_DMA_HEAP_H)
+  struct dma_heap_allocation_data alloc_data;
+#else
   struct ion_allocation_data alloc_data;
-
-  alloc_data.len = GST_VIDEO_INFO_SIZE (&priv->info);
-#ifndef TARGET_ION_ABI_VERSION
-  alloc_data.align = DEFAULT_PAGE_ALIGNMENT;
+#if !defined(TARGET_ION_ABI_VERSION)
+  struct ion_fd_data fd_data;
+#endif // TARGET_ION_ABI_VERSION
 #endif
+
+  alloc_data.fd = 0;
+  alloc_data.len = GST_VIDEO_INFO_SIZE (&priv->info);
+
+#if defined(HAVE_LINUX_DMA_HEAP_H)
+  // Permissions for the memory to be allocated.
+  alloc_data.fd_flags = O_RDWR | O_CLOEXEC;
+  alloc_data.heap_flags = 0;
+#else
   alloc_data.heap_id_mask = ION_HEAP(ION_SYSTEM_HEAP_ID);
   alloc_data.flags = ION_FLAG_CACHED;
 
+#if !defined(TARGET_ION_ABI_VERSION)
+  alloc_data.align = DEFAULT_PAGE_ALIGNMENT;
+#endif // TARGET_ION_ABI_VERSION
+#endif
+
+#if defined(HAVE_LINUX_DMA_HEAP_H)
+  result = ioctl (priv->devfd, DMA_HEAP_IOCTL_ALLOC, &alloc_data);
+#else
   result = ioctl (priv->devfd, ION_IOC_ALLOC, &alloc_data);
+#endif
+
   if (result != 0) {
     GST_ERROR_OBJECT (vpool, "Failed to allocate ION memory!");
     return NULL;
   }
 
-#ifndef TARGET_ION_ABI_VERSION
+#if !defined(HAVE_LINUX_DMA_HEAP_H) && !defined(TARGET_ION_ABI_VERSION)
   fd_data.handle = alloc_data.handle;
 
   result = ioctl (priv->devfd, ION_IOC_MAP, &fd_data);
@@ -397,7 +440,7 @@ ion_device_alloc (GstImageBufferPool * vpool)
       GSIZE_TO_POINTER (alloc_data.handle));
 #else
   fd = alloc_data.fd;
-#endif
+#endif // TARGET_ION_ABI_VERSION
 
   GST_DEBUG_OBJECT (vpool, "Allocated ION memory FD %d", fd);
 
@@ -413,7 +456,7 @@ ion_device_free (GstImageBufferPool * vpool, gint fd)
 {
   GST_DEBUG_OBJECT (vpool, "Closing ION memory FD %d", fd);
 
-#ifndef TARGET_ION_ABI_VERSION
+#if !defined(HAVE_LINUX_DMA_HEAP_H) && !defined(TARGET_ION_ABI_VERSION)
   ion_user_handle_t handle = GPOINTER_TO_SIZE (
       g_hash_table_lookup (vpool->priv->datamap, GINT_TO_POINTER (fd)));
 
@@ -422,11 +465,10 @@ ion_device_free (GstImageBufferPool * vpool, gint fd)
   }
 
   g_hash_table_remove (vpool->priv->datamap, GINT_TO_POINTER (fd));
-#endif
+#endif // TARGET_ION_ABI_VERSION
 
   close (fd);
 }
-#endif
 
 static const gchar **
 gst_image_buffer_pool_get_options (GstBufferPool * pool)
@@ -517,17 +559,19 @@ gst_image_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
     bufinfo.format = gst_video_format_to_gbm_format (
         GST_VIDEO_INFO_FORMAT (&priv->info));
 
-    usage |= priv->isubwc ? GBM_BO_USAGE_UBWC_ALIGNED_QTI : 0;
+    if (GST_VIDEO_INFO_FORMAT (&priv->info) == GST_VIDEO_FORMAT_P010_10LE)
+      usage |= GBM_BO_USAGE_10BIT_QTI;
+    else if (GST_VIDEO_INFO_FORMAT (&priv->info) == GST_VIDEO_FORMAT_NV12_10LE32)
+      usage |= GBM_BO_USAGE_10BIT_TP_QTI;
 
-    priv->gbm_perform (GBM_PERFORM_GET_BUFFER_SIZE_DIMENSIONS, &bufinfo,
+    if (priv->isubwc)
+      usage |= GBM_BO_USAGE_UBWC_ALIGNED_QTI;
+
+    priv->gbm_perform (GBM_PERFORM_GET_BUFFER_STRIDE_SCANLINE_SIZE, &bufinfo,
         usage, &stride, &scanline, &size);
 
     GST_VIDEO_INFO_PLANE_STRIDE (&priv->info, 0) = stride;
     GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 0) = 0;
-
-    // TODO: Workaroud for GBM incorect stride
-    if (bufinfo.format == GBM_FORMAT_RGB888)
-      GST_VIDEO_INFO_PLANE_STRIDE (&priv->info, 0) *= 3;
 
     // Check for a second plane and fill its stride and offset.
     if (GST_VIDEO_INFO_N_PLANES (&priv->info) >= 2) {
@@ -535,11 +579,35 @@ gst_image_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
       GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 1) = stride * scanline;
 
       // For UBWC formats there is very specific UV plane offset.
-      if (priv->isubwc && (bufinfo.format = GBM_FORMAT_NV12)) {
+      if (priv->isubwc && (bufinfo.format == GBM_FORMAT_NV12)) {
         guint metastride, metascanline;
 
-        metastride = MMM_COLOR_FMT_Y_META_STRIDE (MMM_COLOR_FMT_NV12_UBWC, bufinfo.width);
-        metascanline = MMM_COLOR_FMT_Y_META_SCANLINES (MMM_COLOR_FMT_NV12_UBWC, bufinfo.height);
+        metastride = MMM_COLOR_FMT_Y_META_STRIDE (
+            MMM_COLOR_FMT_NV12_UBWC, bufinfo.width);
+        metascanline = MMM_COLOR_FMT_Y_META_SCANLINES (
+            MMM_COLOR_FMT_NV12_UBWC, bufinfo.height);
+
+        GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 1) =
+            MMM_COLOR_FMT_ALIGN (stride * scanline, DEFAULT_PAGE_ALIGNMENT) +
+            MMM_COLOR_FMT_ALIGN (metastride * metascanline, DEFAULT_PAGE_ALIGNMENT);
+      } else if (priv->isubwc && (bufinfo.format == GBM_FORMAT_YCbCr_420_TP10_UBWC)) {
+        guint metastride, metascanline;
+
+        metastride = MMM_COLOR_FMT_Y_META_STRIDE (
+            MMM_COLOR_FMT_NV12_BPP10_UBWC, bufinfo.width);
+        metascanline = MMM_COLOR_FMT_Y_META_SCANLINES (
+            MMM_COLOR_FMT_NV12_BPP10_UBWC,bufinfo.height);
+
+        GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 1) =
+            MMM_COLOR_FMT_ALIGN (stride * scanline, DEFAULT_PAGE_ALIGNMENT) +
+            MMM_COLOR_FMT_ALIGN (metastride * metascanline, DEFAULT_PAGE_ALIGNMENT);
+      } else if (priv->isubwc && (bufinfo.format == GBM_FORMAT_P010)) {
+        guint metastride, metascanline;
+
+        metastride = MMM_COLOR_FMT_Y_META_STRIDE (
+            MMM_COLOR_FMT_P010_UBWC, bufinfo.width);
+        metascanline = MMM_COLOR_FMT_Y_META_SCANLINES (
+            MMM_COLOR_FMT_P010_UBWC, bufinfo.height);
 
         GST_VIDEO_INFO_PLANE_OFFSET (&priv->info, 1) =
             MMM_COLOR_FMT_ALIGN (stride * scanline, DEFAULT_PAGE_ALIGNMENT) +
@@ -579,10 +647,8 @@ gst_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     memory = gbm_device_alloc (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     memory = ion_device_alloc (vpool);
-#endif
   }
 
   if (NULL == memory) {
@@ -619,10 +685,8 @@ gst_image_buffer_pool_free (GstBufferPool * pool, GstBuffer * buffer)
 
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     gbm_device_free (vpool, fd);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     ion_device_free (vpool, fd);
-#endif
   }
   gst_buffer_unref (buffer);
 }
@@ -654,10 +718,8 @@ gst_image_buffer_pool_finalize (GObject * object)
 
   if (GST_IS_GBM_MEMORY_TYPE (priv->memtype)) {
     close_gbm_device (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (priv->memtype)) {
     close_ion_device (vpool);
-#endif
   }
 
   g_mutex_clear (&priv->lock);
@@ -706,11 +768,9 @@ gst_image_buffer_pool_new (const gchar * type)
   if (GST_IS_GBM_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using GBM memory");
     success = open_gbm_device (vpool);
-#ifdef USE_ION_BUFFER_POOL
   } else if (GST_IS_ION_MEMORY_TYPE (vpool->priv->memtype)) {
     GST_INFO_OBJECT (vpool, "Using ION memory");
     success = open_ion_device (vpool);
-#endif
   } else {
     GST_ERROR_OBJECT (vpool, "Invalid memory type %s!",
         g_quark_to_string (vpool->priv->memtype));

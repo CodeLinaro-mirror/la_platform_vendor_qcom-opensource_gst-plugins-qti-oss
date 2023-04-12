@@ -28,7 +28,7 @@
 *
 * Changes from Qualcomm Innovation Center are provided under the following license:
 *
-* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+* Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted (subject to the limitations in the
@@ -233,8 +233,7 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
 {
   ::qmmf::recorder::Recorder *recorder = context->recorder;
   ::camera::CameraMetadata meta;
-  camera_metadata_entry entry, entry_max_res;
-  gboolean meta_entry_found, meta_entry_max_res_found;
+  camera_metadata_entry entry;
   gint width = 0, height = 0, format = 0;
   gboolean supported = FALSE;
   guint idx = 0;
@@ -252,7 +251,7 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
     return FALSE;
   }
 
-    recorder->GetCameraCharacteristics (context->camera_id, meta);
+  recorder->GetCameraCharacteristics (context->camera_id, meta);
 
   if (!meta.exists (ANDROID_SENSOR_INFO_COLOR_FILTER_ARRANGEMENT)) {
     GST_WARNING ("There is no sensor filter information!");
@@ -289,56 +288,30 @@ validate_bayer_params (GstQmmfContext * context, GstPad * pad)
       return FALSE;
   }
 
-  meta_entry_found = FALSE;
-  meta_entry_max_res_found = FALSE;
-
 #if defined(CAMERA_METADATA_1_0_NS)
   if (meta.exists(ANDROID_SENSOR_OPAQUE_RAW_SIZE_MAXIMUM_RESOLUTION)) {
-    entry_max_res = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE_MAXIMUM_RESOLUTION);
-    meta_entry_max_res_found = TRUE;
+    entry = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE_MAXIMUM_RESOLUTION);
+
+    for (idx = 0; !supported && (idx < entry.count); idx += 3) {
+      if ((width == entry.data.i32[idx]) && (height == entry.data.i32[idx+1]))
+        supported = TRUE;
+    }
   }
 #endif
 
-  if (meta.exists (ANDROID_SENSOR_OPAQUE_RAW_SIZE)) {
-    entry = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE);
-    meta_entry_found = TRUE;
-  }
-
-  if ((meta_entry_found == FALSE) && (meta_entry_max_res_found == FALSE)) {
+  if ((supported != TRUE) && (!meta.exists(ANDROID_SENSOR_OPAQUE_RAW_SIZE))) {
       GST_WARNING ("There is no camera bayer size information!");
       return FALSE;
   }
 
-  if (meta_entry_max_res_found == TRUE) {
-    for (idx = 0; idx < entry_max_res.count; idx += 3) {
-
-      GST_WARNING ("valid bayer resolution %dx%d",
-          entry_max_res.data.i32[idx+0], entry_max_res.data.i32[idx+1]);
-
-      if (width == static_cast<gint> (entry_max_res.data.i32[idx+0]) &&
-        height == static_cast<gint> (entry_max_res.data.i32[idx+1])) {
-        supported = TRUE;
-        break;
-      }
-    }
-  }
-
-  if ((supported == FALSE) && (meta_entry_found == TRUE)) {
-    for (idx = 0; idx < entry.count; idx += 3) {
-
-      GST_WARNING ("valid bayer resolution %dx%d",
-          entry.data.i32[idx+0], entry.data.i32[idx+1]);
-
-      if (width == static_cast<gint> (entry.data.i32[idx+0]) &&
-        height == static_cast<gint> (entry.data.i32[idx+1])) {
-        supported = TRUE;
-        break;
-      }
-    }
+  entry = meta.find (ANDROID_SENSOR_OPAQUE_RAW_SIZE);
+  for (idx = 0; !supported && (idx < entry.count); idx += 3) {
+    if ((width == entry.data.i32[idx]) && (height == entry.data.i32[idx+1]))
+      supported = TRUE;
   }
 
   QMMFSRC_RETURN_VAL_IF_FAIL (NULL, supported, FALSE,
-      "Invalid bayer resolution!");
+      "Invalid %dx%d bayer resolution!", width, height);
 
   return TRUE;
 }
@@ -1352,6 +1325,11 @@ gst_qmmf_context_create_video_stream (GstQmmfContext * context, GstPad * pad)
       context->camera_id, vpad->width, vpad->height, vpad->framerate, format,
       ::qmmf::recorder::Rotation::kNone, vpad->xtrabufs
   );
+
+#ifdef FEATURE_VIDEO_PREVIEW_TYPE_SUPPORT
+  if (vpad->type == VIDEO_TYPE_PREVIEW)
+    params.flags |= ::qmmf::recorder::VideoFlags::kPreview;
+#endif
 
   track_cbs.event_cb =
       [&] (uint32_t track_id, ::qmmf::recorder::EventType type,
