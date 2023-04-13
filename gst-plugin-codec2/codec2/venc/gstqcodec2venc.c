@@ -112,6 +112,20 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define EOS_WAITING_TIMEOUT 5
 #define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
+#define DYNAMIC_PROP_BIT(x) ((1) << (x))
+#define DYNAMIC_PROP_BITRATE DYNAMIC_PROP_BIT(0)
+#define DYNAMIC_PROP_IFRAME DYNAMIC_PROP_BIT(1)
+
+#define ENCODER_ELEMENT(codec, element) \
+  {"c2.qti." G_STRINGIFY (codec) ".encoder", \
+   "qcodec2" G_STRINGIFY (element) "enc", \
+   GST_RANK_PRIMARY + 10, \
+   gst_qcodec2_##element##_enc_get_type}
+
+static const ElementInfo kENCODER_ELEMENTS[] = {
+  ENCODER_ELEMENT (avc, h264),
+  ENCODER_ELEMENT (hevc, h265),
+};
 
 enum
 {
@@ -156,6 +170,7 @@ enum
   PROP_INIT_QUANT_I_FRAMES,
   PROP_INIT_QUANT_P_FRAMES,
   PROP_INIT_QUANT_B_FRAMES,
+  PROP_REPORT_AVERAGE_FRAME_QP,
 };
 
 /* GstVideoEncoder base class method */
@@ -367,9 +382,9 @@ make_intra_refresh_type_param (IR_MODE_TYPE mode)
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE;
   if (mode == IR_RANDOM) {
-    param.irMode.type = 0; // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
+    param.irMode.type = 0;      // qc2::IntraRefreshMode::INTRA_REFRESH_RANDOM
   } else if (mode == IR_CYCLIC) {
-    param.irMode.type = 1; // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
+    param.irMode.type = 1;      // qc2::IntraRefreshMode::INTRA_REFRESH_CYCLIC
   }
 
   return param;
@@ -552,6 +567,19 @@ make_qp_init_param (guint32 quant_i_frames, guint32 quant_p_frames,
   return param;
 }
 
+static ConfigParams
+make_report_avg_frame_qp_param (gboolean enable)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP;
+  param.report_average_frame_qp = enable;
+
+  return param;
+}
+
 static gchar *
 get_c2_comp_name (GstStructure * structure)
 {
@@ -671,9 +699,9 @@ gst_qcodec2_venc_rate_control_get_type (void)
     static const GEnumValue values[] = {
       {RC_OFF, "Disable RC", "disable"},
       {RC_CONST, "Constant bitrate, constant framerate, CBR-CFR", "constant"},
-      {RC_CBR_VFR, "Constant bitrate, variable framerate", "CBR-VFR"},
+      {RC_CBR_VFR, "Constant bitrate, variable framerate(skip frame if bit budget not enough)", "CBR-VFR"},
       {RC_VBR_CFR, "Variable bitrate, constant framerate", "VBR-CFR"},
-      {RC_VBR_VFR, "Variable bitrate, variable framerate", "VBR-VFR"},
+      {RC_VBR_VFR, "Variable bitrate, variable framerate(skip frame if bit budget not enough)", "VBR-VFR"},
       {RC_CQ, "Constant quality", "CQ"},
       {0, NULL, NULL}
     };
@@ -998,7 +1026,7 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
 
   if (TRUE == ret) {
     if (G_UNLIKELY (enc->gst_c2_comp)) {
-      gst_object_unref (enc->gst_c2_comp);
+      gst_c2_comp_unref (enc->gst_c2_comp);
       GST_DEBUG_OBJECT (enc, "unref previous gst c2 component");
     }
     enc->gst_c2_comp = gst_c2_comp_create (enc->comp);
@@ -1202,6 +1230,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams intra_refresh_type;
   ConfigParams bitrate;
   gboolean update_bitrate = FALSE;
+  gboolean update_i_interval = FALSE;
   ConfigParams slice_mode;
   ConfigParams blur_info;
   ConfigParams bitrate_saving_mode;
@@ -1210,6 +1239,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams inline_header;
   ConfigParams qp_ranges;
   ConfigParams qp_init;
+  ConfigParams report_frame_qp;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1384,13 +1414,13 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
         "set interval intraframes: %u, framerate: %f, intraframes period: %"
         G_GINT64_FORMAT, enc->interval_intraframes, fps,
         intraframes_period.val.i64);
+    update_i_interval = TRUE;
   }
 
   if (enc->inline_sps_pps_headers) {
     inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
-
 #ifdef GST_SUPPORT_QPRANGE
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
@@ -1413,6 +1443,11 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
         enc->quant_i_frames, enc->quant_p_frames, enc->quant_b_frames);
   }
 
+  if (enc->report_average_frame_qp) {
+    report_frame_qp = make_report_avg_frame_qp_param (TRUE);
+    g_ptr_array_add (config, &report_frame_qp);
+  }
+
   /* Create component */
   if (!gst_qcodec2_venc_create_component (encoder)) {
     GST_ERROR_OBJECT (enc, "Failed to create component");
@@ -1433,6 +1468,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   } else {
     if (update_bitrate) {
       enc->configured_target_bitrate = enc->target_bitrate;
+    }
+
+    if (update_i_interval) {
+      enc->configured_interval_intraframes = enc->interval_intraframes;
     }
   }
 
@@ -1523,7 +1562,7 @@ gst_qcodec2_venc_close (GstVideoEncoder * encoder)
   GST_DEBUG_OBJECT (enc, "qcodec2_venc_close");
 
   if (enc->gst_c2_comp) {
-    gst_object_unref (enc->gst_c2_comp);
+    gst_c2_comp_unref (enc->gst_c2_comp);
     enc->gst_c2_comp = NULL;
   }
 
@@ -1572,29 +1611,61 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
 {
   GPtrArray *config = NULL;
   ConfigParams bitrate;
-  gboolean update_bitrate = FALSE;
+  ConfigParams intraframes_period;
+  gfloat fps = COMMON_FRAMERATE;
+  guint32 update_prop_mask = 0;
+
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
   if ((enc->target_bitrate > 0) &&
       (enc->target_bitrate != enc->configured_target_bitrate)) {
-    config = g_ptr_array_new ();
     bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
-    g_ptr_array_add (config, &bitrate);
     GST_DEBUG_OBJECT (enc, "Dynamically configure target bitrate to %u from %u",
         enc->target_bitrate, enc->configured_target_bitrate);
-    update_bitrate = TRUE;
+    update_prop_mask |= DYNAMIC_PROP_BITRATE;
   }
 
-  if (config) {
-    if (!c2componentInterface_config (enc->comp_intf,
-            config, BLOCK_MODE_MAY_BLOCK)) {
-      GST_WARNING_OBJECT (enc,
-          "Failed to set encoder config for target bitrate");
-    } else {
-      if (update_bitrate) {
-        enc->configured_target_bitrate = enc->target_bitrate;
-      }
+  if (enc->interval_intraframes != enc->configured_interval_intraframes) {
+    if (0 != enc->input_info.fps_n && 0 != enc->input_info.fps_d) {
+      fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
     }
-    g_ptr_array_free (config, TRUE);
+
+    intraframes_period =
+        make_intraframes_period_param (enc->interval_intraframes, fps);
+    GST_DEBUG_OBJECT (enc,
+        "Dynamically configure interval intraframes: %u, framerate: %f, "
+        "intraframes period: %" G_GINT64_FORMAT, enc->interval_intraframes, fps,
+        intraframes_period.val.i64);
+    update_prop_mask |= DYNAMIC_PROP_IFRAME;
+  }
+
+  if (update_prop_mask) {
+    config = g_ptr_array_new ();
+
+    if (config) {
+      if (update_prop_mask & DYNAMIC_PROP_BITRATE) {
+        g_ptr_array_add (config, &bitrate);
+      }
+
+      if (update_prop_mask & DYNAMIC_PROP_IFRAME) {
+        g_ptr_array_add (config, &intraframes_period);
+      }
+
+      if (!c2componentInterface_config (enc->comp_intf,
+              config, BLOCK_MODE_MAY_BLOCK)) {
+        GST_WARNING_OBJECT (enc,
+            "Failed to set encoder config for prop_mask 0x%x",
+            update_prop_mask);
+      } else {
+        if (update_prop_mask & DYNAMIC_PROP_BITRATE) {
+          enc->configured_target_bitrate = enc->target_bitrate;
+        }
+
+        if (update_prop_mask & DYNAMIC_PROP_IFRAME) {
+          enc->configured_interval_intraframes = enc->interval_intraframes;
+        }
+      }
+      g_ptr_array_free (config, TRUE);
+    }
   }
 }
 
@@ -1669,7 +1740,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   /* Propose GBM backed memory if upstream has dmabuf feature */
   if (gst_qcodec2_caps_has_feature (caps, GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     param.is_ubwc = enc->is_ubwc;
-    param.gst_c2_comp = gst_object_ref (enc->gst_c2_comp);
+    param.gst_c2_comp = gst_c2_comp_ref (enc->gst_c2_comp);
     param.info = info;
     param.mode = DMABUF_MODE;
     enc->pool = gst_qcodec2_buffer_pool_new (&param);
@@ -1757,6 +1828,20 @@ fill_output_buffer (GstQcodec2Venc * enc, GstVideoInfo * vinfo,
   GST_LOG_OBJECT (enc, "gstbuf:%p, PTS:%lu, duration:%lu, fps_d:%d, fps_n:%d",
       buf, GST_BUFFER_PTS (buf), GST_BUFFER_DURATION (buf),
       vinfo->fps_d, vinfo->fps_n);
+
+  /* Attach QTI video encoder meta */
+  if (enc->report_average_frame_qp) {
+    GstCustomMeta *qve_meta = gst_buffer_add_custom_meta (buf, "GstQVEMeta");
+    if (qve_meta) {
+      GstStructure *s = gst_custom_meta_get_structure (qve_meta);
+      if (s) {
+        gst_structure_set (s, "avg-frame-qp", G_TYPE_INT, desc->avg_frame_qp,
+            NULL);
+        GST_DEBUG_OBJECT (enc, "attach QVEMeta, add avg-frame-qp:%d",
+            desc->avg_frame_qp);
+      }
+    }
+  }
 
 out:
   return buf;
@@ -2347,6 +2432,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_INIT_QUANT_B_FRAMES:
       enc->quant_b_frames = g_value_get_uint (value);
       break;
+    case PROP_REPORT_AVERAGE_FRAME_QP:
+      enc->report_average_frame_qp = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2455,6 +2543,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INIT_QUANT_B_FRAMES:
       g_value_set_uint (value, enc->quant_b_frames);
+      break;
+    case PROP_REPORT_AVERAGE_FRAME_QP:
+      g_value_set_boolean (value, enc->report_average_frame_qp);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2664,7 +2755,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           0, G_MAXUINT,
           DEFAULT_INTERVAL_INTRAFRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
-          GST_PARAM_MUTABLE_READY));
+          GST_PARAM_MUTABLE_PLAYING));
 
   g_object_class_install_property (gobject_class, PROP_INLINE_SPSPPS_HEADERS,
       g_param_spec_boolean ("inline-header",
@@ -2737,6 +2828,13 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_REPORT_AVERAGE_FRAME_QP,
+      g_param_spec_boolean ("report-frame-qp", "Report Frame QP",
+          "Return average frame QP for each output frame and attach it to gstbuffer",
+          FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -2785,6 +2883,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->silent = FALSE;
   enc->is_heic = FALSE;
   enc->interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
+  enc->configured_interval_intraframes = DEFAULT_INTERVAL_INTRAFRAMES;
   enc->inline_sps_pps_headers = DEFAULT_INLINE_HEADERS;
 
   enc->min_qp_i_frames = 0;
@@ -2796,28 +2895,45 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->quant_i_frames = DEFAULT_INIT_QUANT_I_FRAMES;
   enc->quant_p_frames = DEFAULT_INIT_QUANT_P_FRAMES;
   enc->quant_b_frames = DEFAULT_INIT_QUANT_B_FRAMES;
+  enc->report_average_frame_qp = FALSE;
 
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
 }
 
 gboolean
-gst_qcodec2_venc_plugin_init (GstPlugin * plugin)
+gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array)
 {
   /* debug category for fltering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_venc_debug, "qcodec2venc",
       0, "GST QTI codec2.0 video encoder");
 
-  if (!gst_element_register (plugin, "qcodec2h264enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H264_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h264enc");
-    return FALSE;
-  }
-  if (!gst_element_register (plugin, "qcodec2h265enc",
-          GST_RANK_PRIMARY + 1, GST_TYPE_QCODEC2_H265_ENC)) {
-    GST_ERROR ("failed to register element qcodec2h265enc");
-    return FALSE;
+  static gsize res = FALSE;
+  static const gchar *tags[] = { NULL };
+  if (g_once_init_enter (&res)) {
+    gst_meta_register_custom ("GstQVEMeta", tags, NULL, NULL, NULL);
+    g_once_init_leave (&res, TRUE);
   }
 
-  return TRUE;
+  guint count = 0;
+  if (array) {
+    for (guint i = 0; i < array->len; i++) {
+      for (guint j = 0; j < G_N_ELEMENTS (kENCODER_ELEMENTS); j++) {
+        if (!strcmp (kENCODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
+          if (gst_element_register (plugin, kENCODER_ELEMENTS[j].element,
+                  kENCODER_ELEMENTS[j].rank,
+                  kENCODER_ELEMENTS[j].register_type ())) {
+            count++;
+            GST_INFO ("register element %s", kENCODER_ELEMENTS[j].element);
+          } else {
+            GST_ERROR ("failed to register element %s",
+                kENCODER_ELEMENTS[j].element);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  return count > 0 ? TRUE : FALSE;
 }

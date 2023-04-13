@@ -21,6 +21,10 @@ endif
 
 gst_plugin_codec2_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
 
+if get_option('c2dec-deinterlace').enabled()
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_C2DEC_DEINTERLACE']
+endif
+
 if get_option('interlace').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_INTERLACE']
 endif

@@ -148,6 +148,7 @@ struct _GstQcodec2Venc
   BITRATE_SAVING_MODE bitrate_saving_mode;
   gboolean is_heic;
   guint32 interval_intraframes;
+  guint32 configured_interval_intraframes;
   gboolean inline_sps_pps_headers;
   guint32 min_qp_i_frames;
   guint32 max_qp_i_frames;
@@ -158,6 +159,7 @@ struct _GstQcodec2Venc
   guint32 quant_i_frames;
   guint32 quant_p_frames;
   guint32 quant_b_frames;
+  gboolean report_average_frame_qp;
 };
 
 /*
@@ -179,7 +181,7 @@ GType gst_qcodec2_venc_get_type (void);
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
-gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin);
+gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array);
 
 G_END_DECLS
 #endif /* __GST_QCODEC2_VENC_H__ */

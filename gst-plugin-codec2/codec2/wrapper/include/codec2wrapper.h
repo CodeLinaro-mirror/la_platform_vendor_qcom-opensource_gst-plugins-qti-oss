@@ -76,17 +76,17 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <media/mmm_color_fmt.h>
 
 enum color_fmts {
-        COLOR_FMT_NV12 = MMM_COLOR_FMT_NV12,
-        COLOR_FMT_NV21 = MMM_COLOR_FMT_NV21,
-        COLOR_FMT_NV12_UBWC = MMM_COLOR_FMT_NV12_UBWC,
-        COLOR_FMT_NV12_BPP10_UBWC = MMM_COLOR_FMT_NV12_BPP10_UBWC,
-        COLOR_FMT_RGBA8888 = MMM_COLOR_FMT_RGBA8888,
-        COLOR_FMT_RGBA8888_UBWC = MMM_COLOR_FMT_RGBA8888_UBWC,
-        COLOR_FMT_RGBA1010102_UBWC = MMM_COLOR_FMT_RGBA1010102_UBWC,
-        COLOR_FMT_RGB565_UBWC = MMM_COLOR_FMT_RGB565_UBWC,
-        COLOR_FMT_P010_UBWC = MMM_COLOR_FMT_P010_UBWC,
-        COLOR_FMT_P010 = MMM_COLOR_FMT_P010,
-        COLOR_FMT_NV12_512 = MMM_COLOR_FMT_NV12_512,
+    COLOR_FMT_NV12 = MMM_COLOR_FMT_NV12,
+    COLOR_FMT_NV21 = MMM_COLOR_FMT_NV21,
+    COLOR_FMT_NV12_UBWC = MMM_COLOR_FMT_NV12_UBWC,
+    COLOR_FMT_NV12_BPP10_UBWC = MMM_COLOR_FMT_NV12_BPP10_UBWC,
+    COLOR_FMT_RGBA8888 = MMM_COLOR_FMT_RGBA8888,
+    COLOR_FMT_RGBA8888_UBWC = MMM_COLOR_FMT_RGBA8888_UBWC,
+    COLOR_FMT_RGBA1010102_UBWC = MMM_COLOR_FMT_RGBA1010102_UBWC,
+    COLOR_FMT_RGB565_UBWC = MMM_COLOR_FMT_RGB565_UBWC,
+    COLOR_FMT_P010_UBWC = MMM_COLOR_FMT_P010_UBWC,
+    COLOR_FMT_P010 = MMM_COLOR_FMT_P010,
+    COLOR_FMT_NV12_512 = MMM_COLOR_FMT_NV12_512,
 };
 
 #define VENUS_Y_STRIDE MMM_COLOR_FMT_Y_STRIDE
@@ -137,6 +137,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
 #define CONFIG_FUNCTION_KEY_IPB_QP_RANGE "IPB_qp_range"
 #define CONFIG_FUNCTION_KEY_IPB_QP_INIT "IPB_qp_init"
+#define CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP "report_average_frame_qp"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -391,6 +392,7 @@ typedef struct {
     gboolean secure;
     guint32 interlaceMode;
     gboolean heic_flag;
+    guint32 avg_frame_qp;
 } BufferDescriptor;
 
 typedef struct {
@@ -407,6 +409,7 @@ typedef struct {
         gboolean deinterlace;
         gboolean force_idr;
         gboolean inline_sps_pps_headers;
+        gboolean report_average_frame_qp;
 
         union {
             guint32 u32;
@@ -499,6 +502,13 @@ typedef struct {
     guint32 width;
     guint32 height;
 } BufferResolution;
+
+typedef struct {
+    const gchar* codec;
+    const gchar* element;
+    guint rank;
+    GType (*register_type)(void);
+} ElementInfo;
 
 typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 
