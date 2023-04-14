@@ -21,7 +21,6 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <stdint.h>
 #include <dlfcn.h>
 #include "gstvesdeliverallocator.h"
 #include "gstvesdeliver.h"
@@ -42,17 +41,20 @@ enum
 {
   PROP_0,
   PROP_SECURE,
+  PROP_BUF_RECYCLE,
 };
 
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS));
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
+        AV1_CAPS));
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS));
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
+        AV1_CAPS));
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
@@ -117,6 +119,14 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class,
+      PROP_BUF_RECYCLE,
+      g_param_spec_boolean ("buf-recycle", "Buffer Recycle",
+          "Enable output DMA buffer recycle",
+          TRUE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gstbasetrans_class->transform = GST_DEBUG_FUNCPTR (gst_vesdeliver_transform);
   gstbasetrans_class->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_vesdeliver_prepare_output_buffer);
@@ -137,6 +147,7 @@ static void
 gst_vesdeliver_init (GstVesDeliver * vesdeliver)
 {
   vesdeliver->secure = SECURE_DISABLE;
+  vesdeliver->buf_recycle = TRUE;
   vesdeliver->allocator = NULL;
   vesdeliver->secure_handle = NULL;
 
@@ -168,11 +179,14 @@ gst_vesdeliver_start (GstBaseTransform * trans)
     vesdeliver->FindVmByName =
         dlsym (vesdeliver->vmmem_lib_handle, "FindVmByName");
     vesdeliver->LendDmabuf = dlsym (vesdeliver->vmmem_lib_handle, "LendDmabuf");
+    vesdeliver->ReclaimDmabuf =
+        dlsym (vesdeliver->vmmem_lib_handle, "ReclaimDmabuf");
 
     if (!vesdeliver->CreateVmMem ||
         !vesdeliver->FreeVmMem ||
         !vesdeliver->IsExclusiveOwnerDmabuf ||
-        !vesdeliver->FindVmByName || !vesdeliver->LendDmabuf) {
+        !vesdeliver->FindVmByName || !vesdeliver->LendDmabuf
+        || !vesdeliver->ReclaimDmabuf) {
       GST_ERROR_OBJECT (vesdeliver, "dlsym failed with NULL symbol");
       dlclose (vesdeliver->vmmem_lib_handle);
       vesdeliver->vmmem_lib_handle = NULL;
@@ -253,8 +267,16 @@ gst_vesdeliver_start (GstBaseTransform * trans)
   }
 
   if (NULL == vesdeliver->allocator) {
-    vesdeliver->allocator =
-        gst_vesdeliver_allocator_new (SECURE_COPY == vesdeliver->secure);
+    AllocatorParameter param;
+    memset (&param, 0, sizeof (AllocatorParameter));
+
+    param.secure_mode = vesdeliver->secure;
+    param.buf_recycle = vesdeliver->buf_recycle;
+#ifdef USE_DMAHEAP
+    param.vm_instance = vesdeliver->vm_instance;
+    param.ReclaimDmabuf = vesdeliver->ReclaimDmabuf;
+#endif
+    vesdeliver->allocator = gst_vesdeliver_allocator_new (&param);
     GST_DEBUG_OBJECT (vesdeliver, "Create vesdeliver allocator");
     g_return_val_if_fail (vesdeliver->allocator != NULL, FALSE);
     status = TRUE;
@@ -438,6 +460,9 @@ gst_vesdeliver_set_property (GObject * object, guint property_id,
       self->secure = g_value_get_enum (value);
       GST_DEBUG_OBJECT (self, "secure mode: %d", self->secure);
       break;
+    case PROP_BUF_RECYCLE:
+      self->buf_recycle = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -453,6 +478,9 @@ gst_vesdeliver_get_property (GObject * object, guint property_id,
   switch (property_id) {
     case PROP_SECURE:
       g_value_set_enum (value, self->secure);
+      break;
+    case PROP_BUF_RECYCLE:
+      g_value_set_boolean (value, self->buf_recycle);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
