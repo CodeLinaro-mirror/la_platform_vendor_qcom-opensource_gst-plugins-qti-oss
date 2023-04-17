@@ -145,7 +145,7 @@ struct _GstQcodec2Vdec
   gboolean deinterlace;
 
   gboolean use_external_buf;
-  GHashTable *buffer_table;
+  GHashTable *external_buf_table;
   guint max_external_buf_cnt;
   guint acquired_external_buf;
   GMutex external_buf_lock;
