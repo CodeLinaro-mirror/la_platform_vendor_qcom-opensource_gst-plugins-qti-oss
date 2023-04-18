@@ -54,10 +54,6 @@ gst_c2_wrapper_create_component (GstC2Wrapper * wrapper,
 GST_API gboolean
 gst_c2_wrapper_delete_component (GstC2Wrapper * wrapper);
 
-GST_API gboolean
-gst_c2_wrapper_init_block_pool (GstC2Wrapper * wrapper,
-    gchar* comp, guint32 width, guint32 height, GstVideoFormat format);
-
 GST_API gint
 gst_c2_wrapper_get_block_pool_id (GstC2Wrapper * wrapper);
 
@@ -77,6 +73,6 @@ gst_c2_wrapper_component_queue (GstC2Wrapper * wrapper,
 
 GST_API gboolean
 gst_c2_wrapper_free_output_buffer (GstC2Wrapper * wrapper,
-    uint64_t bufferIdx);
+    uint64_t buf_idx);
 
 #endif // __GST_C2_WRAPPER_H__
