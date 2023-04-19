@@ -131,6 +131,9 @@ std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -167,6 +170,9 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_IPB_QP_INIT, setIPBQPInit },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE, setIntraRefreshType },
     { CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP, enableGetAvgFrameQP },
+    { CONFIG_FUNCTION_KEY_LTR_COUNT, setLTRCount },
+    { CONFIG_FUNCTION_KEY_LTR_MARK_INDEX, setLTRMarkIndex },
+    { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -822,6 +828,87 @@ std::unique_ptr<C2Param> enableGetAvgFrameQP (gpointer param, void* const comp_i
     avg_qp = intf_wrapper->updateParamFromConfig(kvpairs);
 
     return avg_qp;
+}
+
+std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltrcount = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrCount %d", config->ltr.count);
+        item.set((int32_t)config->ltr.count);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr-count.num-ltr-frames", item);
+        ltrcount = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltrcount;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltrmark = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrMarkIndex %d", config->ltr.mark_index);
+        item.set((int32_t)config->ltr.mark_index);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr.mark-frame", item);
+        ltrmark = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltrmark;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltruse = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrUseIndex %d", config->ltr.use_index);
+        item.set((int32_t)config->ltr.use_index);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr.use-frame", item);
+        ltruse = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltruse;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

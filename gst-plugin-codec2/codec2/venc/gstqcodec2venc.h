@@ -164,6 +164,9 @@ struct _GstQcodec2Venc
   guint32 hierb_layers;
   guint32 ratio_size;
   gfloat *bitrate_ratios;
+  guint32 ltr_count;
+  GValue ltr_mark;
+  GValue ltr_use;
 };
 
 /*

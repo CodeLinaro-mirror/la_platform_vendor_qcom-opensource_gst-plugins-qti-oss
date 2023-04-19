@@ -139,6 +139,9 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_IPB_QP_INIT "IPB_qp_init"
 #define CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP "report_average_frame_qp"
 #define CONFIG_FUNCTION_KEY_TEMPORAL_LAYER "temporal_layer"
+#define CONFIG_FUNCTION_KEY_LTR_COUNT "ltr_count"
+#define CONFIG_FUNCTION_KEY_LTR_MARK_INDEX "ltr_mark_index"
+#define CONFIG_FUNCTION_KEY_LTR_USE_INDEX "ltr_use_index"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -503,6 +506,12 @@ typedef struct {
             gboolean quant_b_frames_enable;
             guint32 quant_b_frames;
         } qp_init;
+
+        struct {
+            guint count;
+            guint mark_index;
+            guint use_index;
+        } ltr;
     };
 } ConfigParams;
 
