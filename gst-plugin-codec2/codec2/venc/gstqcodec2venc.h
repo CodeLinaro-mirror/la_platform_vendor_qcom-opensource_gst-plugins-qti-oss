@@ -160,6 +160,13 @@ struct _GstQcodec2Venc
   guint32 quant_p_frames;
   guint32 quant_b_frames;
   gboolean report_average_frame_qp;
+  guint32 hierp_layers;
+  guint32 hierb_layers;
+  guint32 ratio_size;
+  gfloat *bitrate_ratios;
+  guint32 ltr_count;
+  GValue ltr_mark;
+  GValue ltr_use;
 };
 
 /*

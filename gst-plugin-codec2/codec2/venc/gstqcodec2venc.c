@@ -171,6 +171,12 @@ enum
   PROP_INIT_QUANT_P_FRAMES,
   PROP_INIT_QUANT_B_FRAMES,
   PROP_REPORT_AVERAGE_FRAME_QP,
+  PROP_HIER_P,
+  PROP_HIER_B,
+  PROP_BITRATE_RATIOS,
+  PROP_LTR_COUNT,
+  PROP_LTR_MARK,
+  PROP_LTR_USE,
 };
 
 /* GstVideoEncoder base class method */
@@ -216,6 +222,69 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
 static void gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder);
 
 static guint gst_qcodec2_venc_signals[LAST_SIGNAL] = { 0 };
+
+static ConfigParams
+make_ltr_count_param (guint count)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_LTR_COUNT;
+  param.isInput = TRUE;
+  param.ltr.count = count;
+
+  return param;
+}
+
+static ConfigParams
+make_ltr_mark_param (guint mark_index)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_LTR_MARK_INDEX;
+  param.isInput = TRUE;
+  param.ltr.mark_index = mark_index;
+
+  return param;
+}
+
+static ConfigParams
+make_ltr_use_param (guint use_index)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_LTR_USE_INDEX;
+  param.isInput = TRUE;
+  param.ltr.use_index = use_index;
+
+  return param;
+}
+
+static ConfigParams
+make_temporallayer_param (guint32 hierp_layers, guint32 hierb_layers,
+    guint32 size, gfloat *ratios)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_TEMPORAL_LAYER;
+
+  param.temporalLayer.layerCount = hierp_layers + hierb_layers;
+  param.temporalLayer.bLayerCount = hierb_layers;
+  param.temporalLayer.ratioSize = size;
+
+  if (ratios) {
+    param.temporalLayer.ratios = ratios;
+  }
+
+  return param;
+}
 
 static ConfigParams
 make_bitrate_param (guint32 bitrate, gboolean is_input)
@@ -1240,6 +1309,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams qp_ranges;
   ConfigParams qp_init;
   ConfigParams report_frame_qp;
+  ConfigParams temporal_layer;
+  ConfigParams ltr_count;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1446,6 +1517,17 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->report_average_frame_qp) {
     report_frame_qp = make_report_avg_frame_qp_param (TRUE);
     g_ptr_array_add (config, &report_frame_qp);
+  }
+
+  if (enc->hierp_layers > 0 || enc->hierb_layers > 0) {
+    temporal_layer = make_temporallayer_param (enc->hierp_layers,
+        enc->hierb_layers, enc->ratio_size, enc->bitrate_ratios);
+    g_ptr_array_add (config, &temporal_layer);
+  }
+
+  if (enc->ltr_count > 0) {
+    ltr_count = make_ltr_count_param (enc->ltr_count);
+    g_ptr_array_add (config, &ltr_count);
   }
 
   /* Create component */
@@ -2087,6 +2169,74 @@ out:
   return result;
 }
 
+static void handle_ltr (GstVideoEncoder * encoder,
+    GstVideoCodecFrame * frame)
+{
+  GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
+  gint ltr_mark_array_size = gst_value_array_get_size (&enc->ltr_mark);
+  gint ltr_use_array_size = gst_value_array_get_size (&enc->ltr_use);
+
+  if (ltr_mark_array_size) {
+    gint i;
+    for (i = 0; i < ltr_mark_array_size; i++) {
+      const GValue *mark_frame_idx = gst_value_array_get_value (&enc->ltr_mark, i);
+      guint32 ltr_mark_frame, ltr_mark_idx;
+      ltr_mark_frame = g_value_get_int (gst_value_array_get_value (mark_frame_idx, 0));
+      if (enc->frame_index == ltr_mark_frame) {
+        ltr_mark_idx = g_value_get_int (gst_value_array_get_value (mark_frame_idx, 1));
+        GST_DEBUG_OBJECT (enc, "ltr-mark %d:%d", ltr_mark_frame, ltr_mark_idx);
+
+        GPtrArray *config = NULL;
+        config = g_ptr_array_new ();
+        if (config) {
+          ConfigParams ltr_mark;
+          ltr_mark = make_ltr_mark_param (ltr_mark_idx);
+          g_ptr_array_add (config, &ltr_mark);
+
+          if (!c2componentInterface_config (enc->comp_intf,
+                  config, BLOCK_MODE_MAY_BLOCK)) {
+            GST_WARNING_OBJECT (enc, "Failed to set ltr-mark encoder config");
+          }
+
+          g_ptr_array_free (config, TRUE);
+        }
+
+        break;
+      }
+    }
+  }
+
+  if (ltr_use_array_size) {
+    gint i;
+    for (i = 0; i < ltr_use_array_size; i++) {
+      const GValue *use_frame_idx = gst_value_array_get_value (&enc->ltr_use, i);
+      guint32 ltr_use_frame, ltr_use_idx;
+      ltr_use_frame = g_value_get_int (gst_value_array_get_value (use_frame_idx, 0));
+      if (enc->frame_index == ltr_use_frame) {
+        ltr_use_idx = g_value_get_int (gst_value_array_get_value (use_frame_idx, 1));
+        GST_DEBUG_OBJECT (enc, "ltr-use %d:%d", ltr_use_frame, ltr_use_idx);
+
+        GPtrArray *config = NULL;
+        config = g_ptr_array_new ();
+        if (config) {
+          ConfigParams ltr_use;
+          ltr_use = make_ltr_use_param (ltr_use_idx);
+          g_ptr_array_add (config, &ltr_use);
+
+          if (!c2componentInterface_config (enc->comp_intf,
+                  config, BLOCK_MODE_MAY_BLOCK)) {
+            GST_WARNING_OBJECT (enc, "Failed to set ltr-use encoder config");
+          }
+
+          g_ptr_array_free (config, TRUE);
+        }
+
+        break;
+      }
+    }
+  }
+}
+
 static void
 add_roi_to_frame (GstVideoEncoder * encoder, GstVideoCodecFrame * frame,
     GstStructure * roimeta)
@@ -2285,6 +2435,8 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     goto out;
   }
 
+  handle_ltr (encoder, frame);
+
   /* Keep track of queued frame */
   enc->queued_frame[(enc->frame_index) % MAX_QUEUED_FRAME] =
       frame->system_frame_number;
@@ -2435,6 +2587,40 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_REPORT_AVERAGE_FRAME_QP:
       enc->report_average_frame_qp = g_value_get_boolean (value);
       break;
+    case PROP_HIER_P:
+      enc->hierp_layers = g_value_get_uint (value);
+      break;
+    case PROP_HIER_B:
+      enc->hierb_layers = g_value_get_uint (value);
+      break;
+    case PROP_BITRATE_RATIOS:
+      if (enc->bitrate_ratios) {
+        g_free (enc->bitrate_ratios);
+        enc->bitrate_ratios = NULL;
+      }
+
+      enc->ratio_size = gst_value_array_get_size (value);
+      enc->bitrate_ratios = g_new (gfloat, enc->ratio_size);
+      if (enc->bitrate_ratios) {
+        for (gint i = 0; i < enc->ratio_size; i++) {
+          const GValue *ratio = gst_value_array_get_value (value, i);
+          enc->bitrate_ratios[i] = g_value_get_float (ratio);
+        }
+      }
+      break;
+    case PROP_LTR_COUNT:
+      enc->ltr_count = g_value_get_uint (value);
+      break;
+    case PROP_LTR_MARK:
+      if (gst_value_array_get_size (value)) {
+        g_value_copy (value, &enc->ltr_mark);
+      }
+      break;
+    case PROP_LTR_USE:
+      if (gst_value_array_get_size (value)) {
+        g_value_copy (value, &enc->ltr_use);
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2547,6 +2733,19 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
     case PROP_REPORT_AVERAGE_FRAME_QP:
       g_value_set_boolean (value, enc->report_average_frame_qp);
       break;
+    case PROP_LTR_COUNT:
+      g_value_set_uint (value, enc->ltr_count);
+      break;
+    case PROP_LTR_MARK:
+      if (gst_value_array_get_size (&enc->ltr_mark)) {
+        g_value_copy (&enc->ltr_mark, value);
+      }
+      break;
+    case PROP_LTR_USE:
+      if (gst_value_array_get_size (&enc->ltr_use)) {
+        g_value_copy (&enc->ltr_use, value);
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2569,6 +2768,15 @@ gst_qcodec2_venc_finalize (GObject * object)
   if (enc->comp_name) {
     enc->comp_name = NULL;
   }
+
+  if (enc->bitrate_ratios) {
+    g_free (enc->bitrate_ratios);
+    enc->bitrate_ratios = NULL;
+  }
+
+  g_value_unset (&enc->ltr_mark);
+
+  g_value_unset (&enc->ltr_use);
 
   if (enc->roi_array) {
     for (guint i = 0; i < enc->roi_array->len; i++) {
@@ -2835,6 +3043,61 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HIER_P,
+      g_param_spec_uint ("hier-p", "Hier-P",
+          "total number of P layers",
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HIER_B,
+      g_param_spec_uint ("hier-b", "Hier-B",
+          "total number of B layers",
+          0, G_MAXUINT, 0,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_BITRATE_RATIOS,
+      gst_param_spec_array ("bitrate-ratios", "Bitrate ratios",
+          "Bitrate ratio array for each layer",
+          g_param_spec_float ("bitrate-ratio", "Bitrate ratio",
+              "Bitrate budgets for each layer and the layers below, " \
+              "given as a ratio of the total, stream bitrate",
+              0.0, 1.0, 0.0,
+              G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS),
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_LTR_COUNT,
+      g_param_spec_uint ("ltr-count", "LTR Count",
+          "Specify the ltr count",
+          0, 3, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_LTR_MARK,
+      gst_param_spec_array ("ltr-mark", "LTR Mark Index Array",
+          "The ltr mark index array ltr-mark=<<frame,index>, <frame,index>>",
+          gst_param_spec_array ("mark-frame", "Mark Frame",
+              "The mark frame array <frame,index>",
+              g_param_spec_int ("value", "Mark Frame Value",
+                  "The value of mark frame and index",
+                  0, G_MAXINT, 0,
+                  G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_LTR_USE,
+      gst_param_spec_array ("ltr-use", "LTR Use Index Array",
+          "The ltr use index array ltr-use=<<frame,index>, <frame,index>>",
+          gst_param_spec_array ("use-frame", "Use Frame",
+              "The use frame array <frame,index>",
+              g_param_spec_int ("value", "Use Frame Value",
+                  "The value of use frame and index",
+                  0, G_MAXINT, 0,
+                  G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -2896,7 +3159,14 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->quant_p_frames = DEFAULT_INIT_QUANT_P_FRAMES;
   enc->quant_b_frames = DEFAULT_INIT_QUANT_B_FRAMES;
   enc->report_average_frame_qp = FALSE;
+  enc->hierp_layers = 0;
+  enc->hierb_layers = 0;
+  enc->ratio_size = 0;
+  enc->bitrate_ratios = NULL;
+  enc->ltr_count = 0;
 
+  g_value_init (&enc->ltr_mark, GST_TYPE_ARRAY);
+  g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
 }

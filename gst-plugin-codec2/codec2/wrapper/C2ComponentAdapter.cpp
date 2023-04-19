@@ -936,10 +936,13 @@ void C2ComponentAdapter::handleWorkDone(
                 LOG_ERROR("Invalid buffer");
             }
 
-            LOG_MESSAGE("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, flag: %x",
+            LOG_MESSAGE("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, Flag : 0x%x",
                 this, bufferIdx, worklet->output.ordinal.timestamp.peeku(), outputFrameFlag);
 
-            // ref count ++
+            // Only hold the C2 buffer in case below:
+            // 1. all encoder use cases
+            // 2. internal buffer pool mode for decoder output
+            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC))
             {
                 std::unique_lock<std::mutex> lck(mLockOut);
                 mOutPendingBuffer[bufferIdx] = buffer;
