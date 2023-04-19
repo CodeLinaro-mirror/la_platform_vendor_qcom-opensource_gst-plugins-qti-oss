@@ -132,6 +132,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_INTERLACE_INFO "interlace_info"
 #define CONFIG_FUNCTION_KEY_DEINTERLACE "deinterlace"
 #define CONFIG_FUNCTION_KEY_FRAMERATE "framerate"
+#define CONFIG_FUNCTION_KEY_DYNAMIC_FRAMERATE "dynamic_framerate"
 #define CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD "intraframes_period"
 #define CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST "intra_video_frame_request"
 #define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
@@ -463,7 +464,7 @@ typedef struct {
             guint32 layerCount;
             guint32 bLayerCount;
             guint32 ratioSize;
-            gfloat *ratios;
+            gfloat* ratios;
         } temporalLayer;
 
         struct {
