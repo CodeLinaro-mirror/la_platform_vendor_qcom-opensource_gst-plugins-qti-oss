@@ -28,6 +28,9 @@
 GST_DEBUG_CATEGORY (gst_qvdeinterlace_debug);
 #define GST_CAT_DEFAULT gst_qvdeinterlace_debug
 
+#define QVDEINTERLACE_MIN_OUT_BUF 2
+#define QVDEINTERLACE_MAX_OUT_BUF 16
+
 /* Filter signals and args */
 enum
 {
@@ -188,8 +191,9 @@ gst_qvdeinterlace_transform_caps (GstBaseTransform * trans,
     result = temp;
   }
 
-  GST_DEBUG_OBJECT (trans, "transformed %" GST_PTR_FORMAT " into %"
-      GST_PTR_FORMAT, caps, result);
+  GST_DEBUG_OBJECT (otherpad, "incaps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG_OBJECT (otherpad, "filter %" GST_PTR_FORMAT, filter);
+  GST_DEBUG_OBJECT (otherpad, "result %" GST_PTR_FORMAT, result);
 
   return result;
 }
@@ -202,7 +206,8 @@ _caps_has_compression_ubwc (const GstCaps * caps)
   for (gint i = 0; i < gst_caps_get_size (caps); i++) {
     GstStructure *s = gst_caps_get_structure (caps, i);
     gchar *str = gst_structure_to_string (s);
-    gboolean has_ubwc = !!g_strrstr (str, "ubwc");
+    gboolean has_ubwc = g_strrstr (str, "ubwc") &&
+        gst_structure_has_field (s, "compression");
     g_free (str);
 
     if (has_ubwc) {
@@ -224,12 +229,28 @@ _fixate_caps_compression (GstPad * pad, GstCaps * result)
   GST_DEBUG_OBJECT (pad, "peer caps: %" GST_PTR_FORMAT, peer_caps);
   gst_caps_unref (peer_caps);
 
+  result = gst_caps_make_writable (result);
   if (has_ubwc)
     gst_caps_set_simple (result, "compression", G_TYPE_STRING, "ubwc", NULL);
   else
     gst_caps_set_simple (result, "compression", G_TYPE_STRING, "linear", NULL);
 
   GST_DEBUG_OBJECT (pad, "result caps: %" GST_PTR_FORMAT, result);
+}
+
+static gboolean
+_is_fixed_caps_interlaced (GstBaseTransform * trans, const GstCaps * caps)
+{
+  GstVideoInfo info;
+  gboolean ret = FALSE;
+
+  if (gst_video_info_from_caps (&info, caps))
+    ret = GST_VIDEO_INFO_IS_INTERLACED (&info);
+  else
+    GST_ERROR_OBJECT (trans, "error parse caps %" GST_PTR_FORMAT, caps);
+
+  GST_DEBUG_OBJECT (trans, "ret: %d", ret);
+  return ret;
 }
 
 /* given fixed @caps, fixate @othercaps,
@@ -243,22 +264,62 @@ static GstCaps *
 gst_qvdeinterlace_fixate_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * othercaps)
 {
+  gboolean interlaced;
   GstCaps *result;
   GstPad *pad = (GST_PAD_SINK == direction) ? trans->sinkpad : trans->srcpad;
 
   GST_DEBUG_OBJECT (pad, "fixate othercaps %" GST_PTR_FORMAT, othercaps);
-  GST_DEBUG_OBJECT (pad, "   based on caps %" GST_PTR_FORMAT, caps);
+  GST_DEBUG_OBJECT (pad, "based on in caps %" GST_PTR_FORMAT, caps);
 
-  /* caps must be fixed here, it's an error if it's not */
-  g_return_val_if_fail (gst_caps_is_fixed (caps), NULL);
-
-  result = gst_caps_intersect (othercaps, caps);
-  if (gst_caps_is_empty (result)) {
-    gst_caps_unref (result);
+  if (gst_caps_is_fixed (othercaps)) {
+    GST_DEBUG_OBJECT (pad, "othercaps is already fixed");
     result = othercaps;
+    goto out;
+  }
+
+  /* Only if incaps is interlaced, do deinterlacing by GPU, or else do
+   * nothing and try to pass through if possible. */
+  interlaced = _is_fixed_caps_interlaced (trans, caps);
+
+  result = gst_caps_intersect_full (caps, othercaps, GST_CAPS_INTERSECT_FIRST);
+  if (gst_caps_is_empty (result)) {
     GST_DEBUG_OBJECT (pad, "intersection is empty");
+    if (GST_PAD_SINK == direction) {
+      if (interlaced) {
+        /* For interlaced, fixate othercaps to do deinterlacing by GPU. */
+        gst_caps_replace (&result, othercaps);
+        GST_DEBUG_OBJECT (pad, "incaps is interlaced, do deinterlacing");
+        /* If downstream supports ubwc, then output ubwc, else linear.
+         * qvdeinterlace can output ubwc or linear when deinterlacing. */
+        _fixate_caps_compression (pad, result);
+      } else {
+        /* For progressive, can't pass through when in caps doesn't intersect
+         * with othercaps that's already the intersecton with downstream caps
+         * in gst_base_transform_find_transform(). */
+        GST_DEBUG_OBJECT (pad, "incaps is progressive, can't pass through");
+        gst_caps_unref (othercaps);
+        gst_caps_replace (&result, NULL);
+        goto out;
+      }
+    } else {
+      GST_DEBUG_OBJECT (pad, "othercaps of upstream");
+      gst_caps_replace (&result, othercaps);
+    }
   } else {
+    GST_DEBUG_OBJECT (pad, "intersection is not empty");
     gst_caps_unref (othercaps);
+
+    if (!interlaced) {
+      GST_DEBUG_OBJECT (pad, "incaps is progressive, pass through");
+      /* In case incaps is progressive, qvdeinterlace does nothing and just
+       * pass the buffers through. Let outcaps be equal to incaps, then
+       * gst_base_transform_configure_caps shall set passthrough. */
+      gst_caps_replace (&result, caps);
+      goto out;
+    } else {
+      /* qvdeinterlace only output progressive. */
+      GST_ERROR_OBJECT (pad, "won't reach here for incaps of interlaced");
+    }
   }
 
   GST_DEBUG_OBJECT (pad, "result %" GST_PTR_FORMAT, result);
@@ -287,16 +348,14 @@ gst_qvdeinterlace_fixate_caps (GstBaseTransform * trans,
     GST_DEBUG_OBJECT (pad, "result %" GST_PTR_FORMAT, result);
   }
 
-  if (direction == GST_PAD_SINK) {
-    /* If downstream supports ubwc, then output ubwc, else linear. */
-    _fixate_caps_compression (trans->srcpad, result);
-
+  if (GST_PAD_SINK == direction) {
     if (gst_caps_is_subset (caps, result)) {
       GST_DEBUG_OBJECT (pad, "caps is subset of result");
       gst_caps_replace (&result, caps);
     }
   }
 
+out:
   GST_DEBUG_OBJECT (pad, "return %" GST_PTR_FORMAT, result);
   return result;
 }
@@ -455,12 +514,12 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
   GstCaps *outcaps = NULL;
   GstAllocator *allocator;
   GstStructure *config;
-  guint min, max, size;
+  guint min = 0, max = 0, size = 0;
   gboolean update_pool;
 
   GST_INFO_OBJECT (self, "%" GST_PTR_FORMAT, query);
 
-  /* Take downstream proposed max no. of buffer if provided. */
+  /* Consider downstream proposed min/max/size if provided. */
   if (gst_query_get_n_allocation_pools (query) > 0) {
     gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
     GST_INFO_OBJECT (self, "downstream proposed pool %p,size %u,min %u,max %u",
@@ -469,8 +528,6 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     update_pool = TRUE;
   } else {
     GST_INFO_OBJECT (self, "downstream not propose pool");
-    size = 0;
-    max = 16;
     update_pool = FALSE;
   }
 
@@ -478,9 +535,10 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
   GST_INFO_OBJECT (self, "size %u, info size %u", size, (guint) info->size);
   size = MAX (size, info->size);
-  min = 2;
+  min = MAX (min, QVDEINTERLACE_MIN_OUT_BUF);
+  max = MAX (MAX (min, max), QVDEINTERLACE_MAX_OUT_BUF);
 
-  GST_INFO_OBJECT (self, "size %u, min %u, max %u", size, min, max);
+  GST_INFO_OBJECT (self, "pool size %u, min %u, max %u", size, min, max);
 
   if (pool)
     gst_object_unref (pool);

@@ -37,69 +37,11 @@
 #include "gstqcodec2bufferpool.h"
 #include "codec2wrapper.h"
 
-GST_DEBUG_CATEGORY_STATIC (qcodec2common_debug);
-#define GST_CAT_DEFAULT qcodec2common_debug
+GST_DEBUG_CATEGORY_EXTERN (qcodec2bufferpool_debug);
+#define GST_CAT_DEFAULT qcodec2bufferpool_debug
 
 G_DEFINE_TYPE (GstQcodec2BufferPool, gst_qcodec2_buffer_pool,
     GST_TYPE_BUFFER_POOL);
-G_DEFINE_TYPE (GstC2Comp, gst_c2_comp, G_TYPE_OBJECT);
-
-static void
-gst_c2_comp_finalize (GObject * gobject)
-{
-  GstC2Comp *self = GST_C2_COMP (gobject);
-
-  GST_LOG_OBJECT (self, "finalize");
-
-  if (self->comp) {
-    c2component_delete (self->comp);
-    GST_DEBUG_OBJECT (self, "destroy c2 comp");
-  }
-
-  G_OBJECT_CLASS (gst_c2_comp_parent_class)->finalize (gobject);
-}
-
-static void
-gst_c2_comp_class_init (GstC2CompClass * klass)
-{
-  GObjectClass *object_class = (GObjectClass *) klass;
-
-  object_class->finalize = gst_c2_comp_finalize;
-}
-
-static void
-gst_c2_comp_init (GstC2Comp * self)
-{
-  GST_DEBUG_CATEGORY_INIT (qcodec2common_debug,
-      "qcodec2common", 0, "GST Qcodec2.0 common utils");
-
-  self->comp = NULL;
-}
-
-GstC2Comp *
-gst_c2_comp_create (void * comp)
-{
-  GstC2Comp *gst_c2_comp = NULL;
-
-  gst_c2_comp = g_object_new (GST_TYPE_C2_COMP, NULL);
-  if (gst_c2_comp) {
-    gst_c2_comp->comp = comp;
-  }
-
-  return gst_c2_comp;
-}
-
-static void *
-get_c2_comp (GstC2Comp * gst_c2_comp)
-{
-  void *c2_comp = NULL;
-
-  if (gst_c2_comp) {
-    c2_comp = gst_c2_comp->comp;
-  }
-
-  return c2_comp;
-}
 
 #define parent_class gst_qcodec2_buffer_pool_parent_class
 
@@ -222,7 +164,7 @@ gst_qcodec2_buffer_pool_finalize (GObject * obj)
   }
 
   if (gst_c2_comp) {
-    gst_object_unref (gst_c2_comp);
+    gst_c2_comp_unref (gst_c2_comp);
   }
 
   G_OBJECT_CLASS (parent_class)->finalize (obj);

@@ -198,12 +198,6 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
     case GST_VIDEO_FORMAT_NV12:
       desc->format = GBM_FORMAT_NV12;
       break;
-    case GST_VIDEO_FORMAT_BGRx:
-      desc->format = GBM_FORMAT_BGRX8888;
-      break;
-    case GST_VIDEO_FORMAT_BGRA:
-      desc->format = GBM_FORMAT_BGRA8888;
-      break;
     default:
       GST_ERROR ("NOT support format %s-%d", GST_VIDEO_INFO_NAME (info),
           format);

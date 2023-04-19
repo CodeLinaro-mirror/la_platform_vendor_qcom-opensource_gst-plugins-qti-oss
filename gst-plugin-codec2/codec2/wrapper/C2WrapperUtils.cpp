@@ -25,6 +25,10 @@
 * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*
+* Changes from Qualcomm Innovation Center are provided under the following license:
+* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+* SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
 #include "C2WrapperUtils.h"
@@ -274,7 +278,7 @@ uint32_t toC2PixelFormat(PIXEL_FORMAT_TYPE pixel)
         result = C2_PIXEL_FORMAT_VENUS_NV12_UBWC;
         break;
     }
-    case PIXEL_FORMAT_NV12_512:{
+    case PIXEL_FORMAT_NV12_512: {
         result = C2_PIXEL_FORMAT_VENUS_NV12_512;
         break;
     }
@@ -651,4 +655,3 @@ C2Config::level_t toC2Level(C2W_LEVEL_T level)
 }
 
 } // namespace QTI
-
