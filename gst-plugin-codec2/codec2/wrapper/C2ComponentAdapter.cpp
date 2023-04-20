@@ -54,7 +54,6 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
  * If count of pending works are more than 6, it causes queue overflow issue.
  */
 #define MAX_PENDING_WORK 6
-#define GBM_BO_USAGE_NV12_512_QTI 0x40000000
 
 using namespace std::chrono_literals;
 
@@ -237,9 +236,9 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
         std::shared_ptr<C2Buffer> buf;
         c2_status_t err = C2_OK;
-        C2MemoryUsage usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        C2MemoryUsage c2Usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
         if (buffer->secure) {
-            usage = { C2MemoryUsage::READ_PROTECTED, 0 };
+            c2Usage = { C2MemoryUsage::READ_PROTECTED, 0 };
         }
 
         if (buffer->pool_type == BUFFER_POOL_BASIC_LINEAR) {
@@ -247,7 +246,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
              * size alignment could get nearly optimal balance of dec input
              * buffer count 7~9 and total buffer size in buffer pool. */
             allocSize = GST_ROUND_UP_N(frameSize, 1024 * 1024);
-            err = mLinearPool->fetchLinearBlock(allocSize, usage, &linear_block);
+            err = mLinearPool->fetchLinearBlock(allocSize, c2Usage, &linear_block);
             if (err != C2_OK || !linear_block) {
                 LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
                 return C2_NO_MEMORY;
@@ -300,25 +299,21 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
             linear_block->mSize = frameSize;
             buf = createLinearBuffer(linear_block);
         } else if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
+            uint32_t gbmUsage = 0;
             if (mGraphicPool) {
                 if (buffer->format == GST_VIDEO_FORMAT_NV12) {
                     if (buffer->ubwc_flag) {
                         LOG_MESSAGE("NV12: usage add UBWC");
-                        usage = {
-                            C2MemoryUsage::CPU_READ | GBM_BO_USAGE_UBWC_ALIGNED_QTI,
-                            C2MemoryUsage::CPU_WRITE
-                        };
+                        gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                     } else if (buffer->heic_flag) {
                         LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                        usage = {
-                            C2MemoryUsage::CPU_READ | GBM_BO_USAGE_NV12_512_QTI,
-                            C2MemoryUsage::CPU_WRITE
-                        };
+                        gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
                     }
                 }
+                C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
 
                 err = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
-                    gst_to_c2_gbmformat(buffer->format), usage, &graphic_block);
+                    gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphic_block);
                 if (C2_OK != err || !graphic_block) {
                     LOG_ERROR("fetchGraphicBlock failed: %d", err);
                     return C2_NO_MEMORY;
@@ -490,19 +485,22 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
 
     if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
         std::shared_ptr<C2GraphicBlock> graphicBlock = nullptr;
-        C2MemoryUsage usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        C2MemoryUsage c2Usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        uint32_t gbmUsage = 0;
 
         if (mGraphicPool) {
             if (buffer->ubwc_flag) {
-                usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_UBWC_ALIGNED_QTI,
-                    C2MemoryUsage::CPU_WRITE };
+                gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
+                LOG_MESSAGE("NV12: usage add UBWC ALIGNED QTI");
             } else if (buffer->heic_flag) {
+                gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_NV12_512_QTI, C2MemoryUsage::CPU_WRITE };
             }
 
+            C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
+
             ret = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
-                gst_to_c2_gbmformat(buffer->format), usage, &graphicBlock);
+                gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphicBlock);
 
             if (ret != C2_OK || graphicBlock == nullptr) {
                 LOG_ERROR("Graphic pool failed to allocate input buffer");

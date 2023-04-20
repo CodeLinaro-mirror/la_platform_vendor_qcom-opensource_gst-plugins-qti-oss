@@ -974,7 +974,7 @@ CodecCallback::~CodecCallback()
 // set buffer's layout information
 // 1. set buffer valid size
 // 2. set buffer stride and offset
-void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
+void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
     uint32_t width, uint32_t height, uint32_t interlace_mode)
 {
     uint32_t validDataSize = 0;
@@ -990,7 +990,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
         return;
     }
 
-    if (format == GBM_FORMAT_NV12 && (usage & GBM_BO_USAGE_UBWC_ALIGNED_QTI)) {
+    if (format == GBM_FORMAT_NV12 && (gbm_usage & GBM_BO_USAGE_UBWC_ALIGNED_QTI)) {
         color_fmt = COLOR_FMT_NV12_UBWC;
         color_fmt_str = "NV12_UBWC";
     } else if (format == GBM_FORMAT_YCbCr_420_TP10_UBWC) {
@@ -1101,10 +1101,14 @@ void CodecCallback::onOutputBufferAvailable(
             guint64 bo = 0;
             guint32 width = 0;
             guint32 height = 0;
+            guint32 gbmUsage = 0;
             C2Rect crop;
             const C2GraphicView view = graphic_block.map().get();
 
             _UnwrapNativeCodec2GBMMetadata(handle, &width, &height, &format, &usage, &stride, &size, &bo);
+
+            C2MemoryUsageGBM c2GbmUsage(usage);
+            gbmUsage = c2GbmUsage.gbmUsage();
 
             /* The actual value of bo here is a pointer to struct gbm_bo.
              * To avoid including GBM header, use void* instead. */
@@ -1113,7 +1117,7 @@ void CodecCallback::onOutputBufferAvailable(
             LOG_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
             outBuf.width = crop.width;
             outBuf.height = crop.height;
-            setBufLayout(&outBuf, format, usage, width, height, interlace);
+            setBufLayout(&outBuf, format, gbmUsage, width, height, interlace);
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
