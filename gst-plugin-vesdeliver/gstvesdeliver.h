@@ -33,6 +33,9 @@ G_BEGIN_DECLS
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
+#define AV1_CAPS \
+    "video/x-av1, " \
+    COMMON_VIDEO_CAPS(96, 8192)
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
