@@ -92,8 +92,6 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 #define parent_class gst_qcodec2_vdec_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
-#define QCODEC2_MIN_OUTBUFFERS 6
-#define QCODEC2_MAX_OUTBUFFERS 32
 #define EXT_BUF_WAIT_TIMEOUT_MS 500
 
 #define DEFAULT_OUTPUT_PICTURE_ORDER_MODE    (0xffffffff)
@@ -762,7 +760,6 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     goto error_set_format;
   } else if (dec->use_external_buf) {
     if (!gst_video_decoder_negotiate (decoder)) {
-      gst_video_codec_state_unref (dec->output_state);
       GST_ERROR_OBJECT (dec, "Failed to negotiate");
       goto error_set_format;
     }
@@ -830,7 +827,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->output_setup = FALSE;
   dec->eos_reached = FALSE;
   dec->frame_index = 0;
-  dec->num_input_queued = 0;
   dec->num_output_done = 0;
   dec->downstream_supports_dma = FALSE;
   dec->comp = NULL;
@@ -843,7 +839,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->acquired_external_buf = 0;
   dec->gst_c2_comp = NULL;
 
-  memset (dec->queued_frame, 0, MAX_QUEUED_FRAME);
   memset (&dec->start_time, 0, sizeof (struct timeval));
   memset (&dec->first_frame_time, 0, sizeof (struct timeval));
   gettimeofday (&dec->start_time, NULL);
@@ -1180,10 +1175,9 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
     param.mode = use_dmabuf ? DMABUF_WRAP_MODE : FDBUF_WRAP_MODE;
     pool = gst_qcodec2_buffer_pool_new (&param);
 
-    if (max)
-      max = MAX (MAX (min, max), QCODEC2_MIN_OUTBUFFERS);
-
+    max = MAX (MAX (min, max), QCODEC2_MAX_OUTBUFFERS);
     min = MAX (min, QCODEC2_MIN_OUTBUFFERS);
+
     /* disable gst buffer pool's allocator, since actual buffer(underlying DMA/ION buffer)
      * is allocated inside of C2 allocator */
     size = 0;
@@ -1397,7 +1391,9 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
 
   ret = gst_video_decoder_finish_frame (decoder, frame);
   if (ret == GST_FLOW_FLUSHING) {
-    GST_DEBUG_OBJECT (dec, "seek: downstream is flushing");
+    GST_DEBUG_OBJECT (dec, "downstream is flushing");
+  } else if (ret == GST_FLOW_EOS) {
+    GST_DEBUG_OBJECT (dec, "downstream is in eos");
   } else if (ret != GST_FLOW_OK) {
     GST_ERROR_OBJECT (dec, "Failed(%d) to push frame downstream", ret);
   }
@@ -1414,7 +1410,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) handle;
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-  GstFlowReturn ret = GST_FLOW_OK;
 
   GST_LOG_OBJECT (dec, "handle_video_event");
 
@@ -1506,15 +1501,9 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           GST_DEBUG_OBJECT (dec, "first frame latency:%d us", time_1st_cost_us);
         }
         dec->num_output_done++;
-        GST_DEBUG_OBJECT (dec, "output done, count: %lu", dec->num_output_done);
+        GST_LOG_OBJECT (dec, "output done, count: %lu", dec->num_output_done);
 
-        ret = push_frame_downstream (decoder, out_buf);
-        if (ret == GST_FLOW_FLUSHING) {
-          GST_DEBUG_OBJECT (dec,
-              "seek: it's a successful case since of downstream flushing");
-        } else if (ret != GST_FLOW_OK) {
-          GST_ERROR_OBJECT (dec, "Failed to push frame downstream");
-        }
+        push_frame_downstream (decoder, out_buf);
       } else if (out_buf->flag & FLAG_TYPE_END_OF_STREAM) {
         GST_INFO_OBJECT (dec, "Decoder reached EOS");
         g_mutex_lock (&dec->pending_lock);
@@ -1597,7 +1586,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
             output_state->caps);
         dec->output_state = output_state;
         if (!gst_video_decoder_negotiate (decoder)) {
-          gst_video_codec_state_unref (dec->output_state);
           GST_ERROR_OBJECT (dec, "Failed to negotiate");
           break;
         }
@@ -1647,10 +1635,6 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   }
   GST_INFO_OBJECT (dec, "frame->pts (%" G_GUINT64_FORMAT ")", frame->pts);
 
-  /* Keep track of queued frame */
-  dec->queued_frame[(dec->frame_index) % MAX_QUEUED_FRAME] =
-      frame->system_frame_number;
-
   inBuf.pool_type = BUFFER_POOL_BASIC_LINEAR;
   inBuf.timestamp = NANO_TO_MILLI (frame->pts);
   inBuf.index = frame->system_frame_number;
@@ -1667,7 +1651,6 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
 
   g_mutex_lock (&(dec->pending_lock));
   dec->frame_index += 1;
-  dec->num_input_queued++;
   g_mutex_unlock (&(dec->pending_lock));
 
 out:
