@@ -25,6 +25,10 @@
 * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*
+* Changes from Qualcomm Innovation Center are provided under the following license:
+* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+* SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
 #ifndef __C2COMPONENTADAPTER_H__
@@ -44,8 +48,7 @@
 
 namespace android {
 class C2AllocatorGBM;
-class C2AllocatorIon;
-}
+} // namespace android
 
 namespace QTI {
 
@@ -101,8 +104,6 @@ public:
     void handleTripped(std::weak_ptr<C2Component> component, std::vector<std::shared_ptr<C2SettingResult> > settingResult);
     void handleError(std::weak_ptr<C2Component> component, uint32_t errorCode);
 
-    uint32_t getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate);
-
     /* This class methods */
     c2_status_t setListenercallback(std::unique_ptr<EventCallback> callback, c2_blocking_t mayBlock);
     c2_status_t setDataCopyFunc(void* func, void* param);
@@ -125,6 +126,8 @@ private:
     static void onDestroyNotify(const C2Buffer* buf, void* arg);
     bool isUseExternalBuffer(BUFFER_POOL_TYPE type);
     c2_status_t importExternalBuf(std::shared_ptr<C2Buffer>& c2Buf, int fd, uint32_t size);
+    uint32_t getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate);
+    uint32_t getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate);
 
     std::weak_ptr<C2ComponentStore> mStore;
     std::shared_ptr<C2Component> mComp;

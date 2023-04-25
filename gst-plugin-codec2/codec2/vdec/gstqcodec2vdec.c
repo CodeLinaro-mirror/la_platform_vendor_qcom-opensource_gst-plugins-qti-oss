@@ -79,6 +79,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2h265dec.h"
 #include "gstqcodec2vp9dec.h"
 #include "gstqcodec2mpeg2dec.h"
+#ifdef GST_SUPPORT_AV1_DEC
+#include "gstqcodec2av1dec.h"
+#endif
 
 GST_DEBUG_CATEGORY (gst_qcodec2_vdec_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
@@ -89,8 +92,6 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 #define parent_class gst_qcodec2_vdec_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
-#define QCODEC2_MIN_OUTBUFFERS 6
-#define QCODEC2_MAX_OUTBUFFERS 32
 #define EXT_BUF_WAIT_TIMEOUT_MS 500
 
 #define DEFAULT_OUTPUT_PICTURE_ORDER_MODE    (0xffffffff)
@@ -100,6 +101,21 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 /* Function will be named gst_fbuf_modifier_qdata_quark() */
 static G_DEFINE_QUARK (FBufModifierQuark, gst_fbuf_modifier_qdata);
 
+#define DECODER_ELEMENT(codec, element) \
+  {"c2.qti." G_STRINGIFY (codec) ".decoder", \
+   "qcodec2" G_STRINGIFY (element) "dec", \
+   GST_RANK_PRIMARY + 10, \
+   gst_qcodec2_##element##_dec_get_type}
+
+static const ElementInfo kDECODER_ELEMENTS[] = {
+  DECODER_ELEMENT (avc, h264),
+  DECODER_ELEMENT (hevc, h265),
+  DECODER_ELEMENT (vp9, vp9),
+  DECODER_ELEMENT (mpeg2, mpeg2),
+#ifdef GST_SUPPORT_AV1_DEC
+  DECODER_ELEMENT (av1, av1),
+#endif
+};
 
 enum
 {
@@ -304,6 +320,8 @@ get_c2_comp_name (GstVideoDecoder * decoder, GstStructure * s,
     str = g_strdup ("c2.qti.vp8.decoder");
   } else if (gst_structure_has_name (s, "video/x-vp9")) {
     str = g_strdup ("c2.qti.vp9.decoder");
+  } else if (gst_structure_has_name (s, "video/x-av1")) {
+    str = g_strdup ("c2.qti.av1.decoder");
   } else if (gst_structure_has_name (s, "video/mpeg")) {
     if (gst_structure_get_int (s, "mpegversion", &mpegversion)) {
       if (mpegversion == 2) {
@@ -415,7 +433,7 @@ gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
 
   if (TRUE == ret) {
     if (G_UNLIKELY (dec->gst_c2_comp)) {
-      gst_object_unref (dec->gst_c2_comp);
+      gst_c2_comp_unref (dec->gst_c2_comp);
       GST_DEBUG_OBJECT (dec, "unref previous gst c2 component");
     }
 
@@ -722,10 +740,8 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   resolution = make_resolution_param (width, height, TRUE);
   g_ptr_array_add (config, &resolution);
 
-#ifdef GST_SUPPORT_INTERLACE
   interlace = make_interlace_param (c2interlace_mode, FALSE);
   g_ptr_array_add (config, &interlace);
-#endif
 
   if (dec->output_picture_order_mode != DEFAULT_OUTPUT_PICTURE_ORDER_MODE) {
     output_picture_order_mode =
@@ -744,7 +760,6 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     goto error_set_format;
   } else if (dec->use_external_buf) {
     if (!gst_video_decoder_negotiate (decoder)) {
-      gst_video_codec_state_unref (dec->output_state);
       GST_ERROR_OBJECT (dec, "Failed to negotiate");
       goto error_set_format;
     }
@@ -812,7 +827,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->output_setup = FALSE;
   dec->eos_reached = FALSE;
   dec->frame_index = 0;
-  dec->num_input_queued = 0;
   dec->num_output_done = 0;
   dec->downstream_supports_dma = FALSE;
   dec->comp = NULL;
@@ -825,7 +839,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->acquired_external_buf = 0;
   dec->gst_c2_comp = NULL;
 
-  memset (dec->queued_frame, 0, MAX_QUEUED_FRAME);
   memset (&dec->start_time, 0, sizeof (struct timeval));
   memset (&dec->first_frame_time, 0, sizeof (struct timeval));
   gettimeofday (&dec->start_time, NULL);
@@ -876,7 +889,7 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
   }
 
   if (dec->gst_c2_comp) {
-    gst_object_unref (dec->gst_c2_comp);
+    gst_c2_comp_unref (dec->gst_c2_comp);
     dec->gst_c2_comp = NULL;
   }
 
@@ -1030,9 +1043,9 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
       GST_TIME_ARGS (frame->pts));
 
   if (dec_class->handle_frame) {
-    if (!dec_class->handle_frame (dec, frame)) {
+    ret = dec_class->handle_frame (dec, frame);
+    if (ret != GST_FLOW_OK) {
       GST_ERROR_OBJECT (dec, "Subclass failed to handle format");
-      ret = GST_FLOW_ERROR;
       goto done;
     }
   }
@@ -1158,14 +1171,13 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
 
     param.is_ubwc = dec->is_ubwc;
     param.info = dec->output_state->info;
-    param.gst_c2_comp = gst_object_ref (dec->gst_c2_comp);
+    param.gst_c2_comp = gst_c2_comp_ref (dec->gst_c2_comp);
     param.mode = use_dmabuf ? DMABUF_WRAP_MODE : FDBUF_WRAP_MODE;
     pool = gst_qcodec2_buffer_pool_new (&param);
 
-    if (max)
-      max = MAX (MAX (min, max), QCODEC2_MIN_OUTBUFFERS);
-
+    max = MAX (MAX (min, max), QCODEC2_MAX_OUTBUFFERS);
     min = MAX (min, QCODEC2_MIN_OUTBUFFERS);
+
     /* disable gst buffer pool's allocator, since actual buffer(underlying DMA/ION buffer)
      * is allocated inside of C2 allocator */
     size = 0;
@@ -1379,7 +1391,9 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
 
   ret = gst_video_decoder_finish_frame (decoder, frame);
   if (ret == GST_FLOW_FLUSHING) {
-    GST_DEBUG_OBJECT (dec, "seek: downstream is flushing");
+    GST_DEBUG_OBJECT (dec, "downstream is flushing");
+  } else if (ret == GST_FLOW_EOS) {
+    GST_DEBUG_OBJECT (dec, "downstream is in eos");
   } else if (ret != GST_FLOW_OK) {
     GST_ERROR_OBJECT (dec, "Failed(%d) to push frame downstream", ret);
   }
@@ -1396,7 +1410,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) handle;
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-  GstFlowReturn ret = GST_FLOW_OK;
 
   GST_LOG_OBJECT (dec, "handle_video_event");
 
@@ -1488,15 +1501,9 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           GST_DEBUG_OBJECT (dec, "first frame latency:%d us", time_1st_cost_us);
         }
         dec->num_output_done++;
-        GST_DEBUG_OBJECT (dec, "output done, count: %lu", dec->num_output_done);
+        GST_LOG_OBJECT (dec, "output done, count: %lu", dec->num_output_done);
 
-        ret = push_frame_downstream (decoder, out_buf);
-        if (ret == GST_FLOW_FLUSHING) {
-          GST_DEBUG_OBJECT (dec,
-              "seek: it's a successful case since of downstream flushing");
-        } else if (ret != GST_FLOW_OK) {
-          GST_ERROR_OBJECT (dec, "Failed to push frame downstream");
-        }
+        push_frame_downstream (decoder, out_buf);
       } else if (out_buf->flag & FLAG_TYPE_END_OF_STREAM) {
         GST_INFO_OBJECT (dec, "Decoder reached EOS");
         g_mutex_lock (&dec->pending_lock);
@@ -1579,7 +1586,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
             output_state->caps);
         dec->output_state = output_state;
         if (!gst_video_decoder_negotiate (decoder)) {
-          gst_video_codec_state_unref (dec->output_state);
           GST_ERROR_OBJECT (dec, "Failed to negotiate");
           break;
         }
@@ -1629,10 +1635,6 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   }
   GST_INFO_OBJECT (dec, "frame->pts (%" G_GUINT64_FORMAT ")", frame->pts);
 
-  /* Keep track of queued frame */
-  dec->queued_frame[(dec->frame_index) % MAX_QUEUED_FRAME] =
-      frame->system_frame_number;
-
   inBuf.pool_type = BUFFER_POOL_BASIC_LINEAR;
   inBuf.timestamp = NANO_TO_MILLI (frame->pts);
   inBuf.index = frame->system_frame_number;
@@ -1649,7 +1651,6 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
 
   g_mutex_lock (&(dec->pending_lock));
   dec->frame_index += 1;
-  dec->num_input_queued++;
   g_mutex_unlock (&(dec->pending_lock));
 
 out:
@@ -1917,7 +1918,7 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
 }
 
 gboolean
-gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
+gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array)
 {
   /* debug category for filtering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_vdec_debug, "qcodec2vdec",
@@ -1930,26 +1931,25 @@ gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
     g_once_init_leave (&res, TRUE);
   }
 
-  if (!gst_element_register (plugin, "qcodec2h264dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H264_DEC)) {
-    GST_ERROR ("failed to register element qcodec2h264dec");
-    return FALSE;
-  }
-  if (!gst_element_register (plugin, "qcodec2h265dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_H265_DEC)) {
-    GST_ERROR ("failed to register element qcodec2h265dec");
-    return FALSE;
-  }
-  if (!gst_element_register (plugin, "qcodec2vp9dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_VP9_DEC)) {
-    GST_ERROR ("failed to register element qcodec2vp9dec");
-    return FALSE;
-  }
-  if (!gst_element_register (plugin, "qcodec2mpeg2dec",
-          GST_RANK_PRIMARY + 10, GST_TYPE_QCODEC2_MPEG2_DEC)) {
-    GST_ERROR ("failed to register element qcodec2mpeg2dec");
-    return FALSE;
+  guint count = 0;
+  if (array) {
+    for (guint i = 0; i < array->len; i++) {
+      for (guint j = 0; j < G_N_ELEMENTS (kDECODER_ELEMENTS); j++) {
+        if (!strcmp (kDECODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
+          if (gst_element_register (plugin, kDECODER_ELEMENTS[j].element,
+                  kDECODER_ELEMENTS[j].rank,
+                  kDECODER_ELEMENTS[j].register_type ())) {
+            count++;
+            GST_INFO ("register element %s", kDECODER_ELEMENTS[j].element);
+          } else {
+            GST_ERROR ("failed to register element %s",
+                kDECODER_ELEMENTS[j].element);
+          }
+          break;
+        }
+      }
+    }
   }
 
-  return TRUE;
+  return count > 0 ? TRUE : FALSE;
 }

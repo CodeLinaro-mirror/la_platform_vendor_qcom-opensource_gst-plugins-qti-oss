@@ -70,9 +70,6 @@ typedef struct _GstQcodec2VencClass GstQcodec2VencClass;
     "height = (int) [" #min ", " #max "],"                          \
     "framerate = " GST_VIDEO_FPS_RANGE
 
-/* Maximum number of input frame queued */
-#define MAX_QUEUED_FRAME  32
-
 typedef struct
 {
   const gchar *profile;
@@ -100,8 +97,6 @@ struct _GstQcodec2Venc
   /* manage the lifetime of C2 component adapter */
   GstC2Comp *gst_c2_comp;
 
-  guint64 queued_frame[MAX_QUEUED_FRAME];
-
   GstBufferPool *pool;
   GstVideoCodecState *input_state;
   GstVideoCodecState *output_state;
@@ -115,7 +110,6 @@ struct _GstQcodec2Venc
   GstVideoFormat input_format;
   GstVideoInfo input_info;
   guint64 frame_index;
-  guint64 num_input_queued;
   guint64 num_output_done;
 
   GstVideoInterlaceMode interlace_mode;
@@ -148,6 +142,7 @@ struct _GstQcodec2Venc
   BITRATE_SAVING_MODE bitrate_saving_mode;
   gboolean is_heic;
   guint32 interval_intraframes;
+  guint32 configured_interval_intraframes;
   gboolean inline_sps_pps_headers;
   guint32 min_qp_i_frames;
   guint32 max_qp_i_frames;
@@ -158,6 +153,14 @@ struct _GstQcodec2Venc
   guint32 quant_i_frames;
   guint32 quant_p_frames;
   guint32 quant_b_frames;
+  gboolean report_average_frame_qp;
+  guint32 hierp_layers;
+  guint32 hierb_layers;
+  guint32 ratio_size;
+  gfloat *bitrate_ratios;
+  guint32 ltr_count;
+  GValue ltr_mark;
+  GValue ltr_use;
 };
 
 /*
@@ -179,7 +182,7 @@ GType gst_qcodec2_venc_get_type (void);
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
-gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin);
+gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array);
 
 G_END_DECLS
 #endif /* __GST_QCODEC2_VENC_H__ */

@@ -48,13 +48,13 @@ GST_DEBUG_CATEGORY (gst_videoblend_debug);
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
                                                                    GST_PAD_SRC,
                                                                    GST_PAD_ALWAYS,
-                                                                   GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ( " { RGBA } " ))
+                                                                   GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ( " { NV12, RGBA, ARGB } " ))
                                                                   );
 
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink_%u",
                                                                     GST_PAD_SINK,
                                                                     GST_PAD_REQUEST,
-                                                                    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ( " { RGBA } " ))
+                                                                    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ( " { NV12, RGBA, ARGB } " ))
                                                                    );
 
 static void gst_videoblend_child_proxy_init (gpointer g_iface, gpointer iface_data);
@@ -110,7 +110,7 @@ gst_videoblend_init_gbm_buffers (GstVideoBlend * blend)
     for (l = blend->sinkpads; l; l = l->next)
     {
         GstVideoBlendPad *bpad = (GstVideoBlendPad *)l->data;
-        GstVideoFormat pad_format = GST_VIDEO_INFO_FORMAT (&bpad->info);
+        GstVideoFormat pad_format = ((&bpad->info)->finfo == NULL) ? GST_VIDEO_FORMAT_UNKNOWN : GST_VIDEO_INFO_FORMAT (&bpad->info);
         gint width, height;
 
         width = GST_VIDEO_INFO_WIDTH (&bpad->info);
@@ -130,6 +130,14 @@ gst_videoblend_init_gbm_buffers (GstVideoBlend * blend)
                 GST_DEBUG_OBJECT (blend, "%p NV12 input", bpad);
                 break;
             }
+        case GST_VIDEO_FORMAT_ARGB:
+            {
+                //This is a workaround to use GBM_FORMAT_ABGR8888 instead of GBM_FORMAT_BGRA8888,
+                //since GBM_FORMAT_BGRA8888 isn't supported in libgbm on LV 2.0 GEN3.
+                bpad->c2d_buffer.gbm_format = GBM_FORMAT_ABGR8888;
+                GST_DEBUG_OBJECT (blend, "%p ARGB input", bpad);
+                break;
+            }
         case GST_VIDEO_FORMAT_RGBA:
             {
                 bpad->c2d_buffer.gbm_format = GBM_FORMAT_ABGR8888;
@@ -145,13 +153,13 @@ gst_videoblend_init_gbm_buffers (GstVideoBlend * blend)
 
         if (bpad->c2d_buffer.fd > 0)
         {
-            c2d->FreeBuffer(&bpad->c2d_buffer);
+            c2d->freeBuffer(&bpad->c2d_buffer);
             GST_DEBUG_OBJECT (blend, "%p Free c2d buffer done!", bpad);
         }
 
         if (bpad->type == 0)
         {
-            if (!c2d->AllocateBuffer(C2D_OUTPUT, &bpad->c2d_buffer))
+            if (!c2d->allocateBuffer(C2D_OUTPUT, &bpad->c2d_buffer))
             {
                 GST_DEBUG_OBJECT (blend, "Alocate c2d output buffer failed!");
             }
@@ -159,7 +167,7 @@ gst_videoblend_init_gbm_buffers (GstVideoBlend * blend)
         }
         else
         {
-            if (!c2d->AllocateBuffer(C2D_INPUT, &bpad->c2d_buffer))
+            if (!c2d->allocateBuffer(C2D_INPUT, &bpad->c2d_buffer))
             {
                 GST_DEBUG_OBJECT (blend, "Alocate c2d input buffer failed!");
             }
@@ -275,6 +283,8 @@ gst_videoblend_pad_sink_getcaps (GstPad * pad, GstVideoBlend * blend, GstCaps * 
     GstCaps *filtered_caps;
     GstCaps *returned_caps;
     gboolean had_current_caps = TRUE;
+    gint n, i;
+    GstStructure *s;
 
     template_caps = gst_pad_get_pad_template_caps (GST_PAD (blend->srcpad));
 
@@ -286,6 +296,18 @@ gst_videoblend_pad_sink_getcaps (GstPad * pad, GstVideoBlend * blend, GstCaps * 
     }
 
     srccaps = gst_caps_make_writable (srccaps);
+
+    n = gst_caps_get_size (srccaps);
+    for (i = 0; i < n; i++)
+    {
+        s = gst_caps_get_structure (srccaps, i);
+        gst_structure_set (s, "width", GST_TYPE_INT_RANGE, 1, G_MAXINT, "height", GST_TYPE_INT_RANGE
+            , 1, G_MAXINT, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+        if (!gst_structure_has_field (s, "pixel-aspect-ratio"))
+            gst_structure_set (s, "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1, NULL);
+        gst_structure_remove_fields (s, "colorimetry", "chroma-site", "format", NULL);
+        GST_INFO_OBJECT (pad, "src cap %d changed to %" GST_PTR_FORMAT, i, s);
+    }
 
     filtered_caps = srccaps;
     if (filter)
@@ -716,6 +738,7 @@ gst_videoblend_do_buffer_copy (GstVideoBlend * blend, GstVideoBlendPad * pad)
             }
             break;
         }
+    case GST_VIDEO_FORMAT_ARGB:
     case GST_VIDEO_FORMAT_RGBA:
         {
             stride = ALIGN(4 * width, ALIGN128);
@@ -786,7 +809,7 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
                 {
                     if (pad->c2d_buffer.fd)
                     {
-                      c2d->FreeBuffer(&pad->c2d_buffer);
+                      c2d->freeBuffer(&pad->c2d_buffer);
                     }
                 }
                 else
@@ -808,6 +831,12 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
                     {
                         target_format = NV12_128m;
                         GST_DEBUG_OBJECT (blend, "NV12 target");
+                        break;
+                    }
+                case GST_VIDEO_FORMAT_ARGB:
+                    {
+                        target_format = ARGB8888;
+                        GST_DEBUG_OBJECT (blend, "ARGB target");
                         break;
                     }
                 case GST_VIDEO_FORMAT_RGBA:
@@ -832,9 +861,21 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
                         GST_DEBUG_OBJECT (blend, "NV12 source");
                         break;
                     }
+                case GST_VIDEO_FORMAT_ARGB:
+                    {
+                        if (target_format == NV12_128m)
+                            source_format = ARGB8888_NO_PREMULTIPLIED;
+                        else
+                            source_format = ARGB8888;
+                        GST_DEBUG_OBJECT (blend, "ARGB source");
+                        break;
+                    }
                 case GST_VIDEO_FORMAT_RGBA:
                     {
-                        source_format = RGBA8888;
+                        if (target_format == NV12_128m)
+                            source_format = RGBA8888_NO_PREMULTIPLIED;
+                        else
+                            source_format = RGBA8888;
                         GST_DEBUG_OBJECT (blend, "RGBA source");
                         break;
                     }
@@ -850,7 +891,7 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
 
                 if (blend->update_blend)
                 {
-                    c2d->Blend(pad->xpos, pad->ypos, source_width, source_height, target_width, target_height, source_format, target_format);
+                    c2d->blend(pad->xpos, pad->ypos, source_width, source_height, target_width, target_height, source_format, target_format);
                     blend->update_blend = FALSE;
                 }
 
@@ -859,14 +900,14 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
                 {
                     if (pad->c2d_buffer.fd)
                     {
-                        c2d->FreeBuffer(&pad->c2d_buffer);
+                        c2d->freeBuffer(&pad->c2d_buffer);
                     }
                     ion_fd = FD_OF_QVMETA(meta);
                     ion_size = DATASZ_OF_QVMETA(meta);
                     ion_offset = 0;
                     ion_ptr = mmap(NULL, ion_size, PROT_READ|PROT_WRITE, MAP_SHARED, ion_fd, ion_offset);
                     GST_DEBUG_OBJECT(blend, "fd %d, size %d, offset %d, ptr %p", ion_fd, ion_size, ion_offset, ion_ptr);
-                    if (!c2d->Convert (ion_fd, ion_ptr, ion_ptr, blend->fd, blend->meta_ptr, blend->meta_ptr))
+                    if (!c2d->convert (ion_fd, ion_ptr, ion_ptr, blend->fd, blend->meta_ptr, blend->meta_ptr))
                     {
                         GST_ERROR_OBJECT (blend, "conversion failed");
                         goto exit1;
@@ -876,7 +917,7 @@ gst_videoblend_blend_buffers (GstVideoBlend * blend, GstClockTime output_start_t
                 {
                     GST_DEBUG_OBJECT(blend, "NO GBM buffer, do copy");
                     gst_videoblend_do_buffer_copy (blend, pad);
-                    if (!c2d->Convert (pad->c2d_buffer.fd, pad->c2d_buffer.ptr, pad->c2d_buffer.ptr, blend->fd, blend->meta_ptr, blend->meta_ptr))
+                    if (!c2d->convert (pad->c2d_buffer.fd, pad->c2d_buffer.ptr, pad->c2d_buffer.ptr, blend->fd, blend->meta_ptr, blend->meta_ptr))
                     {
                         GST_ERROR_OBJECT (blend, "conversion failed");
                         goto exit2;
@@ -1262,7 +1303,7 @@ gst_videoblend_finalize (GObject * o)
 
     if (blend->c2d != NULL)
     {
-        blend->c2d->Close();
+        blend->c2d->destroy();
         delete (blend->c2d);
         blend->c2d = NULL;
         blend->c2d_loaded = FALSE;
@@ -1290,7 +1331,7 @@ gst_videoblend_dispose (GObject * o)
 
             if (blendpad->c2d_buffer.fd)
             {
-                c2d->FreeBuffer(&blendpad->c2d_buffer);
+                c2d->freeBuffer(&blendpad->c2d_buffer);
             }
         }
     }
@@ -1402,7 +1443,7 @@ gst_videoblend_init (GstVideoBlend * blend)
 
     GST_DEBUG_OBJECT (blend, "get c2d_conv instance %p", c2d);
 
-    if (!c2d->Init())
+    if (!c2d->init())
     {
         GST_ERROR_OBJECT (blend, "failed to initialize color converter");
         delete c2d;
@@ -1412,7 +1453,7 @@ gst_videoblend_init (GstVideoBlend * blend)
     }
 
     /* open c2d with default params */
-    c2d->Open(300, 100, 800, 480, RGBA8888, NV12_128m, 0, 0);
+    c2d->configure(300, 100, 800, 480, RGBA8888, NV12_128m, 0, 0);
 
     blend->c2d = c2d;
     blend->c2d_loaded = TRUE;

@@ -42,7 +42,7 @@
 GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
-static gboolean gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
+static GstFlowReturn gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     GstVideoCodecFrame * frame);
 static gboolean gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder);
 static gboolean gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
@@ -146,13 +146,13 @@ gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     GstVideoCodecFrame * frame)
 {
   GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2VP9Dec *dec = GST_QCODEC2_VP9_DEC (decoder);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstMapInfo mapinfo = { 0, };
   GstBuffer *buf = NULL;
   GstVp9Parser *vp9_parser = NULL;
@@ -182,7 +182,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     } else {
       GST_ERROR_OBJECT (dec, "failed to new some structure");
       gst_buffer_unmap (buf, &mapinfo);
-      ret = FALSE;
+      ret = GST_FLOW_ERROR;
       goto done;
     }
     gst_buffer_unmap (buf, &mapinfo);
@@ -211,7 +211,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
       if (!c2componentInterface_config (base_dec->comp_intf,
               config, BLOCK_MODE_MAY_BLOCK)) {
         GST_ERROR_OBJECT (dec, "Failed to set config");
-        ret = FALSE;
+        ret = GST_FLOW_ERROR;
         goto done;
       }
     }
@@ -222,7 +222,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
   if (base_dec->delay_start) {
     if (!gst_qcodec2_vdec_start_comp_and_config_pool (base_dec)) {
       GST_ERROR_OBJECT (dec, "failed to start c2 comp or config pool");
-      ret = FALSE;
+      ret = GST_FLOW_ERROR;
       goto done;
     }
     base_dec->delay_start = FALSE;

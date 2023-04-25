@@ -108,10 +108,11 @@ std::unique_ptr<C2Param> setIntraRefresh(gpointer param);
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param);
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param);
 std::unique_ptr<C2Param> setVideoProfileLevel(gpointer param);
-std::unique_ptr<C2Param> setVideoFramerate (gpointer param);
-std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param);
-std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param);
-std::unique_ptr<C2Param> setVideoHeaderMode (gpointer param);
+std::unique_ptr<C2Param> setVideoFramerate(gpointer param);
+std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param);
+std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param);
+std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param);
+std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -126,9 +127,13 @@ std::unique_ptr<C2Param> setRoiRegion(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -144,6 +149,7 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD, setIntraframesPeriod },
     { CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST, setIntraVideoFrameRequest },
     { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
+    { CONFIG_FUNCTION_KEY_TEMPORAL_LAYER, setVideoTemporalLayer },
 };
 
 // Function map for vendor parameter configuration
@@ -163,6 +169,10 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_IPB_QP_RANGE, setIPBQPRanges },
     { CONFIG_FUNCTION_KEY_IPB_QP_INIT, setIPBQPInit },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE, setIntraRefreshType },
+    { CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP, enableGetAvgFrameQP },
+    { CONFIG_FUNCTION_KEY_LTR_COUNT, setLTRCount },
+    { CONFIG_FUNCTION_KEY_LTR_MARK_INDEX, setLTRMarkIndex },
+    { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -642,26 +652,26 @@ std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
     return deinterlace;
 }
 
-std::unique_ptr<C2Param> setVideoFramerate (gpointer param)
+std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
 {
-  if (param == NULL) {
-      return nullptr;
-  }
+    if (param == NULL) {
+        return nullptr;
+    }
 
-  ConfigParams* config = (ConfigParams*)param;
+    ConfigParams* config = (ConfigParams*)param;
 
-  if (config->isInput) {
-      LOG_WARNING("setVideoFramerate input not implemented");
-  } else {
-      C2StreamFrameRateInfo::output framerate;
-      framerate.value = config->framerate;
-      return C2Param::Copy(framerate);
-  }
+    if (config->isInput) {
+        LOG_WARNING("setVideoFramerate input not implemented");
+    } else {
+        C2StreamFrameRateInfo::output framerate;
+        framerate.value = config->framerate;
+        return C2Param::Copy(framerate);
+    }
 
-  return nullptr;
+    return nullptr;
 }
 
-std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
+std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param)
 {
     if (param == NULL) {
         return nullptr;
@@ -680,7 +690,7 @@ std::unique_ptr<C2Param> setIntraframesPeriod (gpointer param)
     return nullptr;
 }
 
-std::unique_ptr<C2Param> setIntraVideoFrameRequest (gpointer param)
+std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param)
 {
     if (param == NULL) {
         return nullptr;
@@ -715,7 +725,30 @@ std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
     return C2Param::Copy(header_mode);
 }
 
-std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf)
+std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    auto pTemporalLayering = C2StreamTemporalLayeringTuning::output::AllocUnique(
+            config->temporalLayer.ratioSize);
+    pTemporalLayering->m.layerCount = config->temporalLayer.layerCount;
+    pTemporalLayering->m.bLayerCount = config->temporalLayer.bLayerCount;
+
+    if (config->temporalLayer.ratios) {
+        for (uint32_t i = 0; i < config->temporalLayer.ratioSize; i++) {
+            pTemporalLayering->m.bitrateRatios[i] = config->temporalLayer.ratios[i];
+            LOG_MESSAGE("bitrateRatios[%d]=%.2f", i, config->temporalLayer.ratios[i]);
+        }
+    }
+
+    return C2Param::Copy(*pTemporalLayering);
+}
+
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
@@ -746,7 +779,7 @@ std::unique_ptr<C2Param> setIPBQPRanges (gpointer param, void* const comp_intf)
     return qp_ranges;
 }
 
-std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf)
+std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
@@ -777,6 +810,107 @@ std::unique_ptr<C2Param> setIPBQPInit (gpointer param, void* const comp_intf)
     return qp_init;
 }
 
+std::unique_ptr<C2Param> enableGetAvgFrameQP (gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> avg_qp;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value frame_qp;
+
+    frame_qp.set((int32_t)0);
+    kvpairs.emplace("vendor.qti-ext-enc-info-coded_avgqp.frameQP", frame_qp);
+
+    avg_qp = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return avg_qp;
+}
+
+std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltrcount = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrCount %d", config->ltr.count);
+        item.set((int32_t)config->ltr.count);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr-count.num-ltr-frames", item);
+        ltrcount = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltrcount;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltrmark = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrMarkIndex %d", config->ltr.mark_index);
+        item.set((int32_t)config->ltr.mark_index);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr.mark-frame", item);
+        ltrmark = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltrmark;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        std::unique_ptr<C2Param> ltruse = nullptr;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+
+        LOG_MESSAGE("ltrUseIndex %d", config->ltr.use_index);
+        item.set((int32_t)config->ltr.use_index);
+        kvpairs.emplace("vendor.qti-ext-enc-ltr.use-frame", item);
+        ltruse = intf_wrapper->updateParamFromConfig(kvpairs);
+
+        return ltruse;
+    } else {
+        LOG_WARNING("%s output not implemented", __FUNCTION__);
+    }
+
+    return nullptr;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CodecCallback API handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -790,6 +924,7 @@ public:
         uint64_t index,
         uint64_t timestamp,
         uint32_t interlace,
+        uint32_t frame_qp,
         C2FrameData::flags_t flag) override;
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
@@ -865,6 +1000,7 @@ void CodecCallback::onOutputBufferAvailable(
     uint64_t index,
     uint64_t timestamp,
     uint32_t interlace,
+    uint32_t frame_qp,
     C2FrameData::flags_t flag)
 {
 
@@ -929,6 +1065,7 @@ void CodecCallback::onOutputBufferAvailable(
             outBuf.size = linear_block.size();
             outBuf.fd = handle->data[0];
             outBuf.data = (guint8*)view.data();
+            outBuf.avg_frame_qp = frame_qp;
             LOG_INFO("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
             /* Check for codec data */
             auto csd = std::static_pointer_cast<const C2StreamInitDataInfo::output>(
@@ -1123,7 +1260,7 @@ gboolean c2componentStore_listComponents(void* const comp_store, GPtrArray* arra
         for (auto component : components) {
             g_ptr_array_add(array, (gpointer)component->name.c_str());
         }
-        ret = true;
+        ret = TRUE;
     }
 
     return ret;
@@ -1195,14 +1332,14 @@ gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
     LOG_MESSAGE("Comp %p allocate buffer type: %d", comp, buffer->pool_type);
 
     gboolean ret = FALSE;
-    std::shared_ptr<C2Buffer> buf = NULL;
+    std::shared_ptr<C2Buffer> buf = nullptr;
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
 
         buf = comp_wrapper->alloc(buffer);
 
-        if (buf != NULL) {
+        if (buf != nullptr) {
             if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
                 ret = TRUE;
             } else {
@@ -1550,20 +1687,24 @@ void _push_to_settings(gpointer data, gpointer user_data)
 {
     SettingsAndIntf* settings_intf = (SettingsAndIntf*)user_data;
     ConfigParams* conf_param = (ConfigParams*)data;
+    std::unique_ptr<C2Param> param = nullptr;
 
     auto iter = sConfigFunctionMap.find(conf_param->config_name);
-    LOG_DEBUG("C2 config name:%s", conf_param->config_name);
     if (iter != sConfigFunctionMap.end()) {
-        auto param = (*iter->second)(conf_param);
-        settings_intf->settings.push_back(C2Param::Copy(*param));
+        LOG_DEBUG("C2 config name:%s", conf_param->config_name);
+        param = (*iter->second)(conf_param);
+    } else {
+        /* Iterator for vendor paramters */
+        auto iterVendor = sConfigFunctionForVendorParamsMap.find(conf_param->config_name);
+        if (iterVendor != sConfigFunctionForVendorParamsMap.end()) {
+            LOG_DEBUG("vendor config name:%s", conf_param->config_name);
+            param = (*iterVendor->second)(conf_param, settings_intf->comp_intf);
+        }
     }
-
-    /* Iterator for vendor paramters */
-    auto iterVendor = sConfigFunctionForVendorParamsMap.find(conf_param->config_name);
-    LOG_DEBUG("vendor config name:%s", conf_param->config_name);
-    if (iterVendor != sConfigFunctionForVendorParamsMap.end()) {
-        auto param = (*iterVendor->second)(conf_param, settings_intf->comp_intf);
+    if (param) {
         settings_intf->settings.push_back(C2Param::Copy(*param));
+    } else {
+        LOG_ERROR("param is NULL for %s", conf_param->config_name);
     }
 }
 
