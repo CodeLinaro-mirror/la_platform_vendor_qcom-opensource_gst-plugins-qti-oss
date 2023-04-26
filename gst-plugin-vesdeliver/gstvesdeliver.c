@@ -47,12 +47,12 @@ enum
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS));
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS));
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS));
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS));
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
