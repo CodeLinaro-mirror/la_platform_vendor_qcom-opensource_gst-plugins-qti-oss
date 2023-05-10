@@ -3012,21 +3012,24 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_I_FRAMES,
       g_param_spec_uint ("init-quant-i-frames", "I-Frame Quantization",
-          "Initial quantization parameter for I-frames (0xffffffff=component default)",
+          "Initial quantization parameter for I-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_I_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_P_FRAMES,
       g_param_spec_uint ("init-quant-p-frames", "P-Frame Quantization",
-          "Initial quantization parameter for P-frames (0xffffffff=component default)",
+          "Initial quantization parameter for P-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_P_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_B_FRAMES,
       g_param_spec_uint ("init-quant-b-frames", "B-Frame Quantization",
-          "Initial quantization parameter for B-frames (0xffffffff=component default)",
+          "Initial quantization parameter for B-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_B_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
