@@ -82,14 +82,14 @@ struct _GstQvrate {
   GMutex flush_lock;
   gboolean input_flushing;
   gboolean output_flushing;
-  gint64 input_buf_used;
-  gint64 output_buf_used;
-  guint32 retry_count;
   gboolean active;
   gboolean passthrough;
   /* negotiated caps */
   GstCaps *sink_caps;
   GstCaps *src_caps;
+  gboolean eos;
+  GCond eos_cond;
+  GMutex eos_lock;
 };
 
 struct _GstQvrateClass {

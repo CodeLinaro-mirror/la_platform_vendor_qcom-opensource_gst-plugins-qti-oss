@@ -33,6 +33,7 @@ void qvratevpp_term(void *ctx)
 gboolean qvratevpp_open(void *ctx)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP open ctx:%p", ctx);
   if (!ctx) {
@@ -40,10 +41,11 @@ gboolean qvratevpp_open(void *ctx)
     return ret;
   }
 
-  if (vpp_open(ctx) == VPP_OK)
+  vpp_ret = vpp_open(ctx);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_open error");
+    GST_ERROR ("vpp_open error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -51,6 +53,7 @@ gboolean qvratevpp_open(void *ctx)
 gboolean qvratevpp_close(void *ctx)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP close ctx:%p", ctx);
   if (!ctx) {
@@ -58,10 +61,11 @@ gboolean qvratevpp_close(void *ctx)
     return ret;
   }
 
-  if (vpp_close(ctx) == VPP_OK)
+  vpp_ret = vpp_close(ctx);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_close error");
+    GST_ERROR ("vpp_close error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -69,6 +73,7 @@ gboolean qvratevpp_close(void *ctx)
 gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP set ctrl ctx:%p", ctx);
   if (!ctx) {
@@ -76,10 +81,11 @@ gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl)
     return ret;
   }
 
-  if (vpp_set_ctrl(ctx, ctrl) == VPP_OK)
+  vpp_ret = vpp_set_ctrl(ctx, ctrl);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_set_ctrl error");
+    GST_ERROR ("vpp_set_ctrl error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -87,18 +93,20 @@ gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl)
 gboolean qvratevpp_set_parameter(void *ctx, enum vpp_port port, struct vpp_port_param param)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
-  GST_DEBUG("VPP set param ctx:%p, port %d, fmt %d, height %d, width %d, stride %d, scanlines %d",
-    ctx, port, param.fmt, param.height, param.width, param.stride, param.scanlines);
+  GST_DEBUG("VPP set param ctx:%p, port %d, fmt %d, width %d, height %d, stride %d, scanlines %d",
+    ctx, port, param.fmt, param.width, param.height, param.stride, param.scanlines);
   if (!ctx || (port != VPP_PORT_INPUT && port != VPP_PORT_OUTPUT)) {
     GST_ERROR("error input parameter ctx:%p port:%u", ctx, port);
     return ret;
   }
 
-  if (vpp_set_parameter(ctx, port, param) == VPP_OK)
+  vpp_ret = vpp_set_parameter(ctx, port, param);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_set_parameter error");
+    GST_ERROR ("vpp_set_parameter error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -106,6 +114,7 @@ gboolean qvratevpp_set_parameter(void *ctx, enum vpp_port port, struct vpp_port_
 gboolean qvratevpp_get_buf_requirements(void *ctx, struct vpp_requirements *req)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP get buf req ctx:%p", ctx);
   if (!ctx || !req) {
@@ -113,10 +122,11 @@ gboolean qvratevpp_get_buf_requirements(void *ctx, struct vpp_requirements *req)
     return ret;
   }
 
-  if (vpp_get_buf_requirements(ctx, req) == VPP_OK)
+  vpp_ret = vpp_get_buf_requirements(ctx, req);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_get_buf_requirements error");
+    GST_ERROR ("vpp_get_buf_requirements error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -124,6 +134,7 @@ gboolean qvratevpp_get_buf_requirements(void *ctx, struct vpp_requirements *req)
 gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *buf)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP queue buf, port=%u, buf=%p", port, buf);
 
@@ -132,11 +143,12 @@ gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *b
     return ret;
   }
 
-  if (vpp_queue_buf(ctx, port, buf) == VPP_OK) {
+  vpp_ret = vpp_queue_buf(ctx, port, buf);
+  if (vpp_ret == VPP_OK) {
     GST_DEBUG("qvratevpp_queue_buf queue buffer success");
     ret = TRUE;
   } else
-    GST_ERROR ("vpp_queue_buf error");
+    GST_ERROR ("vpp_queue_buf error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -144,6 +156,7 @@ gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *b
 gboolean qvratevpp_flush(void *ctx, enum vpp_port port)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP flush ctx:%p", ctx);
   if (!ctx || (port != VPP_PORT_INPUT && port != VPP_PORT_OUTPUT)) {
@@ -151,10 +164,11 @@ gboolean qvratevpp_flush(void *ctx, enum vpp_port port)
     return ret;
   }
 
-  if (vpp_flush(ctx, port) == VPP_OK)
+  vpp_ret = vpp_flush(ctx, port);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_flush error");
+    GST_ERROR ("vpp_flush error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -162,6 +176,7 @@ gboolean qvratevpp_flush(void *ctx, enum vpp_port port)
 gboolean qvratevpp_set_vid_prop(void *ctx, struct video_property prop)
 {
   gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
 
   GST_DEBUG("VPP set vid prop ctx:%p", ctx);
   if (!ctx) {
@@ -169,10 +184,11 @@ gboolean qvratevpp_set_vid_prop(void *ctx, struct video_property prop)
     return ret;
   }
 
-  if (vpp_set_vid_prop(ctx, prop) == VPP_OK)
+  vpp_ret = vpp_set_vid_prop(ctx, prop);
+  if (vpp_ret == VPP_OK)
     ret = TRUE;
   else
-    GST_ERROR ("vpp_set_vid_prop error");
+    GST_ERROR ("vpp_set_vid_prop error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
