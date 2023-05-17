@@ -117,7 +117,7 @@ struct _GstQcodec2Vdec
   GstVideoCodecState *output_state;
 
   gboolean eos_reached;
-  gboolean input_setup;
+  gboolean comp_started;
   gboolean output_setup;
 
   gint width;
