@@ -721,43 +721,59 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     return FALSE;
   }
 
-  retval = gst_structure_get_int (structure, "width", &width);
-  retval &= gst_structure_get_int (structure, "height", &height);
-  if (!retval) {
-    goto error_res;
-  }
+  if (!dec->output_setup) {
+    retval = gst_structure_get_int (structure, "width", &width);
+    retval &= gst_structure_get_int (structure, "height", &height);
+    if (!retval) {
+      goto error_res;
+    }
 
-  if (dec->input_setup) {
-    /* Don't handle input format change here */
-    goto done;
-  }
+    if ((mode = gst_structure_get_string (structure, "interlace-mode"))) {
+      if (g_str_equal ("progressive", mode)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
+        c2interlace_mode = INTERLACE_MODE_PROGRESSIVE;
+      } else if (g_str_equal ("interleaved", mode)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+        c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
+      } else if (g_str_equal ("mixed", mode)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
+        c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
+      } else if (g_str_equal ("fields", mode)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_FIELDS;
+        c2interlace_mode = INTERLACE_MODE_FIELD_TOP_FIRST;
+      }
+    }
 
-  if ((mode = gst_structure_get_string (structure, "interlace-mode"))) {
-    if (g_str_equal ("progressive", mode)) {
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
-      c2interlace_mode = INTERLACE_MODE_PROGRESSIVE;
-    } else if (g_str_equal ("interleaved", mode)) {
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
-      c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
-    } else if (g_str_equal ("mixed", mode)) {
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
-      c2interlace_mode = INTERLACE_MODE_INTERLEAVED_TOP_FIRST;
-    } else if (g_str_equal ("fields", mode)) {
-      interlace_mode = GST_VIDEO_INTERLACE_MODE_FIELDS;
-      c2interlace_mode = INTERLACE_MODE_FIELD_TOP_FIRST;
+    dec->width = width;
+    dec->height = height;
+    dec->interlace_mode = interlace_mode;
+    dec->comp_name = comp_name;
+
+    if (dec->input_state) {
+      gst_video_codec_state_unref (dec->input_state);
+    }
+
+    dec->input_state = gst_video_codec_state_ref (state);
+
+    /* Negotiate with downstream and setup output */
+    if (GST_FLOW_OK != gst_qcodec2_vdec_setup_output (decoder)) {
+      goto error_set_format;
+    } else if (dec->use_external_buf) {
+      if (!gst_video_decoder_negotiate (decoder)) {
+        GST_ERROR_OBJECT (dec, "Failed to negotiate");
+        goto error_set_format;
+      }
+      gst_pad_check_reconfigure (decoder->srcpad);
+
+      dec->output_setup = TRUE;
     }
   }
 
-  dec->width = width;
-  dec->height = height;
-  dec->interlace_mode = interlace_mode;
-  dec->comp_name = comp_name;
-
-  if (dec->input_state) {
-    gst_video_codec_state_unref (dec->input_state);
+  if (dec->comp_started) {
+    GST_DEBUG_OBJECT (dec, "c2 comp has started yet");
+    /* start c2 component only once */
+    goto done;
   }
-
-  dec->input_state = gst_video_codec_state_ref (state);
 
   if (!gst_qcodec2_vdec_create_component (decoder)) {
     goto error_set_format;
@@ -780,20 +796,6 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   if (dec->low_latency_mode) {
     low_latency_mode = make_low_latency_param (dec->low_latency_mode);
     g_ptr_array_add (config, &low_latency_mode);
-  }
-
-  /* Negotiate with downstream and setup output */
-  if (GST_FLOW_OK != gst_qcodec2_vdec_setup_output (decoder)) {
-    g_ptr_array_free (config, TRUE);
-    goto error_set_format;
-  } else if (dec->use_external_buf) {
-    if (!gst_video_decoder_negotiate (decoder)) {
-      GST_ERROR_OBJECT (dec, "Failed to negotiate");
-      goto error_set_format;
-    }
-    gst_pad_check_reconfigure (decoder->srcpad);
-
-    dec->output_setup = TRUE;
   }
 
   if (!c2componentInterface_initReflectedParamUpdater (dec->comp_store,
@@ -825,7 +827,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   }
 
 done:
-  dec->input_setup = TRUE;
+  dec->comp_started = TRUE;
   return TRUE;
 
   /* Errors */
@@ -851,7 +853,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   GstQcodec2VdecClass *dec_class = GST_QCODEC2_VDEC_GET_CLASS (decoder);
   gboolean ret = TRUE;
 
-  dec->input_setup = FALSE;
+  dec->comp_started = FALSE;
   dec->output_setup = FALSE;
   dec->eos_reached = FALSE;
   dec->frame_index = 0;
@@ -894,10 +896,8 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
 
   GST_DEBUG_OBJECT (dec, "stop");
 
-  /* Stop the component */
-  if (dec->comp) {
-    c2component_stop (dec->comp);
-  }
+  /* handle state change from PAUSE to READY, then back to PAUSE */
+  dec->output_setup = FALSE;
 
   if (dec->use_external_buf) {
     clear_external_buf_hash_table (decoder);
@@ -913,6 +913,11 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "close");
+
+  /* Stop the component */
+  if (dec->comp) {
+    c2component_stop (dec->comp);
+  }
 
   if (dec->out_port_pool) {
     GST_DEBUG_OBJECT (dec, "pool ref cnt:%d",
@@ -1068,7 +1073,7 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
 
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
 
-  if (!dec->input_setup) {
+  if (!dec->comp_started) {
     goto done;
   }
 
@@ -1517,7 +1522,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           }
           dec->output_state = output_state;
           if (!gst_video_decoder_negotiate (decoder)) {
-            gst_video_codec_state_unref (dec->output_state);
             GST_ERROR_OBJECT (dec, "Failed to negotiate");
             break;
           }
