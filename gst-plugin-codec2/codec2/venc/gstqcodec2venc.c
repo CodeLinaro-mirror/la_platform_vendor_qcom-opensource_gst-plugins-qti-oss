@@ -2020,11 +2020,19 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   frame->output_buffer = outbuf;
   if (NULL == outbuf) {
     GST_ERROR_OBJECT (enc, "failed to create outbuf");
-    gst_video_encoder_finish_frame (encoder, frame);
+    if (desc->flag & FLAG_TYPE_INCOMPLETE) {
+      ret = gst_video_encoder_finish_subframe (encoder, frame);
+    } else {
+      ret = gst_video_encoder_finish_frame (encoder, frame);
+    }
     goto out;
   }
 
-  ret = gst_video_encoder_finish_frame (encoder, frame);
+  if (desc->flag & FLAG_TYPE_INCOMPLETE) {
+    ret = gst_video_encoder_finish_subframe (encoder, frame);
+  } else {
+    ret = gst_video_encoder_finish_frame (encoder, frame);
+  }
   if (ret == GST_FLOW_FLUSHING) {
     GST_WARNING_OBJECT (enc, "downstream is flushing");
   } else if (ret != GST_FLOW_OK) {
