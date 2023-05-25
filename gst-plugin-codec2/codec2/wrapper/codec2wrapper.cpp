@@ -1074,7 +1074,7 @@ void CodecCallback::onOutputBufferAvailable(
                 LOG_INFO("get codec config data, size: %lu data:%p", csd->flexCount(), (guint8*)csd->m.value);
                 outBuf.config_data = (guint8*)&csd->m.value;
                 outBuf.config_size = csd->flexCount();
-                outBuf.flag = FLAG_TYPE_CODEC_CONFIG;
+                outBuf.flag = (FLAG_TYPE)(outBuf.flag | FLAG_TYPE_CODEC_CONFIG);
             }
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
         }
