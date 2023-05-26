@@ -4,10 +4,12 @@
 #ifndef _GST_VESDELIVER_ALLOCATOR_H_
 #define _GST_VESDELIVER_ALLOCATOR_H_
 
+#include <stdint.h>
 #include <gst/gst.h>
 #include <gst/allocators/allocators.h>
 #ifdef USE_DMAHEAP
 #include <BufferAllocator/BufferAllocatorWrapper.h>
+#include <vmmem_wrapper.h>
 #else
 #include <ion/ion.h>
 #include <linux/msm_ion.h>
@@ -26,6 +28,8 @@ G_BEGIN_DECLS
 #define GST_VESDELIVER_ALLOCATOR_CAST(obj) ((GstVesDeliverAllocator *) (obj))
 typedef struct _GstVesDeliverAllocator GstVesDeliverAllocator;
 typedef struct _GstVesDeliverAllocatorClass GstVesDeliverAllocatorClass;
+typedef struct _BitstreamBuffer BitstreamBuffer;
+typedef struct _AllocatorParameter AllocatorParameter;
 
 #ifdef USE_DMAHEAP
 typedef BufferAllocator *(*create_allocator_func) ();
@@ -33,6 +37,8 @@ typedef void (*free_allocator_func) (BufferAllocator * buffer_allocator);
 typedef int (*alloc_func) (BufferAllocator * buffer_allocator,
     const char *heap_name, size_t len, unsigned int heap_flags,
     size_t legacy_align);
+typedef int (*ReclaimDmabuf_Func) (VmMem * instance, int dma_buf_fd,
+    int64_t memparcel_hdl);
 #else
 typedef int (*ion_open_func) (void);
 typedef int (*ion_close_func) (int fd);
@@ -40,10 +46,39 @@ typedef int (*ion_alloc_fd_func) (int fd, size_t len, size_t align,
     unsigned int heap_mask, unsigned int flags, int *handle_fd);
 #endif
 
+typedef enum
+{
+  SECURE_DISABLE,
+  SECURE_COPY,
+  LEND_DMABUF,
+} SECURE_MODE;
+
+struct _AllocatorParameter
+{
+  SECURE_MODE secure_mode;
+  gboolean buf_recycle;
+#ifdef USE_DMAHEAP
+  VmMem *vm_instance;
+  ReclaimDmabuf_Func ReclaimDmabuf;
+#endif
+};
+
+struct _BitstreamBuffer
+{
+  gboolean used;
+  gsize size;
+  gint fd;
+  GstMemory *mem;
+};
+
 struct _GstVesDeliverAllocator
 {
   GstDmaBufAllocator parent;
-  gboolean secure;
+  GMutex buf_lock;
+  GCond buf_cond;
+  GSList *buffer_list;
+  gsize max_alloc_buf_size;
+  AllocatorParameter param;
 
   void *lib_handle;
 #ifdef USE_DMAHEAP
@@ -65,7 +100,7 @@ struct _GstVesDeliverAllocatorClass
 };
 
 GType gst_vesdeliver_allocator_get_type (void);
-GstAllocator *gst_vesdeliver_allocator_new (gboolean secure);
+GstAllocator *gst_vesdeliver_allocator_new (AllocatorParameter * param);
 
 G_END_DECLS
 #endif /* _GST_VESDELIVER_ALLOCATOR_H_ */

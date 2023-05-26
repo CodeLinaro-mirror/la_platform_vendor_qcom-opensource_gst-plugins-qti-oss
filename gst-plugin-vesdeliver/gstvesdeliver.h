@@ -7,9 +7,6 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/base/gstbasetransform.h>
-#ifdef USE_DMAHEAP
-#include <vmmem_wrapper.h>
-#endif
 
 G_BEGIN_DECLS
 #define COMMON_VIDEO_CAPS(min, max) \
@@ -33,6 +30,9 @@ G_BEGIN_DECLS
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
+#define AV1_CAPS \
+    "video/x-av1, " \
+    COMMON_VIDEO_CAPS(96, 8192)
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
@@ -61,18 +61,12 @@ typedef int (*Content_Protection_Copy_Func) (void *handle,
     uint32_t sec_buf_offset, uint32_t * sec_buf_len, int copy_dir);
 typedef int (*Content_Protection_Copy_Terminate_Func) (void **p_handle);
 
-typedef enum
-{
-  SECURE_DISABLE,
-  SECURE_COPY,
-  LEND_DMABUF,
-} SECURE_MODE;
-
 struct _GstVesDeliver
 {
   GstBaseTransform parent;
   GstAllocator *allocator;
   SECURE_MODE secure;
+  gboolean buf_recycle;
   void *secure_handle;
   void *crypto_handle;
 #ifdef USE_DMAHEAP
@@ -84,6 +78,7 @@ struct _GstVesDeliver
   IsExclusiveOwnerDmabuf_Func IsExclusiveOwnerDmabuf;
   FindVmByName_Func FindVmByName;
   LendDmabuf_Func LendDmabuf;
+  ReclaimDmabuf_Func ReclaimDmabuf;
 #endif
   Content_Protection_Set_AppName_Func Content_Protection_Set_AppName;
   Content_Protection_Copy_Init_Func Content_Protection_Copy_Init;

@@ -221,6 +221,9 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
 
 static void gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder);
 
+static GstStateChangeReturn gst_qcodec2_venc_change_state (GstElement * element,
+    GstStateChange transition);
+
 static guint gst_qcodec2_venc_signals[LAST_SIGNAL] = { 0 };
 
 static ConfigParams
@@ -2791,11 +2794,30 @@ gst_qcodec2_venc_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+static GstStateChangeReturn
+gst_qcodec2_venc_change_state (GstElement * element, GstStateChange transition)
+{
+  GstQcodec2Venc *enc = GST_QCODEC2_VENC (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_LOG_OBJECT (enc, "encoder state change from PAUSED to READY");
+      if (enc->comp) {
+        c2component_cancelPendingWork (enc->comp);
+      }
+      break;
+    default:
+      break;
+  }
+  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+}
+
 static void
 gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 {
   GstVideoEncoderClass *video_encoder_class = GST_VIDEO_ENCODER_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+  GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
 
   /* Set GObject class property */
   gobject_class->set_property = gst_qcodec2_venc_set_property;
@@ -3012,21 +3034,24 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_I_FRAMES,
       g_param_spec_uint ("init-quant-i-frames", "I-Frame Quantization",
-          "Initial quantization parameter for I-frames (0xffffffff=component default)",
+          "Initial quantization parameter for I-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_I_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_P_FRAMES,
       g_param_spec_uint ("init-quant-p-frames", "P-Frame Quantization",
-          "Initial quantization parameter for P-frames (0xffffffff=component default)",
+          "Initial quantization parameter for P-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_P_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_INIT_QUANT_B_FRAMES,
       g_param_spec_uint ("init-quant-b-frames", "B-Frame Quantization",
-          "Initial quantization parameter for B-frames (0xffffffff=component default)",
+          "Initial quantization parameter for B-frames (0xffffffff=component default), "
+          "work for RC-off and RC-on modes",
           0, G_MAXUINT, DEFAULT_INIT_QUANT_B_FRAMES,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
@@ -3111,7 +3136,10 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   klass->force_idr = GST_DEBUG_FUNCPTR (gst_qcodec2_venc_force_idr);
 
-  gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
+  gstelement_class->change_state =
+    GST_DEBUG_FUNCPTR (gst_qcodec2_venc_change_state);
+
+  gst_element_class_set_static_metadata (gstelement_class,
       "Codec2 video encoder", "Encoder/Video",
       "Video Encoder based on Codec2.0", "QTI");
 }

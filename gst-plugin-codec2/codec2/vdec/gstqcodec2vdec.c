@@ -160,6 +160,8 @@ static GstBuffer *gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder *
     decoder, BufferDescriptor * buffer);
 static gboolean gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps,
     const gchar * partten);
+static GstStateChangeReturn gst_qcodec2_vdec_change_state (GstElement * element,
+    GstStateChange transition);
 
 /* pad templates */
 static GstStaticPadTemplate gst_vdec_src_template =
@@ -645,6 +647,28 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
   return GST_FLOW_OK;
 }
 
+static void
+unref_gst_buf (gpointer key, gpointer value, gpointer data)
+{
+  gst_buffer_unref (GST_BUFFER_CAST (value));
+}
+
+static void
+clear_external_buf_hash_table (GstVideoDecoder * decoder)
+{
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+
+  g_mutex_lock (&dec->external_buf_lock);
+  if (dec->external_buf_table) {
+    g_hash_table_foreach (dec->external_buf_table, unref_gst_buf, NULL);
+    g_hash_table_remove_all (dec->external_buf_table);
+  }
+
+  dec->acquired_external_buf = 0;
+  g_mutex_unlock (&dec->external_buf_lock);
+  GST_DEBUG_OBJECT (dec, "clear the external buffer hash table");
+}
+
 static GstFlowReturn
 gst_qcodec2_vdec_flush (GstVideoDecoder * decoder)
 {
@@ -656,6 +680,10 @@ gst_qcodec2_vdec_flush (GstVideoDecoder * decoder)
   GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
   ret = c2component_flush (dec->comp, FLUSH_MODE_COMPONENT);
   GST_VIDEO_DECODER_STREAM_LOCK (decoder);
+
+  if (dec->use_external_buf) {
+    clear_external_buf_hash_table (decoder);
+  }
 
   return ret;
 }
@@ -834,7 +862,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->out_port_pool = NULL;
   dec->is_10bit = FALSE;
   dec->delay_start = FALSE;
-  dec->buffer_table = NULL;
+  dec->external_buf_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
   dec->acquired_external_buf = 0;
   dec->gst_c2_comp = NULL;
@@ -871,6 +899,10 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
     c2component_stop (dec->comp);
   }
 
+  if (dec->use_external_buf) {
+    clear_external_buf_hash_table (decoder);
+  }
+
   return TRUE;
 }
 
@@ -886,6 +918,7 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
     GST_DEBUG_OBJECT (dec, "pool ref cnt:%d",
         GST_OBJECT_REFCOUNT (dec->out_port_pool));
     gst_object_unref (dec->out_port_pool);
+    dec->out_port_pool = NULL;
   }
 
   if (dec->gst_c2_comp) {
@@ -913,8 +946,10 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
     dec->output_state = NULL;
   }
 
-  if (dec->buffer_table) {
-    g_hash_table_destroy (dec->buffer_table);
+  if (dec->external_buf_table) {
+    clear_external_buf_hash_table (decoder);
+    g_hash_table_destroy (dec->external_buf_table);
+    dec->external_buf_table = NULL;
   }
 
   return TRUE;
@@ -925,7 +960,7 @@ insert_external_buf_to_hashtable (GstVideoDecoder * decoder, gint fd,
     GstBuffer * buffer)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-  GHashTable *buf_table = dec->buffer_table;
+  GHashTable *buf_table = dec->external_buf_table;
   gint key = fd;
   GstBuffer *gst_buf = NULL;
 
@@ -1118,8 +1153,8 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
       if (dec->use_external_buf) {
         use_peer_pool = TRUE;
         /* Create a hashtabe to store gstbuffer from external pool */
-        if (!dec->buffer_table) {
-          dec->buffer_table =
+        if (!dec->external_buf_table) {
+          dec->external_buf_table =
               g_hash_table_new_full (g_int_hash, g_int_equal, g_free, NULL);
         }
         GST_DEBUG_OBJECT (dec,
@@ -1259,7 +1294,7 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
   if (dec->use_external_buf) {
     GstBuffer *gst_buf = NULL;
     gint key = decode_buf->fd;
-    gst_buf = (GstBuffer *) g_hash_table_lookup (dec->buffer_table, &key);
+    gst_buf = (GstBuffer *) g_hash_table_lookup (dec->external_buf_table, &key);
     if (gst_buf) {
       g_mutex_lock (&dec->external_buf_lock);
       dec->acquired_external_buf--;
@@ -1269,6 +1304,8 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
           "acquired_external_buf to %u", gst_buf, decode_buf->fd,
           decode_buf->index, output_size, dec->acquired_external_buf);
       out_buf = gst_buf;
+
+      g_hash_table_remove (dec->external_buf_table, &key);
       g_mutex_unlock (&dec->external_buf_lock);
     }
   } else {
@@ -1551,11 +1588,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         GST_DEBUG_OBJECT (dec,
             "resolution change for external buffer, width height:%d %d -> %u %u",
             dec->width, dec->height, resolution->width, resolution->height);
-        dec->acquired_external_buf = 0;
         /* Destroy current buffer hash table as the fds/gstbuffers are outdated */
-        if (dec->buffer_table) {
-          g_hash_table_destroy (dec->buffer_table);
-          dec->buffer_table = NULL;
+        if (dec->external_buf_table) {
+          clear_external_buf_hash_table (decoder);
+          g_hash_table_destroy (dec->external_buf_table);
+          dec->external_buf_table = NULL;
           GST_DEBUG_OBJECT (dec, "Destroy outdated buffer hash table");
         }
 
@@ -1789,6 +1826,24 @@ gst_qcodec2_vdec_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+static GstStateChangeReturn
+gst_qcodec2_vdec_change_state (GstElement * element, GstStateChange transition)
+{
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      GST_LOG_OBJECT (dec, "decoder state change from PAUSED to READY");
+      if (dec->comp) {
+        c2component_cancelPendingWork (dec->comp);
+      }
+      break;
+    default:
+      break;
+  }
+  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+}
+
 static void
 gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 {
@@ -1798,6 +1853,9 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&gst_vdec_src_template));
+
+  gstelement_class->change_state =
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_change_state);
 
   /* Set GObject class property */
   gobject_class->set_property = gst_qcodec2_vdec_set_property;

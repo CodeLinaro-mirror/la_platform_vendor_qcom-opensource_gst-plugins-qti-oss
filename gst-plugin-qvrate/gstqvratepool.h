@@ -22,7 +22,6 @@ struct _GstQvratePool {
   GstAllocationParams params;
   gboolean ubwc;
   gboolean done_align_info;
-  gboolean pool_active;
 };
 
 GstBufferPool * gst_qvrate_pool_new (gboolean ubwc);
