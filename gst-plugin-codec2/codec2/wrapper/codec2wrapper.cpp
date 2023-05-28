@@ -1052,8 +1052,8 @@ void CodecCallback::onOutputBufferAvailable(
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
-            LOG_INFO("out buffer size:%d width:%d height:%d stride:%d data:%p\n",
-                size, width, height, stride, outBuf.data);
+            LOG_INFO("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
+                size, outBuf.size, width, height, stride, outBuf.data);
         } else if (buf_type == C2BufferData::LINEAR) {
             const C2ConstLinearBlock linear_block = buffer->data().linearBlocks().front();
             const C2Handle* handle = linear_block.handle();
