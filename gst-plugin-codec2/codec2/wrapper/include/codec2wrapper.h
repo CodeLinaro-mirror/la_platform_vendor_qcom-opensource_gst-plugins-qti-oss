@@ -215,6 +215,7 @@ typedef enum {
     EVENT_ERROR,
     EVENT_UPDATE_MAX_BUF_CNT,
     EVENT_ACQUIRE_EXT_BUF,
+    EVENT_DROP_FRAME,
 } EVENT_TYPE;
 
 typedef enum {
