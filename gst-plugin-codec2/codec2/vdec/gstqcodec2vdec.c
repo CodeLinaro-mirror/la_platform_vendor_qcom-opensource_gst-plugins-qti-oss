@@ -92,7 +92,7 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 #define parent_class gst_qcodec2_vdec_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
-#define EXT_BUF_WAIT_TIMEOUT_MS 500
+#define EXT_BUF_WAIT_TIMEOUT_MS 100
 
 #define DEFAULT_OUTPUT_PICTURE_ORDER_MODE    (0xffffffff)
 #define DEFAULT_LOW_LATENCY_MODE             (FALSE)
@@ -1133,6 +1133,9 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
   GST_DEBUG_OBJECT (dec, "decide allocation");
 
   out_port_pool = dec->out_port_pool;
+  if (out_port_pool) {
+    gst_object_unref (out_port_pool);
+  }
 
   GstAllocationParams params = { (GstMemoryFlags) 0 };
   GstBufferPool *pool = NULL;
@@ -1200,10 +1203,6 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
   }
 
   if (!use_peer_pool) {
-    if (out_port_pool) {
-      gst_object_unref (out_port_pool);
-    }
-
     param.is_ubwc = dec->is_ubwc;
     param.info = dec->output_state->info;
     param.gst_c2_comp = gst_c2_comp_ref (dec->gst_c2_comp);
