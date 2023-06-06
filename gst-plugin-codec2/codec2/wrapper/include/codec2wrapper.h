@@ -533,7 +533,7 @@ typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Component Store API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void* c2componentStore_create();
+void* c2componentStore_create(void);
 const gchar* c2componentStore_getName(void* const comp_store);
 gboolean c2componentStore_createComponent(void* const comp_store, const gchar* name, void** const component, comp_cb* cb);
 gboolean c2componentStore_createInterface(void* const comp_store, const gchar* name, void** const interface);
