@@ -134,6 +134,7 @@ std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_in
 std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setVideoDynamicFramerate(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -173,6 +174,7 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_LTR_COUNT, setLTRCount },
     { CONFIG_FUNCTION_KEY_LTR_MARK_INDEX, setLTRMarkIndex },
     { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
+    { CONFIG_FUNCTION_KEY_DYNAMIC_FRAMERATE, setVideoDynamicFramerate },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -671,6 +673,26 @@ std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
     return nullptr;
 }
 
+std::unique_ptr<C2Param> setVideoDynamicFramerate(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> dyn_fps;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value fps;
+
+    fps.set((int32_t)(config->framerate * 65536.0f));
+    kvpairs.emplace("vendor.qti-ext-enc-dynamic-frame-rate.frame-rate", fps);
+
+    dyn_fps = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return dyn_fps;
+}
+
 std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param)
 {
     if (param == NULL) {
@@ -718,9 +740,7 @@ std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     C2PrependHeaderModeSetting header_mode;
-    header_mode.value = config->inline_sps_pps_headers ?
-        C2Config::PREPEND_HEADER_TO_ALL_SYNC :
-        C2Config::PREPEND_HEADER_TO_NONE;
+    header_mode.value = config->inline_sps_pps_headers ? C2Config::PREPEND_HEADER_TO_ALL_SYNC : C2Config::PREPEND_HEADER_TO_NONE;
 
     return C2Param::Copy(header_mode);
 }
@@ -734,7 +754,7 @@ std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     auto pTemporalLayering = C2StreamTemporalLayeringTuning::output::AllocUnique(
-            config->temporalLayer.ratioSize);
+        config->temporalLayer.ratioSize);
     pTemporalLayering->m.layerCount = config->temporalLayer.layerCount;
     pTemporalLayering->m.bLayerCount = config->temporalLayer.bLayerCount;
 
@@ -810,7 +830,7 @@ std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf)
     return qp_init;
 }
 
-std::unique_ptr<C2Param> enableGetAvgFrameQP (gpointer param, void* const comp_intf)
+std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
@@ -1052,8 +1072,8 @@ void CodecCallback::onOutputBufferAvailable(
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
-            LOG_INFO("out buffer size:%d width:%d height:%d stride:%d data:%p\n",
-                size, width, height, stride, outBuf.data);
+            LOG_INFO("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
+                size, outBuf.size, width, height, stride, outBuf.data);
         } else if (buf_type == C2BufferData::LINEAR) {
             const C2ConstLinearBlock linear_block = buffer->data().linearBlocks().front();
             const C2Handle* handle = linear_block.handle();
