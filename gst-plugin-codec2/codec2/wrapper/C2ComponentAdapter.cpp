@@ -513,23 +513,18 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     buffer->fd = fd;
 
                     guint32 stride = 0;
+                    guint32 width = 0;
                     guint32 height = 0;
                     guint32 format = 0;
                     guint64 usage = 0;
 
-                    _UnwrapNativeCodec2GBMMetadata(handle, nullptr,
+                    _UnwrapNativeCodec2GBMMetadata(handle, &width,
                         &height, &format, &usage, &stride, &size, nullptr);
                     buffer->capacity = size;
-                    uint32_t y_scanlines = VENUS_Y_SCANLINES(
-                        gbmformat_to_colorformat(format, usage), height);
-                    buffer->stride[0] = buffer->stride[1] = stride;
-                    buffer->offset[0] = 0;
-                    buffer->offset[1] = stride * y_scanlines;
+                    setBufLayout(buffer, format, usage, width, height, INTERLACE_MODE_PROGRESSIVE);
 
-                    LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d,"
-                                " stride %u, offset %" G_GSIZE_FORMAT,
-                        fd, buffer->capacity, buffer->ubwc_flag,
-                        stride, buffer->offset[1]);
+                    LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d, stride %u, offset %" G_GSIZE_FORMAT,
+                        fd, buffer->capacity, buffer->ubwc_flag, stride, buffer->offset[1]);
                 }
             }
         } else {
@@ -942,8 +937,7 @@ void C2ComponentAdapter::handleWorkDone(
             // Only hold the C2 buffer in case below:
             // 1. all encoder use cases
             // 2. internal buffer pool mode for decoder output
-            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC))
-            {
+            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                 std::unique_lock<std::mutex> lck(mLockOut);
                 mOutPendingBuffer[bufferIdx] = buffer;
             }

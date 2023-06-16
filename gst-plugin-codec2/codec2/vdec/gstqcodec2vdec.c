@@ -1451,6 +1451,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) handle;
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+  GstVideoInfo *info = NULL;
 
   GST_LOG_OBJECT (dec, "handle_video_event");
 
@@ -1495,6 +1496,13 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           if (!output_state) {
             GST_ERROR_OBJECT (dec, "Failed to set output state");
             break;
+          }
+
+          info = &output_state->info;
+          /* update offset and stride in GstVideoInfo */
+          for (int i = 0; i < 2; i++) {
+            GST_VIDEO_INFO_PLANE_OFFSET (info, i) = out_buf->offset[i];
+            GST_VIDEO_INFO_PLANE_STRIDE (info, i) = out_buf->stride[i];
           }
 
           output_state->caps = gst_video_info_to_caps (&output_state->info);
