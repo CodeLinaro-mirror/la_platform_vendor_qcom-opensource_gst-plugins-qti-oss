@@ -1371,15 +1371,15 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
 
   if (dec->use_external_buf) {
     GstBuffer *gst_buf = NULL;
-    gint key = decode_buf->fd;
+    gint key = decode_buf->ext_fd;
     gst_buf = (GstBuffer *) g_hash_table_lookup (dec->external_buf_table, &key);
     if (gst_buf) {
       g_mutex_lock (&dec->external_buf_lock);
       dec->acquired_external_buf--;
       g_cond_signal (&dec->external_buf_cond);
       GST_DEBUG_OBJECT (dec,
-          "Found an external gstbuf:%p, fd:%d, idx:%lu, size=%u. Updated "
-          "acquired_external_buf to %u", gst_buf, decode_buf->fd,
+          "Found an external gstbuf:%p, ext_fd:%d, idx:%lu, size=%u. Updated "
+          "acquired_external_buf to %u", gst_buf, decode_buf->ext_fd,
           decode_buf->index, output_size, dec->acquired_external_buf);
       out_buf = gst_buf;
 
