@@ -243,7 +243,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
         }
 
         if (buffer->pool_type == BUFFER_POOL_BASIC_LINEAR) {
-            allocSize = ALIGN(frameSize, 4096);
+            allocSize = GST_ROUND_UP_N(frameSize, 4096);
             err = mLinearPool->fetchLinearBlock(allocSize, usage, &linear_block);
             if (err != C2_OK || linear_block == nullptr) {
                 LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
@@ -1101,7 +1101,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     bool need_release = false;
     C2Handle* linearHandle = nullptr;
 
-    uint32_t alignSize = ALIGN(size, 4096);
+    uint32_t alignSize = GST_ROUND_UP_N(size, 4096);
     /* dup the external buffer fd to decouple decoder and upstream element, and the
      * input external buffer fd should be closed by upstream element after use, dup_fd
      * will be closed in the destructor of C2AllocationIon::Impl after passing to it */

@@ -1023,8 +1023,8 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
     case COLOR_FMT_NV12_UBWC:
         y_meta_stride = VENUS_Y_META_STRIDE(color_fmt, width);
         y_meta_scanlines = VENUS_Y_META_SCANLINES(color_fmt, height);
-        y_meta_plane = MSM_MEDIA_ALIGN(y_meta_stride * y_meta_scanlines, 4096);
-        y_ubwc_plane = MSM_MEDIA_ALIGN(y_stride * y_sclines, 4096);
+        y_meta_plane = GST_ROUND_UP_N(y_meta_stride * y_meta_scanlines, 4096);
+        y_ubwc_plane = GST_ROUND_UP_N(y_stride * y_sclines, 4096);
 
         if (interlace_mode != INTERLACE_MODE_PROGRESSIVE) {
             validDataSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 1);
@@ -1039,8 +1039,8 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
         validDataSize = VENUS_BUFFER_SIZE(color_fmt, width, height);
         y_meta_stride = VENUS_Y_META_STRIDE(color_fmt, width);
         y_meta_scanlines = VENUS_Y_META_SCANLINES(color_fmt, height);
-        y_meta_plane = MSM_MEDIA_ALIGN(y_meta_stride * y_meta_scanlines, 4096);
-        y_ubwc_plane = MSM_MEDIA_ALIGN(y_stride * y_sclines, 4096);
+        y_meta_plane = GST_ROUND_UP_N(y_meta_stride * y_meta_scanlines, 4096);
+        y_ubwc_plane = GST_ROUND_UP_N(y_stride * y_sclines, 4096);
         offset[1] = y_meta_plane + y_ubwc_plane;
         break;
     default:

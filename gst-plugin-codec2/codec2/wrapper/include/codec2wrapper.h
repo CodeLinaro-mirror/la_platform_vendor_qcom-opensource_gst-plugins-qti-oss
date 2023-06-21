@@ -108,8 +108,6 @@ enum color_fmts {
 extern "C" {
 #endif
 
-#define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))
-
 #define CONFIG_FUNCTION_KEY_PIXELFORMAT "pixelformat"
 #define CONFIG_FUNCTION_KEY_RESOLUTION "resolution"
 #define CONFIG_FUNCTION_KEY_BITRATE "bitrate"
