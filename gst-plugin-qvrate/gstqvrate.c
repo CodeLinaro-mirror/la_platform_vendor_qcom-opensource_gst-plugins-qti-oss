@@ -469,9 +469,9 @@ gst_qvrate_start (GstQvrate * self)
     }
     memset(&vpp_out_buf, 0, sizeof (struct vpp_buffer));
     if (qvrate_fill_vppbuf_with_gstbuf(&vpp_out_buf, buffer, true, self->vpp_buf_size)) {
-      GST_DEBUG_OBJECT (self, "fill vpp output buf successfully");
+      GST_DEBUG_OBJECT (self, "fill vpp output buf successfully in start()");
       if (qvratevpp_queue_buf(self->vpp_ctx, out_port, &vpp_out_buf)) {
-        GST_DEBUG_OBJECT (self, "queue vpp output buf successfully");
+        GST_DEBUG_OBJECT (self, "queue vpp output buf successfully in start()");
       } else {
         GST_ERROR_OBJECT (self, "queue vpp output buffer failed");
       }
@@ -520,8 +520,6 @@ gst_qvrate_open (GstQvrate * self)
 static void
 gst_qvrate_close (GstQvrate * self)
 {
-  gint64 wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
-
   if (self->active) {
     self->input_flushing = TRUE;
     self->output_flushing = TRUE;
@@ -531,6 +529,7 @@ gst_qvrate_close (GstQvrate * self)
     g_mutex_lock(&self->flush_lock);
     if (self->input_flushing || self->output_flushing) {
       GST_DEBUG_OBJECT(self, "begin wait flush");
+      gint64 wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
       g_cond_wait_until (&self->flush_cond, &self->flush_lock, wait_until);
       GST_DEBUG_OBJECT(self, "end wait flush");
       if (self->input_flushing)
@@ -566,7 +565,7 @@ gboolean qvrate_fill_vppbuf_with_gstbuf (struct vpp_buffer* vpp_buf, GstBuffer* 
   if (gst_buffer_n_memory (gst_buf)) {
     memory = gst_buffer_get_memory (gst_buf, 0);
   }
-  GST_DEBUG("gst_buf %p, vpp_buf %p, memory %p", gst_buf, vpp_buf, memory);
+  GST_DEBUG("gst_buf %p, vpp_buf %p, memory %p, outport %d, buf_size %d", gst_buf, vpp_buf, memory, outport, buf_size);
   if (gst_buf && vpp_buf && memory)
   {
     vpp_buf->pixel.fd = gst_fd_memory_get_fd(memory);
@@ -654,7 +653,6 @@ gst_qvrate_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
   memset(&vpp_in_buf, 0, sizeof (struct vpp_buffer));
   if (qvrate_fill_vppbuf_with_gstbuf (&vpp_in_buf, buf, false, qvrate->vpp_buf_size)) {
-    GST_DEBUG_OBJECT (qvrate, "fill vpp input buf successfully");
     if (qvratevpp_queue_buf(qvrate->vpp_ctx, in_port, &vpp_in_buf)) {
       GST_DEBUG_OBJECT (qvrate, "queue vpp input buf %p successfully", buf);
       ret = GST_FLOW_OK;
@@ -743,8 +741,9 @@ void qvrate_handle_output_buf_done (GstQvrate * self, struct vpp_buffer *buf)
       return;
     }
     GST_BUFFER_PTS (gst_buf) = buf->timestamp * 1000;
-    GST_DEBUG_OBJECT (self, "gst_buf %p, timestamp %" GST_TIME_FORMAT, gst_buf, GST_TIME_ARGS(GST_BUFFER_PTS (gst_buf)));
-     if (self->output_flushing || !self->active || self->eos) {
+    GST_DEBUG_OBJECT (self, "gst_buf %p, buf->timestamp %ld, PTS %" GST_TIME_FORMAT,
+      gst_buf, buf->timestamp, GST_TIME_ARGS(GST_BUFFER_PTS (gst_buf)));
+    if (self->output_flushing || !self->active || self->eos) {
       gst_buffer_unref(gst_buf);
     } else {
       srcpad = gst_element_get_static_pad ((GstElement*) self, "src");
@@ -759,9 +758,7 @@ void qvrate_handle_output_buf_done (GstQvrate * self, struct vpp_buffer *buf)
       }
       memset(&vpp_out_buf, 0, sizeof (struct vpp_buffer));
       if (qvrate_fill_vppbuf_with_gstbuf(&vpp_out_buf, buffer, true, self->vpp_buf_size)) {
-        GST_DEBUG_OBJECT (self, "fill vpp output buf successfully");
         if (qvratevpp_queue_buf(self->vpp_ctx, VPP_PORT_OUTPUT, &vpp_out_buf)) {
-          GST_DEBUG_OBJECT (self, "queue vpp output buf successfully");
         } else {
           GST_ERROR_OBJECT (self, "queue vpp output buffer failed");
         }
@@ -1024,9 +1021,9 @@ gst_qvrate_setcaps (GstQvrate * qvrate, GstPad * pad,
   /* output caps */
   if (!gst_video_info_from_caps (&out_info, outcaps))
     goto invalid_caps;
-
   if (in_info.width < QVRATE_DEFAULT_MIN_WIDTH || in_info.width > QVRATE_DEFAULT_MAX_WIDTH ||
     in_info.height < QVRATE_DEFAULT_MIN_HEIGHT || in_info.height > QVRATE_DEFAULT_MAX_HEIGHT) {
+    GST_DEBUG_OBJECT (qvrate, "passthrough width %d, height %d", in_info.width, in_info.height);
     qvrate->passthrough = TRUE;
     goto done;
   } else {
@@ -1094,9 +1091,9 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
   gboolean ret = TRUE;
   struct vpp_buffer vpp_in_buf;
   enum vpp_port in_port = VPP_PORT_INPUT;
-  gint64 wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
   GstBuffer *buffer = NULL;
   GstFlowReturn flow;
+  gint64 wait_until = 0;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
@@ -1113,6 +1110,7 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
       GST_DEBUG_OBJECT (qvrate, "begin waiting vpp flush done");
       g_mutex_lock(&qvrate->flush_lock);
       if (qvrate->input_flushing || qvrate->output_flushing) {
+        wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
         g_cond_wait_until (&qvrate->flush_cond, &qvrate->flush_lock, wait_until);
         if (qvrate->input_flushing)
           qvrate->input_flushing = FALSE;
@@ -1136,7 +1134,7 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
       GST_BUFFER_PTS(buffer) = 0;//this buf is not from upstream, just an added input buf to indicate eos. Set this gstbuf's PTS to 0, then, in qvrate_fill_vppbuf_with_gstbuf(), vpp_in_buf's timestamp will be calculated as 0 as vpp required.
       memset(&vpp_in_buf, 0, sizeof (struct vpp_buffer));
       if (qvrate_fill_vppbuf_with_gstbuf(&vpp_in_buf, buffer, false, qvrate->vpp_buf_size)) {
-        GST_DEBUG_OBJECT (qvrate, "fill vpp input buf successfully");
+        GST_DEBUG_OBJECT (qvrate, "fill vpp eos input buf successfully");
         vpp_in_buf.flags |= VPP_BUFFER_FLAG_EOS;
         vpp_in_buf.pixel.filled_len = 0;
         vpp_in_buf.pixel.valid_data_len = 0;
@@ -1146,13 +1144,14 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
           GST_ERROR_OBJECT (qvrate, "queue vpp input buf with EOS failed");
         }
       } else {
-        GST_ERROR_OBJECT (qvrate, "fill vpp buffer failed");
+        GST_ERROR_OBJECT (qvrate, "fill vpp eos buffer failed");
         break;
       }
 
       GST_DEBUG_OBJECT (qvrate, "begin waiting vpp eos done");
       g_mutex_lock(&qvrate->eos_lock);
       if (!qvrate->eos) {
+        wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
         g_cond_wait_until (&qvrate->eos_cond, &qvrate->eos_lock, wait_until);
         if (!qvrate->eos)
           qvrate->eos = TRUE;
@@ -1264,9 +1263,7 @@ gst_qvrate_message_handler (gpointer user_data)
                   }
                   memset(&vpp_out_buf, 0, sizeof (struct vpp_buffer));
                   if (qvrate_fill_vppbuf_with_gstbuf(&vpp_out_buf, buffer, true, self->vpp_buf_size)) {
-                    GST_DEBUG_OBJECT (self, "fill vpp output buf successfully");
                     if (qvratevpp_queue_buf(self->vpp_ctx, out_port, &vpp_out_buf)) {
-                      GST_DEBUG_OBJECT (self, "queue vpp output buf successfully");
                     } else
                       GST_ERROR_OBJECT (self, "queue vpp output buffer failed");
                   } else {
