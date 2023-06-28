@@ -388,10 +388,84 @@ gst_to_c2_pixelformat (GstQcodec2Vdec * decoder, GstVideoFormat format)
       break;
   }
 
-  GST_DEBUG_OBJECT (dec, "to_c2_pixelformat (%s), c2 format: %d",
-      gst_video_format_to_string (format), result);
+  GST_DEBUG_OBJECT (dec, "GST format (%s), UBWC:%d, C2 format: %d",
+      gst_video_format_to_string (format), dec->is_ubwc, result);
 
   return result;
+}
+
+/* 1. Check whether it's 10bit clip
+ * 2. Set 8bit/10bit format */
+gboolean
+dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
+{
+  GstQcodec2Vdec *dec = decoder;
+  GstStructure *s = NULL;
+  guint bit_depth_luma, bit_depth_chroma;
+  GPtrArray *config = NULL;
+  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
+  ConfigParams pixelformat;
+  gboolean ret = TRUE;
+
+  GST_DEBUG_OBJECT (dec, "dec set format");
+
+  /* check 10bit cases
+   * 1: Field bit-depth-luma in caps. It supported since GST 1.13.1 for H265
+   *    or GST 1.19.2 for VP9 and AV1.
+   * 2. Add bit-depth-luma/chroma in caps explicitly by upstream element
+   *    in secure mode*/
+  if (dec->check_10bit) {
+    GST_DEBUG_OBJECT (dec, "check bit-depth-luma/chroma in caps");
+    s = gst_caps_get_structure (state->caps, 0);
+    if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
+        gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
+      if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
+        if (dec->is_ubwc && (dec->secure
+              || dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
+          /* TODO: remove format/secure condition above
+           * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
+           * otherwise, prefer to P010.
+           */
+          output_format = GST_VIDEO_FORMAT_NV12_10LE32;
+        } else {
+          output_format = GST_VIDEO_FORMAT_P010_10LE;
+        }
+
+        GST_LOG_OBJECT (dec, "set 10bit format: %d (%s)", output_format,
+            gst_video_format_to_string (output_format));
+      } else if (bit_depth_luma == 12 && bit_depth_chroma == 12) {
+        GST_ERROR_OBJECT (dec, "bitdepth 12, not supported yet");
+        ret = FALSE;
+        goto done;
+      }
+
+      /* disable checking and delay_start since bit-depth-chroma parsed */
+      dec->check_10bit = FALSE;
+      dec->delay_start = FALSE;
+    }
+
+    config = g_ptr_array_new ();
+    if (config) {
+      pixelformat =
+        make_pixel_format_param (gst_to_c2_pixelformat (dec,
+              output_format), FALSE);
+      GST_LOG_OBJECT (dec, "set c2 output format: %d",
+          pixelformat.pixelFormat.fmt);
+      g_ptr_array_add (config, &pixelformat);
+      if (!c2componentInterface_config (dec->comp_intf,
+            config, BLOCK_MODE_MAY_BLOCK)) {
+        GST_ERROR_OBJECT (dec, "Failed to set config");
+        ret = FALSE;
+      }
+      g_ptr_array_free (config, TRUE);
+
+      dec->output_format = output_format;
+    }
+
+  }
+done:
+
+  return ret;
 }
 
 static gboolean
@@ -832,7 +906,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->comp = NULL;
   dec->comp_intf = NULL;
   dec->out_port_pool = NULL;
-  dec->is_10bit = FALSE;
+  dec->check_10bit = FALSE;
   dec->delay_start = FALSE;
   dec->buffer_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
@@ -1905,7 +1979,6 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->cb.data_copy_func = NULL;
   dec->cb.data_copy_func_param = NULL;
   dec->deinterlace = DEFAULT_DEINTERLACE;
-  dec->delay_start = FALSE;
   dec->use_external_buf = FALSE;
 
   g_cond_init (&dec->pending_cond);

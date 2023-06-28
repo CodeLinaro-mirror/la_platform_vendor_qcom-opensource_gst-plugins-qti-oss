@@ -83,10 +83,9 @@ static gboolean
 gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder)
 {
   GstQcodec2Vdec *base_dec = decoder;
-  GstQcodec2VP9Dec *self = GST_QCODEC2_VP9_DEC (decoder);
   /* start C2 component later since checking VP9 10bit format */
   base_dec->delay_start = TRUE;
-  self->check_vp9_10bit = TRUE;
+  base_dec->check_10bit= TRUE;
 
   return TRUE;
 }
@@ -95,53 +94,12 @@ static gboolean
 gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state)
 {
-  GstQcodec2Vdec *base_dec = decoder;
   GstQcodec2VP9Dec *dec = GST_QCODEC2_VP9_DEC (decoder);
-  GstStructure *s = NULL;
-  guint bit_depth_luma, bit_depth_chroma;
-  GPtrArray *config = NULL;
-  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
-  ConfigParams pixelformat;
   gboolean ret = TRUE;
 
   GST_DEBUG_OBJECT (dec, "VP9 dec set format");
 
-  /* check VP9 10bit case 1: bit-depth-luma in caps , it supported since GST 1.20
-   * or it added in caps explicitly by upstream element in secure mode*/
-  if (dec->check_vp9_10bit) {
-    GST_DEBUG_OBJECT (dec, "check whether field bit-depth-luma in caps");
-    s = gst_caps_get_structure (state->caps, 0);
-    if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
-        gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
-      if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
-        if (base_dec->is_ubwc)
-          output_format = GST_VIDEO_FORMAT_NV12_10LE32;
-        else
-          output_format = GST_VIDEO_FORMAT_P010_10LE;
-      }
-
-      config = g_ptr_array_new ();
-      if (config) {
-        pixelformat =
-            make_pixel_format_param (gst_to_c2_pixelformat (base_dec,
-                output_format), FALSE);
-        GST_LOG_OBJECT (dec, "set c2 output format: %d for VP9",
-            pixelformat.pixelFormat.fmt);
-        g_ptr_array_add (config, &pixelformat);
-        if (!c2componentInterface_config (base_dec->comp_intf,
-                config, BLOCK_MODE_MAY_BLOCK)) {
-          GST_ERROR_OBJECT (dec, "Failed to set config");
-          ret = FALSE;
-        }
-        g_ptr_array_free (config, TRUE);
-      }
-
-      base_dec->output_format = output_format;
-      /* disable checking and delay_start since bit-depth-chroma parsed */
-      dec->check_vp9_10bit = FALSE;
-      base_dec->delay_start = FALSE;
-    }
-  }
+  ret = dec_set_c2_pixel_format (decoder, state);
 
   return ret;
 }
@@ -166,7 +124,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
   GST_DEBUG_OBJECT (dec, "VP9 dec handle frame");
 
   /* check VP9 10bit case 2: no field bit-depth-luma in caps, parse it here in non-secure mode */
-  if (dec->check_vp9_10bit && !base_dec->secure) {
+  if (base_dec->check_10bit && !base_dec->secure) {
     GST_DEBUG_OBJECT (dec,
         "check VP9 10bit if without field bit-depth-luma in caps");
     vp9_parser = gst_vp9_parser_new ();
@@ -188,10 +146,16 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     gst_buffer_unmap (buf, &mapinfo);
 
     if (vp9_parser->bit_depth == GST_VP9_BIT_DEPTH_10) {
-      if (base_dec->is_ubwc)
+      if (base_dec->is_ubwc && (base_dec->secure
+            || base_dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
+        /* TODO: remove format/secure condition above
+         * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
+         * otherwise, prefer to P010.
+         */
         output_format = GST_VIDEO_FORMAT_NV12_10LE32;
-      else
+      } else {
         output_format = GST_VIDEO_FORMAT_P010_10LE;
+      }
 
       base_dec->output_format = output_format;
 
@@ -199,24 +163,24 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
           "output width: %d, height: %d, format: %d (%s) for VP9",
           base_dec->width, base_dec->height, output_format,
           gst_video_format_to_string (output_format));
-    }
 
-    if (config) {
-      pixelformat =
+      if (config) {
+        pixelformat =
           make_pixel_format_param (gst_to_c2_pixelformat (base_dec,
-              output_format), FALSE);
-      GST_LOG_OBJECT (dec, "set c2 output format: %d for VP9",
-          pixelformat.pixelFormat.fmt);
-      g_ptr_array_add (config, &pixelformat);
-      if (!c2componentInterface_config (base_dec->comp_intf,
+                output_format), FALSE);
+        GST_LOG_OBJECT (dec, "set c2 output format: %d for VP9",
+            pixelformat.pixelFormat.fmt);
+        g_ptr_array_add (config, &pixelformat);
+        if (!c2componentInterface_config (base_dec->comp_intf,
               config, BLOCK_MODE_MAY_BLOCK)) {
-        GST_ERROR_OBJECT (dec, "Failed to set config");
-        ret = GST_FLOW_ERROR;
-        goto done;
+          GST_ERROR_OBJECT (dec, "Failed to set config");
+          ret = GST_FLOW_ERROR;
+          goto done;
+        }
       }
     }
 
-    dec->check_vp9_10bit = FALSE;
+    base_dec->check_10bit = FALSE;
   }
 
   if (base_dec->delay_start) {
