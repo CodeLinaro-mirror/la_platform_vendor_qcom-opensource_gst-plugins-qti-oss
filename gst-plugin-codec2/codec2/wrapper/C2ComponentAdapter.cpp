@@ -243,7 +243,10 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
         }
 
         if (buffer->pool_type == BUFFER_POOL_BASIC_LINEAR) {
-            allocSize = GST_ROUND_UP_N(frameSize, 4096);
+            /* With linear buffer recycling feature added, the 1MB allocation
+             * size alignment could get nearly optimal balance of dec input
+             * buffer count 7~9 and total buffer size in buffer pool. */
+            allocSize = GST_ROUND_UP_N(frameSize, 1024 * 1024);
             err = mLinearPool->fetchLinearBlock(allocSize, usage, &linear_block);
             if (err != C2_OK || linear_block == nullptr) {
                 LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
