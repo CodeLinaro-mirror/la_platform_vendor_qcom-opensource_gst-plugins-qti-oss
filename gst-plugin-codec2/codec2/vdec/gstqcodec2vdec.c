@@ -162,6 +162,8 @@ static gboolean gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps,
     const gchar * partten);
 static GstStateChangeReturn gst_qcodec2_vdec_change_state (GstElement * element,
     GstStateChange transition);
+static gboolean gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder,
+    GstEvent * event);
 
 /* pad templates */
 static GstStaticPadTemplate gst_vdec_src_template =
@@ -758,6 +760,8 @@ gst_qcodec2_vdec_flush (GstVideoDecoder * decoder)
   if (dec->use_external_buf) {
     clear_external_buf_hash_table (decoder);
   }
+
+  dec->is_flushing = FALSE;
 
   return ret;
 }
@@ -1541,6 +1545,20 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (!dec->use_external_buf && (!dec->output_setup ||
                 dec->width != out_buf->width ||
                 dec->height != out_buf->height)) {
+          /* will not negotiate with downstream in flushing state, just release the buffer here */
+          if (dec->is_flushing) {
+            GstVideoCodecFrame *frame = NULL;
+            frame = gst_video_decoder_get_frame (decoder, out_buf->index);
+            if (frame) {
+              gst_video_decoder_release_frame (decoder, frame);
+            }
+            if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
+              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of flushing",
+                  out_buf->index);
+            }
+            break;
+          }
+
           if (dec->output_setup) {
             GST_DEBUG_OBJECT (dec,
                 "resolution change, width height:%d %d -> %u %u", dec->width,
@@ -1683,6 +1701,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     case EVENT_ACQUIRE_EXT_BUF:{
       BufferResolution *resolution = (BufferResolution *) data;
       GstVideoCodecState *output_state = NULL;
+
+      if (dec->is_flushing) {
+        GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
+        break;
+      }
 
       if (dec->width != resolution->width || dec->height != resolution->height) {
         GST_DEBUG_OBJECT (dec,
@@ -1903,6 +1926,26 @@ gst_qcodec2_vdec_src_event (GstVideoDecoder * decoder, GstEvent * event)
   return ret;
 }
 
+static gboolean
+gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder, GstEvent * event)
+{
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_FLUSH_START:
+      GST_DEBUG_OBJECT (dec, "flush start");
+      dec->is_flushing = TRUE;
+      if (dec->comp) {
+        c2component_cancelPendingWork (dec->comp);
+      }
+      break;
+    default:
+      break;
+  }
+
+  return GST_VIDEO_DECODER_CLASS (parent_class)->sink_event (decoder, event);
+}
+
 /* Called during object destruction process */
 static void
 gst_qcodec2_vdec_finalize (GObject * object)
@@ -2027,6 +2070,8 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
       GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_decide_allocation);
   video_decoder_class->src_event =
       GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_src_event);
+  video_decoder_class->sink_event =
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_sink_event);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "Codec2 video decoder", "Decoder/Video",
@@ -2049,6 +2094,7 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->cb.data_copy_func_param = NULL;
   dec->deinterlace = DEFAULT_DEINTERLACE;
   dec->use_external_buf = FALSE;
+  dec->is_flushing = FALSE;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);
