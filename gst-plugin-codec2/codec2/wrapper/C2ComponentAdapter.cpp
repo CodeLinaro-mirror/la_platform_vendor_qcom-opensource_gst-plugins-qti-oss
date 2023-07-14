@@ -248,7 +248,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
              * buffer count 7~9 and total buffer size in buffer pool. */
             allocSize = GST_ROUND_UP_N(frameSize, 1024 * 1024);
             err = mLinearPool->fetchLinearBlock(allocSize, usage, &linear_block);
-            if (err != C2_OK || linear_block == nullptr) {
+            if (err != C2_OK || !linear_block) {
                 LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
                 return C2_NO_MEMORY;
             }
@@ -319,6 +319,11 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
                 err = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
                     gst_to_c2_gbmformat(buffer->format), usage, &graphic_block);
+                if (C2_OK != err || !graphic_block) {
+                    LOG_ERROR("fetchGraphicBlock failed: %d", err);
+                    return C2_NO_MEMORY;
+                }
+
                 C2GraphicView view(graphic_block->map().get());
                 if (view.error() != C2_OK) {
                     LOG_ERROR("C2GraphicBlock::map failed: %d", view.error());
@@ -333,13 +338,13 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                 }
 
                 buf = createGraphicBuffer(graphic_block);
-                if (err != C2_OK || buf == nullptr) {
-                    LOG_ERROR("Graphic pool failed to allocate input buffer");
-                    return C2_NO_MEMORY;
-                }
             }
         }
 
+        if (!buf) {
+            LOG_ERROR("failed to allocate input C2Buffer");
+            return C2_NO_MEMORY;
+        }
         *c2Buf = buf;
     }
 
