@@ -7,6 +7,9 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/base/gstbasetransform.h>
+#ifdef USE_DMAHEAP
+#include <vmmem_wrapper.h>
+#endif
 
 G_BEGIN_DECLS
 #define COMMON_VIDEO_CAPS(min, max) \
@@ -30,7 +33,9 @@ G_BEGIN_DECLS
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
     COMMON_VIDEO_CAPS(96, 1920)
-
+#define AV1_CAPS \
+    "video/x-av1, " \
+    COMMON_VIDEO_CAPS(96, 8192)
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
@@ -41,24 +46,48 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_VESDELIVER))
 #define GST_IS_VESDELIVER_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_VESDELIVER))
-
 typedef struct _GstVesDeliver GstVesDeliver;
 typedef struct _GstVesDeliverClass GstVesDeliverClass;
 
+#ifdef USE_DMAHEAP
+typedef VmMem *(*CreateVmMem_Func) (void);
+typedef void (*FreeVmMem_Func) (VmMem * instance);
+typedef int (*IsExclusiveOwnerDmabuf_Func) (int fd, bool * is_exclusive_owner);
+typedef VmHandle (*FindVmByName_Func) (VmMem * instance, char *cstr);
+typedef int (*LendDmabuf_Func) (VmMem * instance, int dma_buf_fd,
+    VmHandle * handles, uint32_t * perms, int nr);
+#endif
 typedef int (*Content_Protection_Set_AppName_Func) (const char *name);
 typedef int (*Content_Protection_Copy_Init_Func) (void **p_handle);
 typedef int (*Content_Protection_Copy_Func) (void *handle,
-      uint8_t *non_sec_buf, uint32_t non_sec_buf_len, uint32_t sec_buf_fd,
-      uint32_t sec_buf_offset, uint32_t *sec_buf_len, int copy_dir);
+    uint8_t * non_sec_buf, uint32_t non_sec_buf_len, uint32_t sec_buf_fd,
+    uint32_t sec_buf_offset, uint32_t * sec_buf_len, int copy_dir);
 typedef int (*Content_Protection_Copy_Terminate_Func) (void **p_handle);
+
+typedef enum
+{
+  SECURE_DISABLE,
+  SECURE_COPY,
+  LEND_DMABUF,
+} SECURE_MODE;
 
 struct _GstVesDeliver
 {
   GstBaseTransform parent;
-  GstAllocator* allocator;
-  gboolean secure;
+  GstAllocator *allocator;
+  SECURE_MODE secure;
   void *secure_handle;
   void *crypto_handle;
+#ifdef USE_DMAHEAP
+  void *vmmem_lib_handle;
+  VmMem *vm_instance;
+  VmHandle vm_handle;
+  CreateVmMem_Func CreateVmMem;
+  FreeVmMem_Func FreeVmMem;
+  IsExclusiveOwnerDmabuf_Func IsExclusiveOwnerDmabuf;
+  FindVmByName_Func FindVmByName;
+  LendDmabuf_Func LendDmabuf;
+#endif
   Content_Protection_Set_AppName_Func Content_Protection_Set_AppName;
   Content_Protection_Copy_Init_Func Content_Protection_Copy_Init;
   Content_Protection_Copy_Func Content_Protection_Copy;
@@ -73,5 +102,4 @@ struct _GstVesDeliverClass
 GType gst_vesdeliver_get_type (void);
 
 G_END_DECLS
-
 #endif /* __GST_VESDELIVER_H__ */

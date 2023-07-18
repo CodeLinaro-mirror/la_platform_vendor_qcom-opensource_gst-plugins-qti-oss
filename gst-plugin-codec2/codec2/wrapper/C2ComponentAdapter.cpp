@@ -25,6 +25,10 @@
 * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*
+* Changes from Qualcomm Innovation Center are provided under the following license:
+* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+* SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
 #include "C2ComponentAdapter.h"
@@ -248,7 +252,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
             if (mDataCopyFunc) {
                 if (linear_block->handle()) {
-                    const C2Handle *handle = linear_block->handle();
+                    const C2Handle* handle = linear_block->handle();
                     if (!handle) {
                         LOG_ERROR("invalid C2 handle");
                         return C2_CORRUPTED;
@@ -483,9 +487,8 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
         if (mGraphicPool) {
             if (buffer->ubwc_flag) {
                 usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_UBWC_ALIGNED_QTI,
-                          C2MemoryUsage::CPU_WRITE };
-            }
-            else if (buffer->heic_flag) {
+                    C2MemoryUsage::CPU_WRITE };
+            } else if (buffer->heic_flag) {
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
                 usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_NV12_512_QTI, C2MemoryUsage::CPU_WRITE };
             }
@@ -515,18 +518,18 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     guint64 usage = 0;
 
                     _UnwrapNativeCodec2GBMMetadata(handle, nullptr,
-                            &height, &format, &usage, &stride, &size, nullptr);
+                        &height, &format, &usage, &stride, &size, nullptr);
                     buffer->capacity = size;
                     uint32_t y_scanlines = VENUS_Y_SCANLINES(
-                            gbmformat_to_colorformat(format, usage), height);
+                        gbmformat_to_colorformat(format, usage), height);
                     buffer->stride[0] = buffer->stride[1] = stride;
                     buffer->offset[0] = 0;
                     buffer->offset[1] = stride * y_scanlines;
 
                     LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d,"
-                            " stride %u, offset %" G_GSIZE_FORMAT,
-                            fd, buffer->capacity, buffer->ubwc_flag,
-                            stride, buffer->offset[1]);
+                                " stride %u, offset %" G_GSIZE_FORMAT,
+                        fd, buffer->capacity, buffer->ubwc_flag,
+                        stride, buffer->offset[1]);
                 }
             }
         } else {
@@ -578,9 +581,9 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
             /* If the buffer fd is positive, we assume it is a valid external
              * dma buffer, then will try to import the external buffer by fd */
             std::shared_ptr<C2Buffer> clientBuf = nullptr;
-            result = importExternalBuf (clientBuf, fd, buffer->size);
+            result = importExternalBuf(clientBuf, fd, buffer->size);
             if (result == C2_OK) {
-                work->input.buffers.emplace_back (clientBuf);
+                work->input.buffers.emplace_back(clientBuf);
             } else {
                 LOG_ERROR("Failed(%d) to import buffer", result);
             }
@@ -615,7 +618,8 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
                     if (buf) {
                         work->input.buffers.emplace_back(buf);
                         LOG_MESSAGE("Successfully import and queue the external "
-                            "buffer, fd=%d", fd);
+                                    "buffer, fd=%d",
+                            fd);
                     } else {
                         LOG_ERROR("Failed to import external fd: %d", fd);
                         result = C2_CORRUPTED;
@@ -790,7 +794,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         } else {
             mC2AllocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(allocator);
             auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
-                                  std::placeholders::_1, std::placeholders::_2);
+                std::placeholders::_1, std::placeholders::_2);
             if (mC2AllocatorGBM) {
                 mC2AllocatorGBM->setAcquireExtBufCb(func);
             }
@@ -844,6 +848,26 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
     return interlace;
 }
 
+uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate)
+{
+    uint32_t frameQP = 0;
+    android::ReflectedParamUpdater::Dict paramsMap;
+    android::ReflectedParamUpdater::Value paramVal;
+    C2Value c2Value;
+
+    paramsMap = mIntf->getParams(configUpdate);
+    if (paramsMap.find("vendor.qti-ext-enc-info-coded_avgqp.frameQP") != paramsMap.end()) {
+        paramVal = paramsMap["vendor.qti-ext-enc-info-coded_avgqp.frameQP"];
+        if (paramVal.find(&c2Value)) {
+            if (c2Value.get(&frameQP)) {
+                LOG_DEBUG("get average frame QP: %u", frameQP);
+            }
+        }
+    }
+
+    return frameQP;
+}
+
 void C2ComponentAdapter::handleWorkDone(
     std::weak_ptr<C2Component> component,
     std::list<std::unique_ptr<C2Work> > workItems)
@@ -875,6 +899,7 @@ void C2ComponentAdapter::handleWorkDone(
         C2FrameData::flags_t outputFrameFlag = worklet->output.flags;
         uint64_t timestamp = worklet->output.ordinal.timestamp.peeku();
         uint32_t interlace = getInterlaceMode(worklet->output.configUpdate);
+        uint32_t frame_qp = getAvgFrameQP(worklet->output.configUpdate);
 
         while (!worklet->output.configUpdate.empty()) {
             std::unique_ptr<C2Param> param;
@@ -911,20 +936,23 @@ void C2ComponentAdapter::handleWorkDone(
                 LOG_ERROR("Invalid buffer");
             }
 
-            LOG_MESSAGE("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, flag: %x",
+            LOG_MESSAGE("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, Flag : 0x%x",
                 this, bufferIdx, worklet->output.ordinal.timestamp.peeku(), outputFrameFlag);
 
-            // ref count ++
+            // Only hold the C2 buffer in case below:
+            // 1. all encoder use cases
+            // 2. internal buffer pool mode for decoder output
+            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC))
             {
                 std::unique_lock<std::mutex> lck(mLockOut);
                 mOutPendingBuffer[bufferIdx] = buffer;
             }
 
-            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlace, outputFrameFlag);
+            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
                 LOG_MESSAGE("Component(%p) reached EOS on output", this);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, outputFrameFlag);
+                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
@@ -1063,44 +1091,44 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     std::shared_ptr<C2LinearBlock> linearBlock = nullptr;
     std::shared_ptr<C2LinearAllocation> allocation = nullptr;
     bool need_release = false;
-    C2Handle *linearHandle = nullptr;
+    C2Handle* linearHandle = nullptr;
 
-    uint32_t alignSize = ALIGN (size, 4096);
+    uint32_t alignSize = ALIGN(size, 4096);
     /* dup the external buffer fd to decouple decoder and upstream element, and the
      * input external buffer fd should be closed by upstream element after use, dup_fd
      * will be closed in the destructor of C2AllocationIon::Impl after passing to it */
     int dup_fd = dup(fd);
 
 #ifdef USE_DMAHEAP
-    linearHandle = new android::C2DmaHandle (dup_fd, alignSize);
+    linearHandle = new android::C2DmaHandle(dup_fd, alignSize);
 #else
-    linearHandle = new android::C2HandleIon (dup_fd, alignSize);
+    linearHandle = new android::C2HandleIon(dup_fd, alignSize);
 #endif
 
     if (nullptr == mC2LinearAllocator || nullptr == linearHandle) {
-        LOG_ERROR ("Invalid mC2LinearAllocator or linearHandle");
+        LOG_ERROR("Invalid mC2LinearAllocator or linearHandle");
         need_release = true;
         close(dup_fd);
         result = C2_NO_MEMORY;
         goto do_exit;
     }
     /* linearHandle will be released in priorLinearAllocation if return C2_OK */
-    result = mC2LinearAllocator->priorLinearAllocation (linearHandle, &allocation);
+    result = mC2LinearAllocator->priorLinearAllocation(linearHandle, &allocation);
     if (result != C2_OK) {
-        LOG_ERROR ("Failed(%d) to call priorLinearAllocation", result);
+        LOG_ERROR("Failed(%d) to call priorLinearAllocation", result);
         need_release = true;
         goto do_exit;
     }
-    linearBlock = _C2BlockFactory::CreateLinearBlock (allocation);
+    linearBlock = _C2BlockFactory::CreateLinearBlock(allocation);
     if (linearBlock == nullptr) {
-        LOG_ERROR ("Failed to CreateLinearBlock");
+        LOG_ERROR("Failed to CreateLinearBlock");
         result = C2_NO_MEMORY;
         goto do_exit;
     }
     linearBlock->mSize = size;
-    c2Buf = createLinearBuffer (linearBlock);
+    c2Buf = createLinearBuffer(linearBlock);
     if (!c2Buf) {
-        LOG_ERROR ("Failed to createLinearBuffer");
+        LOG_ERROR("Failed to createLinearBuffer");
         result = C2_NO_MEMORY;
     }
 

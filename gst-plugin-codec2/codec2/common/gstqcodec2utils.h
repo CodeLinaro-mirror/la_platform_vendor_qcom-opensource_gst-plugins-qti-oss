@@ -6,6 +6,9 @@
 
 #include <gst/gst.h>
 
+#define QCODEC2_MIN_OUTBUFFERS 6
+#define QCODEC2_MAX_OUTBUFFERS 32
+
 typedef struct _GstC2Comp GstC2Comp;
 
 struct _GstC2Comp
