@@ -747,17 +747,17 @@ c2_status_t C2ComponentAdapter::release()
 
 C2ComponentInterfaceAdapter* C2ComponentAdapter::intf()
 {
-
-    LOG_MESSAGE("Component(%p) interface created", this);
-
-    if (mComp) {
+    if (mIntf) {
+        LOG_MESSAGE("Component(%p) interface already created %p", this, mIntf.get());
+    } else if (mComp) {
         std::shared_ptr<C2ComponentInterface> compIntf = nullptr;
 
         compIntf = mComp->intf();
         mIntf = std::shared_ptr<C2ComponentInterfaceAdapter>(new C2ComponentInterfaceAdapter(compIntf));
+        LOG_MESSAGE("Component(%p) interface created %p", this, mIntf.get());
     }
 
-    return (mIntf == NULL) ? NULL : mIntf.get();
+    return mIntf ? mIntf.get() : NULL;
 }
 
 c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType)
@@ -910,7 +910,10 @@ void C2ComponentAdapter::handleWorkDone(
             case C2PortActualDelayTuning::CORE_INDEX: {
                 if (param->forOutput()) {
                     C2PortActualDelayTuning::output outputDelay;
-                    if (outputDelay.updateFrom(*param)) {
+                    C2String name = intf()->getName();
+                    bool isDecoder = name.find("decoder") != std::string::npos;
+                    LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
+                    if (isDecoder && outputDelay.updateFrom(*param)) {
                         if (mC2AllocatorGBM) {
                             LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu",
                                 outputDelay.value, mGraphicPool->getLocalId());
