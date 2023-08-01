@@ -35,6 +35,8 @@ GST_DEBUG_CATEGORY (gst_qvrate_debug);
 #define QVRATE_DEFAULT_MIN_HEIGHT 128
 #define QVRATE_DEFAULT_MAX_WIDTH 1920
 #define QVRATE_DEFAULT_MAX_HEIGHT 1088
+#define QVRATE_DEFAULT_OP_FPS 60
+#define QVRATE_THRESHOLD_FOR_FALLBACK 40
 
 static GstElementClass *parent_class = NULL;
 
@@ -306,13 +308,15 @@ gst_qvrate_set_info (GstQvrate * qvrate,
   ctrl.frc.segments = (struct vpp_ctrl_frc_segment *)
                         g_new0 (struct vpp_ctrl_frc_segment, ctrl.frc.num_segments);
 
-  ctrl.frc.segments[0].mode = HQV_FRC_MODE_SMOOTH_MOTION;
-  ctrl.frc.segments[0].level = 4;
-  ctrl.frc.segments[0].interp = HQV_FRC_INTERP_2X;
+  ctrl.frc.segments[0].mode = HQV_FRC_MODE_VIDEO_CUSTOM;
+  ctrl.frc.segments[0].level = HQV_FRC_LEVEL_HIGH;
+  ctrl.frc.segments[0].interp = HQV_FRC_INTERP_CUSTOM;
   ctrl.frc.segments[0].ts_start = 0;
-  ctrl.frc.segments->frame_copy_on_fallback = 0;
+  ctrl.frc.segments->frame_copy_on_fallback = 1;
   ctrl.frc.segments->frame_copy_input = 1;
-  ctrl.frc.segments->smart_fallback = 0;
+  ctrl.frc.segments->smart_fallback = QVRATE_THRESHOLD_FOR_FALLBACK;
+  ctrl.frc.segments->custom_interp.input_rate = 0; // Use incoming FPS
+  ctrl.frc.segments->custom_interp.output_rate = QVRATE_DEFAULT_OP_FPS;
 
   GST_DEBUG_OBJECT (self, "in_ubwc=%u, out_ubwc=%u",
         self->in_ubwc, self->out_ubwc);
