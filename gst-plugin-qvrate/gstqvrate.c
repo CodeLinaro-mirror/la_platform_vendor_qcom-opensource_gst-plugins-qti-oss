@@ -31,8 +31,8 @@ GST_DEBUG_CATEGORY (gst_qvrate_debug);
 #define QVRATE_DEFALUT_SLEEP_US 5000
 #define QVRATE_DEFAULT_MIN_OUTPUT_BUF_COUNT 6
 #define QVRATE_DEFAULT_MAX_OUTPUT_BUF_COUNT 64
-#define QVRATE_DEFAULT_MIN_WIDTH 512
-#define QVRATE_DEFAULT_MIN_HEIGHT 512
+#define QVRATE_DEFAULT_MIN_WIDTH 384
+#define QVRATE_DEFAULT_MIN_HEIGHT 128
 #define QVRATE_DEFAULT_MAX_WIDTH 1920
 #define QVRATE_DEFAULT_MAX_HEIGHT 1088
 
@@ -527,15 +527,16 @@ gst_qvrate_close (GstQvrate * self)
     qvratevpp_flush(self->vpp_ctx, VPP_PORT_INPUT);
     qvratevpp_flush(self->vpp_ctx, VPP_PORT_OUTPUT);
     g_mutex_lock(&self->flush_lock);
-    if (self->input_flushing || self->output_flushing) {
+    while (self->input_flushing || self->output_flushing) {
       GST_DEBUG_OBJECT(self, "begin wait flush");
       gint64 wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
-      g_cond_wait_until (&self->flush_cond, &self->flush_lock, wait_until);
-      GST_DEBUG_OBJECT(self, "end wait flush");
-      if (self->input_flushing)
-        self->input_flushing = FALSE;
-      if (self->output_flushing)
-        self->output_flushing = FALSE;
+      if (!g_cond_wait_until (&self->flush_cond, &self->flush_lock, wait_until)) {
+        GST_DEBUG_OBJECT(self, "end wait flush");
+        if (self->input_flushing)
+          self->input_flushing = FALSE;
+        if (self->output_flushing)
+          self->output_flushing = FALSE;
+      }
     }
     g_mutex_unlock(&self->flush_lock);
     if (self->vpp_ctx != NULL) {
@@ -1109,13 +1110,14 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
       qvratevpp_flush(qvrate->vpp_ctx, VPP_PORT_OUTPUT);
       GST_DEBUG_OBJECT (qvrate, "begin waiting vpp flush done");
       g_mutex_lock(&qvrate->flush_lock);
-      if (qvrate->input_flushing || qvrate->output_flushing) {
+      while (qvrate->input_flushing || qvrate->output_flushing) {
         wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
-        g_cond_wait_until (&qvrate->flush_cond, &qvrate->flush_lock, wait_until);
-        if (qvrate->input_flushing)
-          qvrate->input_flushing = FALSE;
-        if (qvrate->output_flushing)
-          qvrate->output_flushing = FALSE;
+        if (!g_cond_wait_until (&qvrate->flush_cond, &qvrate->flush_lock, wait_until)) {
+          if (qvrate->input_flushing)
+            qvrate->input_flushing = FALSE;
+          if (qvrate->output_flushing)
+            qvrate->output_flushing = FALSE;
+        }
       }
       g_mutex_unlock(&qvrate->flush_lock);
       GST_DEBUG_OBJECT (qvrate, "end waiting vpp flush done");
@@ -1150,11 +1152,12 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
 
       GST_DEBUG_OBJECT (qvrate, "begin waiting vpp eos done");
       g_mutex_lock(&qvrate->eos_lock);
-      if (!qvrate->eos) {
+      while (!qvrate->eos) {
         wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
-        g_cond_wait_until (&qvrate->eos_cond, &qvrate->eos_lock, wait_until);
-        if (!qvrate->eos)
-          qvrate->eos = TRUE;
+        if (!g_cond_wait_until (&qvrate->eos_cond, &qvrate->eos_lock, wait_until)) {
+          if (!qvrate->eos)
+            qvrate->eos = TRUE;
+        }
       }
       g_mutex_unlock(&qvrate->eos_lock);
       GST_DEBUG_OBJECT (qvrate, "end waiting vpp eos done");

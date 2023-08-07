@@ -377,6 +377,7 @@ typedef struct {
     guint8* data;
     gint32 fd;
     gint32 meta_fd;
+    gint32 ext_fd;
     guint32 size;
     guint32 capacity; ///< Total allocation size
     guint64 timestamp;
