@@ -110,6 +110,11 @@ gst_vesdeliver_allocator_new (AllocatorParameter * param)
       allocator, allocator->param.buf_recycle ? "enabled" : "disabled",
       allocator->param.secure_mode);
 
+  if (allocator->param.secure_mode == LEND_DMABUF
+      && allocator->param.buf_contiguous) {
+    GST_INFO_OBJECT (allocator,
+        "Physical contiguous memory will be allocated in lend dmabuf mode");
+  }
   return GST_ALLOCATOR_CAST (allocator);
 }
 
@@ -296,19 +301,20 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
   gboolean is_secure_heap = (alloc->param.secure_mode == SECURE_COPY);
 
 #ifdef USE_DMAHEAP
+  const char *heap_name = (alloc->param.secure_mode == LEND_DMABUF
+      && alloc->param.buf_contiguous) ? "qcom,display" : "qcom,system-uncached";
   if (is_secure_heap) {
     buf_fd =
         alloc->alloc_fd (alloc->dmaheap_allocator, "system-secure", alloc_size,
         0, 0);
   } else {
     buf_fd =
-        alloc->alloc_fd (alloc->dmaheap_allocator, "qcom,system-uncached",
-        alloc_size, 0, 0);
+        alloc->alloc_fd (alloc->dmaheap_allocator, heap_name, alloc_size, 0, 0);
   }
 
   if (buf_fd < 0) {
     GST_ERROR ("failed to allocate buffer from DMA %s heap", is_secure_heap ?
-        "system-secure" : "system-uncached");
+        "system-secure" : heap_name);
     ret = GST_FLOW_ERROR;
   }
 #else
