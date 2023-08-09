@@ -141,6 +141,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_LTR_COUNT "ltr_count"
 #define CONFIG_FUNCTION_KEY_LTR_MARK_INDEX "ltr_mark_index"
 #define CONFIG_FUNCTION_KEY_LTR_USE_INDEX "ltr_use_index"
+#define CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER "external_buffer"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -213,6 +214,7 @@ typedef enum {
     EVENT_ERROR,
     EVENT_UPDATE_MAX_BUF_CNT,
     EVENT_ACQUIRE_EXT_BUF,
+    EVENT_RELEASE_EXT_BUF,
     EVENT_DROP_FRAME,
 } EVENT_TYPE;
 
@@ -398,6 +400,7 @@ typedef struct {
     guint32 interlaceMode;
     gboolean heic_flag;
     guint32 avg_frame_qp;
+    gboolean deinterlaced;
 } BufferDescriptor;
 
 typedef struct {
@@ -415,6 +418,7 @@ typedef struct {
         gboolean force_idr;
         gboolean inline_sps_pps_headers;
         gboolean report_average_frame_qp;
+        gboolean use_external_buf;
 
         union {
             guint32 u32;

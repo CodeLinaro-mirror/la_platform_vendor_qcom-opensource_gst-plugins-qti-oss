@@ -112,6 +112,7 @@ public:
     c2_status_t attachExternalFd(BUFFER_POOL_TYPE type, int fd);
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
     void acquireExtBuf(uint32_t width, uint32_t height);
+    void releaseExtBuf(int32_t extFd);
     void cancelPendingWork();
 
 private:
@@ -127,7 +128,7 @@ private:
     static void onDestroyNotify(const C2Buffer* buf, void* arg);
     bool isUseExternalBuffer(BUFFER_POOL_TYPE type);
     c2_status_t importExternalBuf(std::shared_ptr<C2Buffer>& c2Buf, int fd, uint32_t size);
-    uint32_t getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate);
+    uint32_t getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate, bool& deinterlaced);
     uint32_t getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate);
 
     std::weak_ptr<C2ComponentStore> mStore;
