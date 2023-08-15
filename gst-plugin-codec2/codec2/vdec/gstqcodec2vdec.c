@@ -1706,8 +1706,13 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
         break;
       }
-
-      if (dec->width != resolution->width || dec->height != resolution->height) {
+      /* Since firmware does not report crop info for mpeg2 video in reconfig,
+       * aligned resolution will be used when acquiring external buffer.
+       * Introduced a workaround to treat such case as resolution unchanged. */
+      gboolean is_mpeg2_cornercase = GST_IS_QCODEC2_MPEG2_DEC (dec)
+          && (GST_ROUND_UP_32 (dec->height) == resolution->height);
+      if ((dec->width != resolution->width || dec->height != resolution->height)
+          && !is_mpeg2_cornercase) {
         GST_DEBUG_OBJECT (dec,
             "resolution change for external buffer, width height:%d %d -> %u %u",
             dec->width, dec->height, resolution->width, resolution->height);
