@@ -48,9 +48,9 @@ int CameraTest_Initialize(int nFrameRate,
         int nFrameWidth,
         int nFrameHeight,
         CameraPreviewCallback pfnPreviewCallback);
-int CameraTest_Run();
+int CameraTest_Run(void);
 int CameraTest_ReleaseFrame(void* pPhys, void* pVirt);
-int CameraTest_Exit();
+int CameraTest_Exit(void);
 
 
 #ifdef __cplusplus

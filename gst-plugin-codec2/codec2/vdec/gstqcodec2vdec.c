@@ -162,6 +162,8 @@ static gboolean gst_qcodec2_vdec_caps_has_feature (const GstCaps * caps,
     const gchar * partten);
 static GstStateChangeReturn gst_qcodec2_vdec_change_state (GstElement * element,
     GstStateChange transition);
+static gboolean gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder,
+    GstEvent * event);
 
 /* pad templates */
 static GstStaticPadTemplate gst_vdec_src_template =
@@ -390,10 +392,84 @@ gst_to_c2_pixelformat (GstQcodec2Vdec * decoder, GstVideoFormat format)
       break;
   }
 
-  GST_DEBUG_OBJECT (dec, "to_c2_pixelformat (%s), c2 format: %d",
-      gst_video_format_to_string (format), result);
+  GST_DEBUG_OBJECT (dec, "GST format (%s), UBWC:%d, C2 format: %d",
+      gst_video_format_to_string (format), dec->is_ubwc, result);
 
   return result;
+}
+
+/* 1. Check whether it's 10bit clip
+ * 2. Set 8bit/10bit format */
+gboolean
+dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
+{
+  GstQcodec2Vdec *dec = decoder;
+  GstStructure *s = NULL;
+  guint bit_depth_luma, bit_depth_chroma;
+  GPtrArray *config = NULL;
+  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
+  ConfigParams pixelformat;
+  gboolean ret = TRUE;
+
+  GST_DEBUG_OBJECT (dec, "dec set format");
+
+  /* check 10bit cases
+   * 1: Field bit-depth-luma in caps. It supported since GST 1.13.1 for H265
+   *    or GST 1.19.2 for VP9 and AV1.
+   * 2. Add bit-depth-luma/chroma in caps explicitly by upstream element
+   *    in secure mode*/
+  if (dec->check_10bit) {
+    GST_DEBUG_OBJECT (dec, "check bit-depth-luma/chroma in caps");
+    s = gst_caps_get_structure (state->caps, 0);
+    if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
+        gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
+      if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
+        if (dec->is_ubwc && (dec->secure
+              || dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
+          /* TODO: remove format/secure condition above
+           * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
+           * otherwise, prefer to P010.
+           */
+          output_format = GST_VIDEO_FORMAT_NV12_10LE32;
+        } else {
+          output_format = GST_VIDEO_FORMAT_P010_10LE;
+        }
+
+        GST_LOG_OBJECT (dec, "set 10bit format: %d (%s)", output_format,
+            gst_video_format_to_string (output_format));
+      } else if (bit_depth_luma == 12 && bit_depth_chroma == 12) {
+        GST_ERROR_OBJECT (dec, "bitdepth 12, not supported yet");
+        ret = FALSE;
+        goto done;
+      }
+
+      /* disable checking and delay_start since bit-depth-chroma parsed */
+      dec->check_10bit = FALSE;
+      dec->delay_start = FALSE;
+    }
+
+    config = g_ptr_array_new ();
+    if (config) {
+      pixelformat =
+        make_pixel_format_param (gst_to_c2_pixelformat (dec,
+              output_format), FALSE);
+      GST_LOG_OBJECT (dec, "set c2 output format: %d",
+          pixelformat.pixelFormat.fmt);
+      g_ptr_array_add (config, &pixelformat);
+      if (!c2componentInterface_config (dec->comp_intf,
+            config, BLOCK_MODE_MAY_BLOCK)) {
+        GST_ERROR_OBJECT (dec, "Failed to set config");
+        ret = FALSE;
+      }
+      g_ptr_array_free (config, TRUE);
+
+      dec->output_format = output_format;
+    }
+
+  }
+done:
+
+  return ret;
 }
 
 static gboolean
@@ -685,6 +761,8 @@ gst_qcodec2_vdec_flush (GstVideoDecoder * decoder)
     clear_external_buf_hash_table (decoder);
   }
 
+  dec->is_flushing = FALSE;
+
   return ret;
 }
 
@@ -862,7 +940,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->comp = NULL;
   dec->comp_intf = NULL;
   dec->out_port_pool = NULL;
-  dec->is_10bit = FALSE;
+  dec->check_10bit = FALSE;
   dec->delay_start = FALSE;
   dec->external_buf_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
@@ -1297,15 +1375,15 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
 
   if (dec->use_external_buf) {
     GstBuffer *gst_buf = NULL;
-    gint key = decode_buf->fd;
+    gint key = decode_buf->ext_fd;
     gst_buf = (GstBuffer *) g_hash_table_lookup (dec->external_buf_table, &key);
     if (gst_buf) {
       g_mutex_lock (&dec->external_buf_lock);
       dec->acquired_external_buf--;
       g_cond_signal (&dec->external_buf_cond);
       GST_DEBUG_OBJECT (dec,
-          "Found an external gstbuf:%p, fd:%d, idx:%lu, size=%u. Updated "
-          "acquired_external_buf to %u", gst_buf, decode_buf->fd,
+          "Found an external gstbuf:%p, ext_fd:%d, idx:%lu, size=%u. Updated "
+          "acquired_external_buf to %u", gst_buf, decode_buf->ext_fd,
           decode_buf->index, output_size, dec->acquired_external_buf);
       out_buf = gst_buf;
 
@@ -1451,6 +1529,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 {
   GstVideoDecoder *decoder = (GstVideoDecoder *) handle;
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+  GstVideoInfo *info = NULL;
 
   GST_LOG_OBJECT (dec, "handle_video_event");
 
@@ -1466,6 +1545,20 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (!dec->use_external_buf && (!dec->output_setup ||
                 dec->width != out_buf->width ||
                 dec->height != out_buf->height)) {
+          /* will not negotiate with downstream in flushing state, just release the buffer here */
+          if (dec->is_flushing) {
+            GstVideoCodecFrame *frame = NULL;
+            frame = gst_video_decoder_get_frame (decoder, out_buf->index);
+            if (frame) {
+              gst_video_decoder_release_frame (decoder, frame);
+            }
+            if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
+              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of flushing",
+                  out_buf->index);
+            }
+            break;
+          }
+
           if (dec->output_setup) {
             GST_DEBUG_OBJECT (dec,
                 "resolution change, width height:%d %d -> %u %u", dec->width,
@@ -1495,6 +1588,13 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           if (!output_state) {
             GST_ERROR_OBJECT (dec, "Failed to set output state");
             break;
+          }
+
+          info = &output_state->info;
+          /* update offset and stride in GstVideoInfo */
+          for (int i = 0; i < 2; i++) {
+            GST_VIDEO_INFO_PLANE_OFFSET (info, i) = out_buf->offset[i];
+            GST_VIDEO_INFO_PLANE_STRIDE (info, i) = out_buf->stride[i];
           }
 
           output_state->caps = gst_video_info_to_caps (&output_state->info);
@@ -1553,6 +1653,21 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       }
       break;
     }
+    case EVENT_DROP_FRAME:{
+      BufferDescriptor *out_buf = (BufferDescriptor *) data;
+      GstVideoCodecFrame *frame;
+      frame = gst_video_decoder_get_frame (decoder, out_buf->index);
+      if (frame) {
+        GST_DEBUG_OBJECT (dec, "Decode only picture for frame %u",
+            frame->system_frame_number);
+        GST_VIDEO_CODEC_FRAME_SET_DECODE_ONLY (frame);
+        gst_video_decoder_release_frame (decoder, frame);
+      } else {
+        GST_WARNING_OBJECT (dec, "no corresponding output for drop frame %lu",
+            out_buf->index);
+      }
+      break;
+    }
     case EVENT_TRIPPED:{
       GST_ERROR_OBJECT (dec, "Failed to apply configuration setting(%d)",
           *(gint32 *) data);
@@ -1586,6 +1701,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     case EVENT_ACQUIRE_EXT_BUF:{
       BufferResolution *resolution = (BufferResolution *) data;
       GstVideoCodecState *output_state = NULL;
+
+      if (dec->is_flushing) {
+        GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
+        break;
+      }
 
       if (dec->width != resolution->width || dec->height != resolution->height) {
         GST_DEBUG_OBJECT (dec,
@@ -1806,6 +1926,26 @@ gst_qcodec2_vdec_src_event (GstVideoDecoder * decoder, GstEvent * event)
   return ret;
 }
 
+static gboolean
+gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder, GstEvent * event)
+{
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_FLUSH_START:
+      GST_DEBUG_OBJECT (dec, "flush start");
+      dec->is_flushing = TRUE;
+      if (dec->comp) {
+        c2component_cancelPendingWork (dec->comp);
+      }
+      break;
+    default:
+      break;
+  }
+
+  return GST_VIDEO_DECODER_CLASS (parent_class)->sink_event (decoder, event);
+}
+
 /* Called during object destruction process */
 static void
 gst_qcodec2_vdec_finalize (GObject * object)
@@ -1930,6 +2070,8 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
       GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_decide_allocation);
   video_decoder_class->src_event =
       GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_src_event);
+  video_decoder_class->sink_event =
+      GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_sink_event);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "Codec2 video decoder", "Decoder/Video",
@@ -1951,8 +2093,8 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->cb.data_copy_func = NULL;
   dec->cb.data_copy_func_param = NULL;
   dec->deinterlace = DEFAULT_DEINTERLACE;
-  dec->delay_start = FALSE;
   dec->use_external_buf = FALSE;
+  dec->is_flushing = FALSE;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);

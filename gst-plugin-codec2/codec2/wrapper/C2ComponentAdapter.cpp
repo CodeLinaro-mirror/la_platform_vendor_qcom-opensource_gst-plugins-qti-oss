@@ -54,7 +54,6 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
  * If count of pending works are more than 6, it causes queue overflow issue.
  */
 #define MAX_PENDING_WORK 6
-#define GBM_BO_USAGE_NV12_512_QTI 0x40000000
 
 using namespace std::chrono_literals;
 
@@ -237,15 +236,18 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 
         std::shared_ptr<C2Buffer> buf;
         c2_status_t err = C2_OK;
-        C2MemoryUsage usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        C2MemoryUsage c2Usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
         if (buffer->secure) {
-            usage = { C2MemoryUsage::READ_PROTECTED, 0 };
+            c2Usage = { C2MemoryUsage::READ_PROTECTED, 0 };
         }
 
         if (buffer->pool_type == BUFFER_POOL_BASIC_LINEAR) {
-            allocSize = ALIGN(frameSize, 4096);
-            err = mLinearPool->fetchLinearBlock(allocSize, usage, &linear_block);
-            if (err != C2_OK || linear_block == nullptr) {
+            /* With linear buffer recycling feature added, the 1MB allocation
+             * size alignment could get nearly optimal balance of dec input
+             * buffer count 7~9 and total buffer size in buffer pool. */
+            allocSize = GST_ROUND_UP_N(frameSize, 1024 * 1024);
+            err = mLinearPool->fetchLinearBlock(allocSize, c2Usage, &linear_block);
+            if (err != C2_OK || !linear_block) {
                 LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
                 return C2_NO_MEMORY;
             }
@@ -297,25 +299,26 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
             linear_block->mSize = frameSize;
             buf = createLinearBuffer(linear_block);
         } else if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
+            uint32_t gbmUsage = 0;
             if (mGraphicPool) {
                 if (buffer->format == GST_VIDEO_FORMAT_NV12) {
                     if (buffer->ubwc_flag) {
                         LOG_MESSAGE("NV12: usage add UBWC");
-                        usage = {
-                            C2MemoryUsage::CPU_READ | GBM_BO_USAGE_UBWC_ALIGNED_QTI,
-                            C2MemoryUsage::CPU_WRITE
-                        };
+                        gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                     } else if (buffer->heic_flag) {
                         LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                        usage = {
-                            C2MemoryUsage::CPU_READ | GBM_BO_USAGE_NV12_512_QTI,
-                            C2MemoryUsage::CPU_WRITE
-                        };
+                        gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
                     }
                 }
+                C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
 
                 err = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
-                    gst_to_c2_gbmformat(buffer->format), usage, &graphic_block);
+                    gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphic_block);
+                if (C2_OK != err || !graphic_block) {
+                    LOG_ERROR("fetchGraphicBlock failed: %d", err);
+                    return C2_NO_MEMORY;
+                }
+
                 C2GraphicView view(graphic_block->map().get());
                 if (view.error() != C2_OK) {
                     LOG_ERROR("C2GraphicBlock::map failed: %d", view.error());
@@ -330,13 +333,13 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                 }
 
                 buf = createGraphicBuffer(graphic_block);
-                if (err != C2_OK || buf == nullptr) {
-                    LOG_ERROR("Graphic pool failed to allocate input buffer");
-                    return C2_NO_MEMORY;
-                }
             }
         }
 
+        if (!buf) {
+            LOG_ERROR("failed to allocate input C2Buffer");
+            return C2_NO_MEMORY;
+        }
         *c2Buf = buf;
     }
 
@@ -482,19 +485,22 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
 
     if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
         std::shared_ptr<C2GraphicBlock> graphicBlock = nullptr;
-        C2MemoryUsage usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        C2MemoryUsage c2Usage = { C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE };
+        uint32_t gbmUsage = 0;
 
         if (mGraphicPool) {
             if (buffer->ubwc_flag) {
-                usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_UBWC_ALIGNED_QTI,
-                    C2MemoryUsage::CPU_WRITE };
+                gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
+                LOG_MESSAGE("NV12: usage add UBWC ALIGNED QTI");
             } else if (buffer->heic_flag) {
+                gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                usage = { C2MemoryUsage::CPU_READ | GBM_BO_USAGE_NV12_512_QTI, C2MemoryUsage::CPU_WRITE };
             }
 
+            C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
+
             ret = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
-                gst_to_c2_gbmformat(buffer->format), usage, &graphicBlock);
+                gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphicBlock);
 
             if (ret != C2_OK || graphicBlock == nullptr) {
                 LOG_ERROR("Graphic pool failed to allocate input buffer");
@@ -513,23 +519,18 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     buffer->fd = fd;
 
                     guint32 stride = 0;
+                    guint32 width = 0;
                     guint32 height = 0;
                     guint32 format = 0;
                     guint64 usage = 0;
 
-                    _UnwrapNativeCodec2GBMMetadata(handle, nullptr,
+                    _UnwrapNativeCodec2GBMMetadata(handle, &width,
                         &height, &format, &usage, &stride, &size, nullptr);
                     buffer->capacity = size;
-                    uint32_t y_scanlines = VENUS_Y_SCANLINES(
-                        gbmformat_to_colorformat(format, usage), height);
-                    buffer->stride[0] = buffer->stride[1] = stride;
-                    buffer->offset[0] = 0;
-                    buffer->offset[1] = stride * y_scanlines;
+                    setBufLayout(buffer, format, usage, width, height, INTERLACE_MODE_PROGRESSIVE);
 
-                    LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d,"
-                                " stride %u, offset %" G_GSIZE_FORMAT,
-                        fd, buffer->capacity, buffer->ubwc_flag,
-                        stride, buffer->offset[1]);
+                    LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d, stride %u, offset %" G_GSIZE_FORMAT,
+                        fd, buffer->capacity, buffer->ubwc_flag, stride, buffer->offset[1]);
                 }
             }
         } else {
@@ -746,17 +747,17 @@ c2_status_t C2ComponentAdapter::release()
 
 C2ComponentInterfaceAdapter* C2ComponentAdapter::intf()
 {
-
-    LOG_MESSAGE("Component(%p) interface created", this);
-
-    if (mComp) {
+    if (mIntf) {
+        LOG_MESSAGE("Component(%p) interface already created %p", this, mIntf.get());
+    } else if (mComp) {
         std::shared_ptr<C2ComponentInterface> compIntf = nullptr;
 
         compIntf = mComp->intf();
         mIntf = std::shared_ptr<C2ComponentInterfaceAdapter>(new C2ComponentInterfaceAdapter(compIntf));
+        LOG_MESSAGE("Component(%p) interface created %p", this, mIntf.get());
     }
 
-    return (mIntf == NULL) ? NULL : mIntf.get();
+    return mIntf ? mIntf.get() : NULL;
 }
 
 c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType)
@@ -909,7 +910,10 @@ void C2ComponentAdapter::handleWorkDone(
             case C2PortActualDelayTuning::CORE_INDEX: {
                 if (param->forOutput()) {
                     C2PortActualDelayTuning::output outputDelay;
-                    if (outputDelay.updateFrom(*param)) {
+                    C2String name = intf()->getName();
+                    bool isDecoder = name.find("decoder") != std::string::npos;
+                    LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
+                    if (isDecoder && outputDelay.updateFrom(*param)) {
                         if (mC2AllocatorGBM) {
                             LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu",
                                 outputDelay.value, mGraphicPool->getLocalId());
@@ -942,8 +946,7 @@ void C2ComponentAdapter::handleWorkDone(
             // Only hold the C2 buffer in case below:
             // 1. all encoder use cases
             // 2. internal buffer pool mode for decoder output
-            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC))
-            {
+            if (buffer->data().type() == C2BufferData::LINEAR || !isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                 std::unique_lock<std::mutex> lck(mLockOut);
                 mOutPendingBuffer[bufferIdx] = buffer;
             }
@@ -958,6 +961,20 @@ void C2ComponentAdapter::handleWorkDone(
                             "output frames, or codec config update event",
                     this);
                 continue;
+            } else if (outputFrameFlag & C2FrameData::FLAG_DROP_FRAME
+                || outputFrameFlag & C2FrameData::FLAG_DISCARD_FRAME) {
+                /* When an input is dropped, output Buffer is not produced.
+                 * To ensure the work gets evicted with an empty output so as
+                 * to push it downstream against frame neither being finished
+                 * nor upstream buffer being finalized.
+                 * Most likely in superframe case.
+                 */
+                bufferIdx = work->input.ordinal.frameIndex.peeku();
+                timestamp = work->input.ordinal.timestamp.peeku();
+
+                LOG_MESSAGE("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
+                    this, bufferIdx, timestamp);
+                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
             } else {
                 LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
@@ -1093,7 +1110,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     bool need_release = false;
     C2Handle* linearHandle = nullptr;
 
-    uint32_t alignSize = ALIGN(size, 4096);
+    uint32_t alignSize = GST_ROUND_UP_N(size, 4096);
     /* dup the external buffer fd to decouple decoder and upstream element, and the
      * input external buffer fd should be closed by upstream element after use, dup_fd
      * will be closed in the destructor of C2AllocationIon::Impl after passing to it */

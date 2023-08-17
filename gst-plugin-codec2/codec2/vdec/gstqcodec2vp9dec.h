@@ -59,7 +59,6 @@ typedef struct _GstQcodec2VP9DecClass GstQcodec2VP9DecClass;
 struct _GstQcodec2VP9Dec
 {
   GstQcodec2Vdec parent;
-  gboolean check_vp9_10bit;
 };
 
 struct _GstQcodec2VP9DecClass

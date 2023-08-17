@@ -110,6 +110,11 @@ gst_vesdeliver_allocator_new (AllocatorParameter * param)
       allocator, allocator->param.buf_recycle ? "enabled" : "disabled",
       allocator->param.secure_mode);
 
+  if (allocator->param.secure_mode == LEND_DMABUF
+      && allocator->param.buf_contiguous) {
+    GST_INFO_OBJECT (allocator,
+        "Physical contiguous memory will be allocated in lend dmabuf mode");
+  }
   return GST_ALLOCATOR_CAST (allocator);
 }
 
@@ -217,6 +222,75 @@ _acquire_buffer (GstAllocator * allocator, gsize alloc_size)
   return mem;
 }
 
+static gint
+_buf_size_cmp_func (gconstpointer a, gconstpointer b)
+{
+  BitstreamBuffer *buf_a = (BitstreamBuffer *) a;
+  BitstreamBuffer *buf_b = (BitstreamBuffer *) b;
+
+  return buf_a->size - buf_b->size;
+}
+
+static void
+_try_remove_buffer_from_list (GstAllocator * allocator)
+{
+  GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (allocator);
+  BitstreamBuffer *buf = NULL;
+  GSList *iter = NULL;
+  gint idx = 0;
+
+  for (iter = alloc->buffer_list; iter; iter = iter->next, idx++) {
+    buf = (BitstreamBuffer *) iter->data;
+    if (buf && (buf->used == FALSE)) {
+      GST_INFO_OBJECT (alloc, "Find the min unused buffer at index %d", idx);
+      break;
+    }
+  }
+  // will not remove the last max buffer
+  if (iter != NULL && iter->next != NULL && buf) {
+    GST_INFO_OBJECT (alloc,
+        "remove the min unused buffer with fd=%d size=%"
+        G_GSIZE_FORMAT " from the buffer list", buf->fd, buf->size);
+    alloc->buffer_list = g_slist_remove_link (alloc->buffer_list, iter);
+    _free_buffer (buf, allocator);
+    g_slist_free_1 (iter);
+  }
+}
+
+static void
+_insert_buffer_to_list (GstAllocator * allocator, GstMemory * mem, gint buf_fd,
+    gsize alloc_size)
+{
+  GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (allocator);
+  BitstreamBuffer *buf = g_new0 (BitstreamBuffer, 1);
+
+  if (buf) {
+    buf->mem = mem;
+    buf->fd = buf_fd;
+    buf->size = alloc_size;
+    buf->used = TRUE;
+    g_mutex_lock (&alloc->buf_lock);
+    if (g_slist_length (alloc->buffer_list) >= THRESHOLD_ALLOC_BUFFER_COUNT) {
+      // remove the min unused buffer from the buffer list
+      _try_remove_buffer_from_list (allocator);
+    }
+    if (alloc_size > alloc->max_alloc_buf_size) {
+      alloc->max_alloc_buf_size = alloc_size;
+      GST_INFO_OBJECT (alloc, "Update max_alloc_buf_size to %lu",
+          alloc->max_alloc_buf_size);
+    }
+    alloc->buffer_list =
+        g_slist_insert_sorted (alloc->buffer_list, buf, _buf_size_cmp_func);
+    g_mutex_unlock (&alloc->buf_lock);
+    GST_INFO_OBJECT (alloc,
+        "Add the buffer with fd=%d size=%" G_GSIZE_FORMAT
+        " to buffer list, list size=%u", buf->fd, buf->size,
+        g_slist_length (alloc->buffer_list));
+  } else {
+    GST_ERROR_OBJECT (alloc, "Failed to new BitstreamBuffer");
+  }
+}
+
 static GstMemory *
 _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
 {
@@ -227,19 +301,20 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
   gboolean is_secure_heap = (alloc->param.secure_mode == SECURE_COPY);
 
 #ifdef USE_DMAHEAP
+  const char *heap_name = (alloc->param.secure_mode == LEND_DMABUF
+      && alloc->param.buf_contiguous) ? "qcom,display" : "qcom,system-uncached";
   if (is_secure_heap) {
     buf_fd =
         alloc->alloc_fd (alloc->dmaheap_allocator, "system-secure", alloc_size,
         0, 0);
   } else {
     buf_fd =
-        alloc->alloc_fd (alloc->dmaheap_allocator, "qcom,system-uncached",
-        alloc_size, 0, 0);
+        alloc->alloc_fd (alloc->dmaheap_allocator, heap_name, alloc_size, 0, 0);
   }
 
   if (buf_fd < 0) {
     GST_ERROR ("failed to allocate buffer from DMA %s heap", is_secure_heap ?
-        "system-secure" : "system-uncached");
+        "system-secure" : heap_name);
     ret = GST_FLOW_ERROR;
   }
 #else
@@ -270,27 +345,8 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
           is_secure_heap ? "secure" : "normal", alloc_size, buf_fd);
 
       if (alloc->param.buf_recycle) {
-        /* save the buffer to list for recycle */
-        BitstreamBuffer *buf = g_new0 (BitstreamBuffer, 1);
-        if (buf) {
-          buf->mem = mem;
-          buf->fd = buf_fd;
-          buf->size = alloc_size;
-          buf->used = TRUE;
-          if (alloc_size > alloc->max_alloc_buf_size) {
-            alloc->max_alloc_buf_size = alloc_size;
-            GST_INFO_OBJECT (alloc, "Update max_alloc_buf_size to %lu",
-                alloc->max_alloc_buf_size);
-          }
-          g_mutex_lock (&alloc->buf_lock);
-          alloc->buffer_list = g_slist_append (alloc->buffer_list, buf);
-          g_mutex_unlock (&alloc->buf_lock);
-          GST_INFO_OBJECT (alloc,
-              "Add the buffer with fd=%d to buffer list, list size=%u", buf->fd,
-              g_slist_length (alloc->buffer_list));
-        } else {
-          GST_ERROR_OBJECT (alloc, "Failed to new BitstreamBuffer");
-        }
+        /* save the buffer to list for recycling */
+        _insert_buffer_to_list (allocator, mem, buf_fd, alloc_size);
       }
     }
   }

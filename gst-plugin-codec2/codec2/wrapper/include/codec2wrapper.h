@@ -108,8 +108,6 @@ enum color_fmts {
 extern "C" {
 #endif
 
-#define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))
-
 #define CONFIG_FUNCTION_KEY_PIXELFORMAT "pixelformat"
 #define CONFIG_FUNCTION_KEY_RESOLUTION "resolution"
 #define CONFIG_FUNCTION_KEY_BITRATE "bitrate"
@@ -215,6 +213,7 @@ typedef enum {
     EVENT_ERROR,
     EVENT_UPDATE_MAX_BUF_CNT,
     EVENT_ACQUIRE_EXT_BUF,
+    EVENT_DROP_FRAME,
 } EVENT_TYPE;
 
 typedef enum {
@@ -378,6 +377,7 @@ typedef struct {
     guint8* data;
     gint32 fd;
     gint32 meta_fd;
+    gint32 ext_fd;
     guint32 size;
     guint32 capacity; ///< Total allocation size
     guint64 timestamp;
@@ -530,10 +530,13 @@ typedef struct {
 
 typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 
+void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
+    uint32_t width, uint32_t height, uint32_t interlace_mode);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Component Store API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void* c2componentStore_create();
+void* c2componentStore_create(void);
 const gchar* c2componentStore_getName(void* const comp_store);
 gboolean c2componentStore_createComponent(void* const comp_store, const gchar* name, void** const component, comp_cb* cb);
 gboolean c2componentStore_createInterface(void* const comp_store, const gchar* name, void** const interface);

@@ -971,25 +971,31 @@ CodecCallback::~CodecCallback()
     LOG_MESSAGE("CodecCallback(%p) destroyed", this);
 }
 
-static uint32_t getValidBufSize(uint32_t format, uint64_t usage, uint32_t width,
-    uint32_t height, uint32_t interlace_mode)
+// set buffer's layout information
+// 1. set buffer valid size
+// 2. set buffer stride and offset
+void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
+    uint32_t width, uint32_t height, uint32_t interlace_mode)
 {
-    uint32_t validBufSize = 0;
+    uint32_t validDataSize = 0;
     uint32_t color_fmt = 0;
     uint32_t y_stride, uv_stride, y_sclines, uv_sclines;
+    uint32_t y_meta_plane, y_ubwc_plane, y_meta_stride, y_meta_scanlines;
     const char* color_fmt_str = "NULL";
+    uint32_t offset[2] = { 0 };
+    uint32_t stride[2] = { 0 };
 
-    if (format == GBM_FORMAT_NV12 && (usage & GBM_BO_USAGE_UBWC_ALIGNED_QTI)) {
+    if (!buf) {
+        LOG_ERROR("invalid buffer");
+        return;
+    }
+
+    if (format == GBM_FORMAT_NV12 && (gbm_usage & GBM_BO_USAGE_UBWC_ALIGNED_QTI)) {
         color_fmt = COLOR_FMT_NV12_UBWC;
-        if (interlace_mode != INTERLACE_MODE_PROGRESSIVE) {
-            validBufSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 1);
-            LOG_DEBUG("output format is NV12_UBWC interlaced");
-        } else {
-            validBufSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 0);
-        }
+        color_fmt_str = "NV12_UBWC";
     } else if (format == GBM_FORMAT_YCbCr_420_TP10_UBWC) {
         color_fmt = COLOR_FMT_NV12_BPP10_UBWC;
-        validBufSize = VENUS_BUFFER_SIZE(color_fmt, width, height);
+        color_fmt_str = "TP10";
     } else {
         if (format == GBM_FORMAT_NV12) {
             color_fmt = COLOR_FMT_NV12;
@@ -998,21 +1004,60 @@ static uint32_t getValidBufSize(uint32_t format, uint64_t usage, uint32_t width,
             color_fmt = COLOR_FMT_P010;
             color_fmt_str = "P010";
         } else {
-            LOG_ERROR("format %u is not implemented", format);
-            goto done;
+            LOG_ERROR("format 0x%x is not implemented", format);
+            return;
         }
-
-        y_stride = VENUS_Y_STRIDE(color_fmt, width);
-        uv_stride = VENUS_UV_STRIDE(color_fmt, width);
-        y_sclines = VENUS_Y_SCANLINES(color_fmt, height);
-        uv_sclines = VENUS_UV_SCANLINES(color_fmt, height);
-        validBufSize = y_stride * y_sclines + uv_stride * uv_sclines;
-        LOG_DEBUG("format:%s Y stride:%u Y scanline:%u valid size:%u", color_fmt_str,
-            y_stride, y_sclines, validBufSize);
     }
 
-done:
-    return validBufSize;
+    y_stride = VENUS_Y_STRIDE(color_fmt, width);
+    uv_stride = VENUS_UV_STRIDE(color_fmt, width);
+    y_sclines = VENUS_Y_SCANLINES(color_fmt, height);
+    uv_sclines = VENUS_UV_SCANLINES(color_fmt, height);
+
+    switch (color_fmt) {
+    case COLOR_FMT_NV12:
+    case COLOR_FMT_P010:
+        validDataSize = y_stride * y_sclines + uv_stride * uv_sclines;
+        offset[1] = y_stride * y_sclines;
+        break;
+    case COLOR_FMT_NV12_UBWC:
+        y_meta_stride = VENUS_Y_META_STRIDE(color_fmt, width);
+        y_meta_scanlines = VENUS_Y_META_SCANLINES(color_fmt, height);
+        y_meta_plane = GST_ROUND_UP_N(y_meta_stride * y_meta_scanlines, 4096);
+        y_ubwc_plane = GST_ROUND_UP_N(y_stride * y_sclines, 4096);
+
+        if (interlace_mode != INTERLACE_MODE_PROGRESSIVE) {
+            validDataSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 1);
+            offset[1] = VENUS_BUFFER_SIZE(color_fmt, width, height) / 2;
+            LOG_DEBUG("output format is NV12_UBWC interlaced");
+        } else {
+            validDataSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 0);
+            offset[1] = y_meta_plane + y_ubwc_plane;
+        }
+        break;
+    case COLOR_FMT_NV12_BPP10_UBWC:
+        validDataSize = VENUS_BUFFER_SIZE(color_fmt, width, height);
+        y_meta_stride = VENUS_Y_META_STRIDE(color_fmt, width);
+        y_meta_scanlines = VENUS_Y_META_SCANLINES(color_fmt, height);
+        y_meta_plane = GST_ROUND_UP_N(y_meta_stride * y_meta_scanlines, 4096);
+        y_ubwc_plane = GST_ROUND_UP_N(y_stride * y_sclines, 4096);
+        offset[1] = y_meta_plane + y_ubwc_plane;
+        break;
+    default:
+        LOG_ERROR("color format 0x%x is not implemented", color_fmt);
+        break;
+    }
+
+    stride[0] = y_stride;
+    stride[1] = uv_stride;
+    buf->size = validDataSize;
+    for (int i = 0; i < 2; i++) {
+        buf->offset[i] = offset[i];
+        buf->stride[i] = stride[i];
+    }
+
+    LOG_DEBUG("format:%s Y stride:%u Y scanline:%u UV stride:%u  offset[0:1]:[%d:%d] valid size:%u",
+        color_fmt_str, y_stride, y_sclines, uv_stride, offset[0], offset[1], validDataSize);
 }
 
 void CodecCallback::onOutputBufferAvailable(
@@ -1048,6 +1093,7 @@ void CodecCallback::onOutputBufferAvailable(
             }
             outBuf.fd = handle->data[0];
             outBuf.meta_fd = handle->data[1];
+            outBuf.ext_fd = handle->data[2];
             outBuf.c2Buffer = static_cast<void*>(buffer.get());
             guint32 stride = 0;
             guint64 usage = 0;
@@ -1056,10 +1102,14 @@ void CodecCallback::onOutputBufferAvailable(
             guint64 bo = 0;
             guint32 width = 0;
             guint32 height = 0;
+            guint32 gbmUsage = 0;
             C2Rect crop;
             const C2GraphicView view = graphic_block.map().get();
 
             _UnwrapNativeCodec2GBMMetadata(handle, &width, &height, &format, &usage, &stride, &size, &bo);
+
+            C2MemoryUsageGBM c2GbmUsage(usage);
+            gbmUsage = c2GbmUsage.gbmUsage();
 
             /* The actual value of bo here is a pointer to struct gbm_bo.
              * To avoid including GBM header, use void* instead. */
@@ -1068,7 +1118,7 @@ void CodecCallback::onOutputBufferAvailable(
             LOG_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
             outBuf.width = crop.width;
             outBuf.height = crop.height;
-            outBuf.size = getValidBufSize(format, usage, width, height, interlace);
+            setBufLayout(&outBuf, format, gbmUsage, width, height, interlace);
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
@@ -1098,6 +1148,13 @@ void CodecCallback::onOutputBufferAvailable(
             }
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
         }
+    } else if (flag & C2FrameData::FLAG_DROP_FRAME) {
+        outBuf.timestamp = timestamp;
+        outBuf.index = index;
+        outBuf.flag = toWrapperFlag(flag);
+        outBuf.interlaceMode = interlace;
+        LOG_MESSAGE("Mark drop frame index: %lu, pts: %lu", index, timestamp);
+        mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
     } else if (flag & C2FrameData::FLAG_END_OF_STREAM) {
         LOG_MESSAGE("Mark EOS buffer");
         outBuf.data = NULL;
