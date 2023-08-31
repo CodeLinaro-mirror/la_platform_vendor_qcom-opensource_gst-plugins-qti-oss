@@ -42,6 +42,7 @@ enum
   PROP_0,
   PROP_SECURE,
   PROP_BUF_RECYCLE,
+  PROP_BUF_CONTIGUOUS,
 };
 
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
@@ -127,6 +128,15 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class,
+      PROP_BUF_CONTIGUOUS,
+      g_param_spec_boolean ("buf-contiguous", "Buffer Contiguous",
+          "If enabled, will allocate physical contiguous DMA memory for bitstream buffer, "
+          "only work in lend dmabuf mode",
+          TRUE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gstbasetrans_class->transform = GST_DEBUG_FUNCPTR (gst_vesdeliver_transform);
   gstbasetrans_class->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_vesdeliver_prepare_output_buffer);
@@ -148,6 +158,7 @@ gst_vesdeliver_init (GstVesDeliver * vesdeliver)
 {
   vesdeliver->secure = SECURE_DISABLE;
   vesdeliver->buf_recycle = TRUE;
+  vesdeliver->buf_contiguous = TRUE;
   vesdeliver->allocator = NULL;
   vesdeliver->secure_handle = NULL;
 
@@ -272,6 +283,7 @@ gst_vesdeliver_start (GstBaseTransform * trans)
 
     param.secure_mode = vesdeliver->secure;
     param.buf_recycle = vesdeliver->buf_recycle;
+    param.buf_contiguous = vesdeliver->buf_contiguous;
 #ifdef USE_DMAHEAP
     param.vm_instance = vesdeliver->vm_instance;
     param.ReclaimDmabuf = vesdeliver->ReclaimDmabuf;
@@ -463,6 +475,9 @@ gst_vesdeliver_set_property (GObject * object, guint property_id,
     case PROP_BUF_RECYCLE:
       self->buf_recycle = g_value_get_boolean (value);
       break;
+    case PROP_BUF_CONTIGUOUS:
+      self->buf_contiguous = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -481,6 +496,9 @@ gst_vesdeliver_get_property (GObject * object, guint property_id,
       break;
     case PROP_BUF_RECYCLE:
       g_value_set_boolean (value, self->buf_recycle);
+      break;
+    case PROP_BUF_CONTIGUOUS:
+      g_value_set_boolean (value, self->buf_contiguous);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);

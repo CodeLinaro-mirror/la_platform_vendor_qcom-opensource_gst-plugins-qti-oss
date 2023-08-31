@@ -57,6 +57,7 @@ struct _AllocatorParameter
 {
   SECURE_MODE secure_mode;
   gboolean buf_recycle;
+  gboolean buf_contiguous;
 #ifdef USE_DMAHEAP
   VmMem *vm_instance;
   ReclaimDmabuf_Func ReclaimDmabuf;

@@ -67,6 +67,7 @@ struct _GstVesDeliver
   GstAllocator *allocator;
   SECURE_MODE secure;
   gboolean buf_recycle;
+  gboolean buf_contiguous;
   void *secure_handle;
   void *crypto_handle;
 #ifdef USE_DMAHEAP

@@ -151,6 +151,7 @@ struct _GstQcodec2Vdec
   guint acquired_external_buf;
   GMutex external_buf_lock;
   GCond external_buf_cond;
+  gboolean is_flushing;
 };
 
 /* Param function */
