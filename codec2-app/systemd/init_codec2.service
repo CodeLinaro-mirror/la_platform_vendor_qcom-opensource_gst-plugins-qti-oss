@@ -39,6 +39,8 @@ Group=codec2
 Type=oneshot
 Restart=no
 ExecStart=/usr/bin/codec2-caps
+CapabilityBoundingSet=CAP_SYS_RESOURCE
+AmbientCapabilities=CAP_SYS_RESOURCE
 
 [Install]
 WantedBy=basic.target
