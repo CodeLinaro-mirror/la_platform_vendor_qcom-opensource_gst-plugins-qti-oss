@@ -41,19 +41,13 @@
 // Set the default debug category.
 #define GST_CAT_DEFAULT gst_ml_module_debug
 
+#define GST_ML_SUB_MODULE_CAST(obj) ((GstMLSubModule*)(obj))
+
 // Layer index at which the object score resides.
 #define SCORE_IDX              4
 // Layer index from which the class labels begin.
 #define CLASSES_IDX            5
-// Non-maximum Suppression (NMS) threshold (50%).
-#define INTERSECTION_THRESHOLD 0.5F
 
-#define GST_ML_SUB_MODULE_CAST(obj) ((GstMLSubModule*)(obj))
-
-// Offset values for each of the 3 primary tensors needed for dequantization.
-static const gint32 p_qoffsets[3] = { 128, 128, 128 };
-// Scale values for each of the 3 primary tensors needed for dequantization.
-static const gfloat p_qscales[3] = { 0.181336, 0.158401, 0.146546 };
 // Bounding box weights for each of the 3 tensors used for normalization.
 static const gint32 weights[3][2] = { {8, 8}, {16, 16}, {32, 32} };
 // Bounding box gains for each of the 3 tensors used for normalization.
@@ -62,11 +56,6 @@ static const gint32 gains[3][3][2] = {
     { {30,  61}, {62,   45}, {59,  119} },
     { {116, 90}, {156, 198}, {373, 326} },
 };
-
-// Offset value for dequantizing the tensors with the 2nd set of caps.
-static const gint32 s_qoffset = 3;
-// Scale value for dequantizing the tensors with the 2nd set of caps.
-static const gfloat s_qscale = 0.005047998391091824;
 
 #define GST_ML_MODULE_CAPS \
     "neural-network/tensors, " \
@@ -82,130 +71,36 @@ static GstStaticCaps modulecaps = GST_STATIC_CAPS (GST_ML_MODULE_CAPS);
 typedef struct _GstMLSubModule GstMLSubModule;
 
 struct _GstMLSubModule {
-  // List of #GstCaps containing info on the supported ML tensors.
-  GPtrArray  *mlcaps;
-  // Stashed input ML frame caps containing info on the tensors.
-  GstCaps    *stgcaps;
+  // Configurated ML capabilities in structure format.
+  GstMLInfo  mlinfo;
 
   // List of prediction labels.
   GHashTable *labels;
   // Confidence threshold value.
   gfloat     threshold;
+
+  // Offset values for each of the tensors for dequantization of some tensors.
+  gdouble    qoffsets[GST_ML_MAX_TENSORS];
+  // Scale values for each of the tensors for dequantization of some tensors.
+  gdouble    qscales[GST_ML_MAX_TENSORS];
 };
-
-static inline void
-gst_ml_prediction_transform_dimensions (GstMLPrediction * prediction,
-    gint num, gint denum, guint width, guint height)
-{
-  gdouble coeficient = 0.0;
-
-  if (num > denum) {
-    gst_util_fraction_to_double (num, denum, &coeficient);
-
-    prediction->top /= width / coeficient;
-    prediction->bottom /= width / coeficient;
-    prediction->left /= width;
-    prediction->right /= width;
-
-    return;
-  } else if (num < denum) {
-    gst_util_fraction_to_double (denum, num, &coeficient);
-
-    prediction->top /= height;
-    prediction->bottom /= height;
-    prediction->left /= height / coeficient;
-    prediction->right /= height / coeficient;
-
-    return;
-  }
-
-  // There is no need for AR adjustments, just translate to relative coords.
-  prediction->top /= height;
-  prediction->bottom /= height;
-  prediction->left /= width;
-  prediction->right /= width;
-}
-
-static inline gdouble
-gst_ml_predictions_intersection_score (GstMLPrediction * l_prediction,
-    GstMLPrediction * r_prediction)
-{
-  gdouble width = 0, height = 0, intersection = 0, l_area = 0, r_area = 0;
-
-  // Figure out the width of the intersecting rectangle.
-  // 1st: Find out the X axis coordinate of left most Top-Right point.
-  width = MIN (l_prediction->right, r_prediction->right);
-  // 2nd: Find out the X axis coordinate of right most Top-Left point
-  // and substract from the previously found value.
-  width -= MAX (l_prediction->left, r_prediction->left);
-
-  // Negative width means that there is no overlapping.
-  if (width <= 0.0F) return 0.0F;
-
-  // Figure out the height of the intersecting rectangle.
-  // 1st: Find out the Y axis coordinate of bottom most Left-Top point.
-  height = MIN (l_prediction->bottom, r_prediction->bottom);
-  // 2nd: Find out the Y axis coordinate of top most Left-Bottom point
-  // and substract from the previously found value.
-  height -= MAX (l_prediction->top, r_prediction->top);
-
-  // Negative height means that there is no overlapping.
-  if (height <= 0.0F) return 0.0F;
-
-  // Calculate intersection area.
-  intersection = width * height;
-
-  // Calculate the are of the 2 objects.
-  l_area = (l_prediction->right - l_prediction->left) *
-      (l_prediction->bottom - l_prediction->top);
-  r_area = (r_prediction->right - r_prediction->left) *
-      (r_prediction->bottom - r_prediction->top);
-
-  // Intersection over Union score.
-  return intersection / (l_area + r_area - intersection);
-}
-
-static inline gint
-gst_ml_non_max_suppression (GstMLPrediction * l_prediction, GArray * predictions)
-{
-  gdouble score = 0.0;
-  guint idx = 0;
-
-  for (idx = 0; idx < predictions->len;  idx++) {
-    GstMLPrediction *r_prediction =
-        &(g_array_index (predictions, GstMLPrediction, idx));
-
-    score = gst_ml_predictions_intersection_score (l_prediction, r_prediction);
-
-    // If the score is below the threshold, continue with next list entry.
-    if (score <= INTERSECTION_THRESHOLD)
-      continue;
-
-    // If labels do not match, continue with next list entry.
-    if (g_strcmp0 (l_prediction->label, r_prediction->label) != 0)
-      continue;
-
-    // If confidence of current prediction is higher, remove the old entry.
-    if (l_prediction->confidence > r_prediction->confidence)
-      return idx;
-
-    // If confidence of current prediction is lower, don't add it to the list.
-    if (l_prediction->confidence <= r_prediction->confidence)
-      return -2;
-  }
-
-  // If this point is reached then add current prediction to the list;
-  return -1;
-}
 
 static void
 gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
-    GArray * predictions, GstMLFrame * mlframe, gint sar_n, gint sar_d)
+    GArray * predictions, GstMLFrame * mlframe)
 {
-  guint idx = 0, num = 0, anchor = 0, x = 0, y = 0, m = 0, id = 0;
-  guint n_layers = 0, n_anchors = 0, width = 0, height = 0;
+  GstProtectionMeta *pmeta = NULL;
+  guint idx = 0, num = 0, anchor = 0, n_anchors = 0, x = 0, y = 0, m = 0;
+  guint id = 0, n_layers = 0, width = 0, height = 0, in_width = 0, in_height = 0;
   gfloat confidence = 0.0, score = 0.0, threshold = 0.0, bbox[4] = { 0, };
-  gint nms = -1;
+  gint nms = -1, sar_n = 1, sar_d = 1;
+
+  // Extract the SAR (Source Aspect Ratio) and input tensor resolution.
+  if ((pmeta = gst_buffer_get_protection_meta (mlframe->buffer)) != NULL) {
+    gst_structure_get_fraction (pmeta->info, "source-aspect-ratio", &sar_n, &sar_d);
+    gst_structure_get_uint (pmeta->info, "input-tensor-width", &in_width);
+    gst_structure_get_uint (pmeta->info, "input-tensor-height", &in_height);
+  }
 
   // Confidence threshold represented as the exponent of sigmoid.
   threshold = log (submodule->threshold / (1 - submodule->threshold));
@@ -232,7 +127,8 @@ gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
 
           // Dequantize the object score.
           // Represented as an exponent 'x' in sigmoid function: 1 / (1 + exp(x)).
-          score = (data[num + SCORE_IDX] - p_qoffsets[idx]) * p_qscales[idx];
+          score = (data[num + SCORE_IDX] - submodule->qoffsets[idx]) *
+              submodule->qscales[idx];
 
           // Discard results below the minimum score threshold.
           if (score < threshold)
@@ -246,7 +142,8 @@ gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
             id = (data[m] > data[id]) ? m : id;
 
           // Dequantize the class confidence.
-          confidence = (data[id] - p_qoffsets[idx]) * p_qscales[idx];
+          confidence =
+              (data[id] - submodule->qoffsets[idx]) * submodule->qscales[idx];
 
           // Discard results below the minimum confidence threshold.
           if (confidence < threshold)
@@ -258,10 +155,14 @@ gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
           confidence *= 1 / (1 + expf (- score));
 
           // Dequantize the bounding box parameters.
-          bbox[0] = (data[num] - p_qoffsets[idx]) * p_qscales[idx];
-          bbox[1] = (data[num + 1] - p_qoffsets[idx]) * p_qscales[idx];
-          bbox[2] = (data[num + 2] - p_qoffsets[idx]) * p_qscales[idx];
-          bbox[3] = (data[num + 3] - p_qoffsets[idx]) * p_qscales[idx];
+          bbox[0] = (data[num] - submodule->qoffsets[idx]) *
+              submodule->qscales[idx];
+          bbox[1] = (data[num + 1] - submodule->qoffsets[idx]) *
+              submodule->qscales[idx];
+          bbox[2] = (data[num + 2] - submodule->qoffsets[idx]) *
+              submodule->qscales[idx];
+          bbox[3] = (data[num + 3] - submodule->qoffsets[idx]) *
+              submodule->qscales[idx];
 
           // Apply a sigmoid function in order to normalize the parameters.
           bbox[0] = 1 / (1 + expf (- bbox[0]));
@@ -282,7 +183,7 @@ gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
 
           // Adjust bounding box dimensions with extracted source aspect ratio.
           gst_ml_prediction_transform_dimensions (&prediction, sar_n, sar_d,
-              (width * weights[idx][0]), (height* weights[idx][1]));
+              in_width, in_height);
 
           // Discard results with out of region coordinates.
           if ((prediction.top > 1.0) || (prediction.left > 1.0) ||
@@ -318,13 +219,18 @@ gst_ml_module_parse_split_tensors (GstMLSubModule * submodule,
 
 static void
 gst_ml_module_parse_batch_tensors (GstMLSubModule * submodule,
-    GArray * predictions, GstMLFrame * mlframe, gint sar_n, gint sar_d)
+    GArray * predictions, GstMLFrame * mlframe)
 {
+  GstProtectionMeta *pmeta = NULL;
   GstLabel *label = NULL;
   guint8 *data = NULL;
   guint idx = 0, num = 0, m = 0, id = 0, n_layers = 0, n_rows = 0;
   gfloat confidence = 0.0, score = 0.0, bbox[4] = { 0, };
-  gint nms = -1;
+  gint nms = -1, sar_n = 1, sar_d = 1;
+
+  // Extract the SAR (Source Aspect Ratio).
+  if ((pmeta = gst_buffer_get_protection_meta (mlframe->buffer)) != NULL)
+    gst_structure_get_fraction (pmeta->info, "source-aspect-ratio", &sar_n, &sar_d);
 
   data = GST_ML_FRAME_BLOCK_DATA (mlframe, 0);
 
@@ -338,7 +244,8 @@ gst_ml_module_parse_batch_tensors (GstMLSubModule * submodule,
 
     // Dequantize the object score.
     // Represented as an exponent 'x' in sigmoid function: 1 / (1 + exp(x)).
-    score = (data[idx + SCORE_IDX] - s_qoffset) * s_qscale;
+    score = (data[idx + SCORE_IDX] - submodule->qoffsets[0]) *
+        submodule->qscales[0];
 
     // Discard results below the minimum score threshold.
     if (score < submodule->threshold)
@@ -352,7 +259,7 @@ gst_ml_module_parse_batch_tensors (GstMLSubModule * submodule,
       id = (data[m] > data[id]) ? m : id;
 
     // Dequantize the class confidence.
-    confidence = (data[id] - s_qoffset) * s_qscale;
+    confidence = (data[id] - submodule->qoffsets[0]) * submodule->qscales[0];
     // Normalize the end confidence with the object score value.
     confidence *= score;
 
@@ -361,10 +268,10 @@ gst_ml_module_parse_batch_tensors (GstMLSubModule * submodule,
       continue;
 
     // Dequantize the bounding box parameters.
-    bbox[0] = (data[idx] - s_qoffset) * s_qscale;
-    bbox[1] = (data[idx + 1] - s_qoffset) * s_qscale;
-    bbox[2] = (data[idx + 2] - s_qoffset) * s_qscale;
-    bbox[3] = (data[idx + 3] - s_qoffset) * s_qscale;
+    bbox[0] = (data[idx] - submodule->qoffsets[0]) * submodule->qscales[0];
+    bbox[1] = (data[idx + 1] - submodule->qoffsets[0]) * submodule->qscales[0];
+    bbox[2] = (data[idx + 2] - submodule->qoffsets[0]) * submodule->qscales[0];
+    bbox[3] = (data[idx + 3] - submodule->qoffsets[0]) * submodule->qscales[0];
 
     label = g_hash_table_lookup (submodule->labels,
         GUINT_TO_POINTER (id - (idx + CLASSES_IDX)));
@@ -402,23 +309,16 @@ gpointer
 gst_ml_module_open (void)
 {
   GstMLSubModule *submodule = NULL;
-  GstCaps *caps = NULL;
-  guint idx = 0, n_entries = 0;
+  guint idx = 0;
 
   submodule = g_slice_new0 (GstMLSubModule);
   g_return_val_if_fail (submodule != NULL, NULL);
 
-  // Fetch caps instance and parse it into separate #GstCaps.
-  caps = gst_static_caps_get (&modulecaps);
-  n_entries = gst_caps_get_size (caps);
-
-  submodule->mlcaps =
-      g_ptr_array_new_with_free_func ((GDestroyNotify) gst_caps_unref);
-
-  for (idx = 0; idx < n_entries; idx++)
-    g_ptr_array_add (submodule->mlcaps, gst_caps_copy_nth (caps, idx));
-
-  gst_caps_unref (caps);
+  // Initialize the quantization offsets and scales.
+  for (idx = 0; idx < GST_ML_MAX_TENSORS; idx++) {
+    submodule->qoffsets[idx] = 0.0;
+    submodule->qscales[idx] = 1.0;
+  }
 
   return (gpointer) submodule;
 }
@@ -431,14 +331,8 @@ gst_ml_module_close (gpointer instance)
   if (NULL == submodule)
     return;
 
-  if (submodule->stgcaps != NULL)
-    gst_caps_unref (submodule->stgcaps);
-
   if (submodule->labels != NULL)
     g_hash_table_destroy (submodule->labels);
-
-  if (submodule->mlcaps != NULL)
-    g_ptr_array_free (submodule->mlcaps, TRUE);
 
   g_slice_free (GstMLSubModule, submodule);
 }
@@ -461,6 +355,7 @@ gboolean
 gst_ml_module_configure (gpointer instance, GstStructure * settings)
 {
   GstMLSubModule *submodule = GST_ML_SUB_MODULE_CAST (instance);
+  GstCaps *caps = NULL, *mlcaps = NULL;
   const gchar *input = NULL;
   GValue list = G_VALUE_INIT;
   gdouble threshold = 0.0;
@@ -468,6 +363,30 @@ gst_ml_module_configure (gpointer instance, GstStructure * settings)
 
   g_return_val_if_fail (submodule != NULL, FALSE);
   g_return_val_if_fail (settings != NULL, FALSE);
+
+  if (!(success = gst_structure_has_field (settings, GST_ML_MODULE_OPT_CAPS))) {
+    GST_ERROR ("Settings stucture does not contain configuration caps!");
+    goto cleanup;
+  }
+
+  // Fetch the configuration capabilities.
+  gst_structure_get (settings, GST_ML_MODULE_OPT_CAPS, GST_TYPE_CAPS, &caps, NULL);
+  // Get the set of supported capabilities.
+  mlcaps = gst_ml_module_caps ();
+
+  // Make sure that the configuration capabilities are fixated and supported.
+  if (!(success = gst_caps_is_fixed (caps))) {
+    GST_ERROR ("Configuration caps are not fixated!");
+    goto cleanup;
+  } else if (!(success = gst_caps_can_intersect (caps, mlcaps))) {
+    GST_ERROR ("Configuration caps are not supported!");
+    goto cleanup;
+  }
+
+  if (!(success = gst_ml_info_from_caps (&(submodule->mlinfo), caps))) {
+    GST_ERROR ("Failed to get ML info from confguration caps!");
+    goto cleanup;
+  }
 
   input = gst_structure_get_string (settings, GST_ML_MODULE_OPT_LABELS);
 
@@ -490,7 +409,54 @@ gst_ml_module_configure (gpointer instance, GstStructure * settings)
   gst_structure_get_double (settings, GST_ML_MODULE_OPT_THRESHOLD, &threshold);
   submodule->threshold = threshold / 100.0;
 
+  if (GST_ML_INFO_TYPE (&(submodule->mlinfo)) == GST_ML_TYPE_UINT8) {
+    GstStructure *constants = NULL;
+    const GValue *qoffsets = NULL, *qscales = NULL;
+    guint idx = 0, n_tensors = 0;
+
+    success = gst_structure_has_field (settings, GST_ML_MODULE_OPT_CONSTANTS);
+    if (!success) {
+      GST_ERROR ("Settings stucture does not contain constants value!");
+      goto cleanup;
+    }
+
+    constants = GST_STRUCTURE (g_value_get_boxed (
+        gst_structure_get_value (settings, GST_ML_MODULE_OPT_CONSTANTS)));
+
+    if (!(success = gst_structure_has_field (constants, "q-offsets"))) {
+      GST_ERROR ("Missing quantization offsets coefficients!");
+      goto cleanup;
+    } else if (!(success = gst_structure_has_field (constants, "q-scales"))) {
+      GST_ERROR ("Missing quantization scales coefficients!");
+      goto cleanup;
+    }
+
+    qoffsets = gst_structure_get_value (constants, "q-offsets");
+    qscales = gst_structure_get_value (constants, "q-scales");
+    n_tensors = GST_ML_INFO_N_TENSORS (&(submodule->mlinfo));
+
+    if (!(success = (gst_value_array_get_size (qoffsets) == n_tensors))) {
+      GST_ERROR ("Expecting %u dequantization offsets entries but received "
+          "only %u!", n_tensors, gst_value_array_get_size (qoffsets));
+      goto cleanup;
+    } else if (!(success = (gst_value_array_get_size (qscales) == n_tensors))) {
+      GST_ERROR ("Expecting %u dequantization scales entries but received "
+          "only %u!", n_tensors, gst_value_array_get_size (qscales));
+      goto cleanup;
+    }
+
+    for (idx = 0; idx < n_tensors; idx++) {
+      submodule->qoffsets[idx] =
+          g_value_get_double (gst_value_array_get_value (qoffsets, idx));
+      submodule->qscales[idx] =
+          g_value_get_double (gst_value_array_get_value (qscales, idx));
+    }
+  }
+
 cleanup:
+  if (caps != NULL)
+    gst_caps_unref (caps);
+
   g_value_unset (&list);
   gst_structure_free (settings);
 
@@ -502,31 +468,21 @@ gst_ml_module_process (gpointer instance, GstMLFrame * mlframe, gpointer output)
 {
   GstMLSubModule *submodule = GST_ML_SUB_MODULE_CAST (instance);
   GArray *predictions = (GArray *) output;
-  GstProtectionMeta *pmeta = NULL;
-  GstCaps *caps = NULL;
-  gint sar_n = 1, sar_d = 1;
 
   g_return_val_if_fail (submodule != NULL, FALSE);
   g_return_val_if_fail (mlframe != NULL, FALSE);
   g_return_val_if_fail (predictions != NULL, FALSE);
 
-  if (submodule->stgcaps == NULL)
-    submodule->stgcaps = gst_ml_info_to_caps (&(mlframe)->info);
+  if (!gst_ml_info_is_equal (&(mlframe->info), &(submodule->mlinfo))) {
+    GST_ERROR ("ML frame with unsupported layout!");
+    return FALSE;
+  }
 
-  // Extract the SAR (Source Aspect Ratio).
-  if ((pmeta = gst_buffer_get_protection_meta (mlframe->buffer)) != NULL)
-    gst_structure_get_fraction (pmeta->info, "source-aspect-ratio", &sar_n, &sar_d);
+  if (GST_ML_INFO_N_TENSORS (&(submodule->mlinfo)) == 3)
+    gst_ml_module_parse_split_tensors (submodule, predictions, mlframe);
 
-  // Depending on the frame tensors differen parsing functions will be called.
-  caps = GST_CAPS_CAST (g_ptr_array_index (submodule->mlcaps, 0));
-
-  if (gst_caps_can_intersect (submodule->stgcaps, caps))
-    gst_ml_module_parse_split_tensors (submodule, predictions, mlframe, sar_n, sar_d);
-
-  caps = GST_CAPS_CAST (g_ptr_array_index (submodule->mlcaps, 1));
-
-  if (gst_caps_can_intersect (submodule->stgcaps, caps))
-    gst_ml_module_parse_batch_tensors (submodule, predictions, mlframe, sar_n, sar_d);
+  if (GST_ML_INFO_N_TENSORS (&(submodule->mlinfo)) == 1)
+    gst_ml_module_parse_batch_tensors (submodule, predictions, mlframe);
 
   return TRUE;
 }

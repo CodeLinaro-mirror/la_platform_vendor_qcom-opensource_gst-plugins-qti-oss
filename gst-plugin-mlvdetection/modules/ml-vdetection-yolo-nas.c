@@ -41,9 +41,6 @@
 // Set the default debug category.
 #define GST_CAT_DEFAULT gst_ml_module_debug
 
-// Non-maximum Suppression (NMS) threshold (50%).
-#define INTERSECTION_THRESHOLD 0.5F
-
 #define GFLOAT_PTR_CAST(data)       ((gfloat*) data)
 #define GST_ML_SUB_MODULE_CAST(obj) ((GstMLSubModule*)(obj))
 
@@ -62,114 +59,14 @@ static GstStaticCaps modulecaps = GST_STATIC_CAPS (GST_ML_MODULE_CAPS);
 typedef struct _GstMLSubModule GstMLSubModule;
 
 struct _GstMLSubModule {
+  // Configurated ML capabilities in structure format.
+  GstMLInfo  mlinfo;
+
   // List of prediction labels.
   GHashTable *labels;
   // Confidence threshold value.
   gfloat     threshold;
 };
-
-static inline void
-gst_ml_prediction_transform_dimensions (GstMLPrediction * prediction,
-    gint num, gint denum, guint width, guint height)
-{
-  gdouble coeficient = 0.0;
-
-  if (num > denum) {
-    gst_util_fraction_to_double (num, denum, &coeficient);
-
-    prediction->top /= width / coeficient;
-    prediction->bottom /= width / coeficient;
-    prediction->left /= width;
-    prediction->right /= width;
-    return;
-  } else if (num < denum) {
-    gst_util_fraction_to_double (denum, num, &coeficient);
-
-    prediction->top /= height;
-    prediction->bottom /= height;
-    prediction->left /= height / coeficient;
-    prediction->right /= height / coeficient;
-    return;
-  }
-
-  // There is no need for AR adjustments, just translate to relative coords.
-  prediction->top /= height;
-  prediction->bottom /= height;
-  prediction->left /= width;
-  prediction->right /= width;
-}
-
-static inline gdouble
-gst_ml_predictions_intersection_score (GstMLPrediction * l_prediction,
-    GstMLPrediction * r_prediction)
-{
-  gdouble width = 0, height = 0, intersection = 0, l_area = 0, r_area = 0;
-
-  // Figure out the width of the intersecting rectangle.
-  // 1st: Find out the X axis coordinate of left most Top-Right point.
-  width = MIN (l_prediction->right, r_prediction->right);
-  // 2nd: Find out the X axis coordinate of right most Top-Left point
-  // and substract from the previously found value.
-  width -= MAX (l_prediction->left, r_prediction->left);
-
-  // Negative width means that there is no overlapping.
-  if (width <= 0.0F) return 0.0F;
-
-  // Figure out the height of the intersecting rectangle.
-  // 1st: Find out the Y axis coordinate of bottom most Left-Top point.
-  height = MIN (l_prediction->bottom, r_prediction->bottom);
-  // 2nd: Find out the Y axis coordinate of top most Left-Bottom point
-  // and substract from the previously found value.
-  height -= MAX (l_prediction->top, r_prediction->top);
-
-  // Negative height means that there is no overlapping.
-  if (height <= 0.0F) return 0.0F;
-
-  // Calculate intersection area.
-  intersection = width * height;
-
-  // Calculate the are of the 2 objects.
-  l_area = (l_prediction->right - l_prediction->left) *
-      (l_prediction->bottom - l_prediction->top);
-  r_area = (r_prediction->right - r_prediction->left) *
-      (r_prediction->bottom - r_prediction->top);
-
-  // Intersection over Union score.
-  return intersection / (l_area + r_area - intersection);
-}
-
-static inline gint
-gst_ml_non_max_suppression (GstMLPrediction * l_prediction, GArray * predictions)
-{
-  gdouble score = 0.0;
-  guint idx = 0;
-
-  for (idx = 0; idx < predictions->len;  idx++) {
-    GstMLPrediction *r_prediction =
-        &(g_array_index (predictions, GstMLPrediction, idx));
-
-    score = gst_ml_predictions_intersection_score (l_prediction, r_prediction);
-
-    // If the score is below the threshold, continue with next list entry.
-    if (score <= INTERSECTION_THRESHOLD)
-      continue;
-
-    // If labels do not match, continue with next list entry.
-    if (g_strcmp0 (l_prediction->label, r_prediction->label) != 0)
-      continue;
-
-    // If confidence of current prediction is higher, remove the old entry.
-    if (l_prediction->confidence > r_prediction->confidence)
-      return idx;
-
-    // If confidence of current prediction is lower, don't add it to the list.
-    if (l_prediction->confidence <= r_prediction->confidence)
-      return -2;
-  }
-
-  // If this point is reached then add current prediction to the list;
-  return -1;
-}
 
 gpointer
 gst_ml_module_open (void)
@@ -214,6 +111,7 @@ gboolean
 gst_ml_module_configure (gpointer instance, GstStructure * settings)
 {
   GstMLSubModule *submodule = GST_ML_SUB_MODULE_CAST (instance);
+  GstCaps *caps = NULL, *mlcaps = NULL;
   const gchar *input = NULL;
   GValue list = G_VALUE_INIT;
   gdouble threshold = 0.0;
@@ -221,6 +119,30 @@ gst_ml_module_configure (gpointer instance, GstStructure * settings)
 
   g_return_val_if_fail (submodule != NULL, FALSE);
   g_return_val_if_fail (settings != NULL, FALSE);
+
+  if (!(success = gst_structure_has_field (settings, GST_ML_MODULE_OPT_CAPS))) {
+    GST_ERROR ("Settings stucture does not contain configuration caps!");
+    goto cleanup;
+  }
+
+  // Fetch the configuration capabilities.
+  gst_structure_get (settings, GST_ML_MODULE_OPT_CAPS, GST_TYPE_CAPS, &caps, NULL);
+  // Get the set of supported capabilities.
+  mlcaps = gst_ml_module_caps ();
+
+  // Make sure that the configuration capabilities are fixated and supported.
+  if (!(success = gst_caps_is_fixed (caps))) {
+    GST_ERROR ("Configuration caps are not fixated!");
+    goto cleanup;
+  } else if (!(success = gst_caps_can_intersect (caps, mlcaps))) {
+    GST_ERROR ("Configuration caps are not supported!");
+    goto cleanup;
+  }
+
+  if (!(success = gst_ml_info_from_caps (&(submodule->mlinfo), caps))) {
+    GST_ERROR ("Failed to get ML info from confguration caps!");
+    goto cleanup;
+  }
 
   input = gst_structure_get_string (settings, GST_ML_MODULE_OPT_LABELS);
 
@@ -244,6 +166,9 @@ gst_ml_module_configure (gpointer instance, GstStructure * settings)
   submodule->threshold = threshold / 100.0;
 
 cleanup:
+  if (caps != NULL)
+    gst_caps_unref (caps);
+
   g_value_unset (&list);
   gst_structure_free (settings);
 
@@ -265,6 +190,11 @@ gst_ml_module_process (gpointer instance, GstMLFrame * mlframe, gpointer output)
   g_return_val_if_fail (mlframe != NULL, FALSE);
   g_return_val_if_fail (predictions != NULL, FALSE);
 
+  if (!gst_ml_info_is_equal (&(mlframe->info), &(submodule->mlinfo))) {
+    GST_ERROR ("ML frame with unsupported layout!");
+    return FALSE;
+  }
+
   // Extract the SAR (Source Aspect Ratio).
   if ((pmeta = gst_buffer_get_protection_meta (mlframe->buffer)) != NULL) {
     gst_structure_get_fraction (pmeta->info, "source-aspect-ratio", &sar_n, &sar_d);
@@ -272,32 +202,21 @@ gst_ml_module_process (gpointer instance, GstMLFrame * mlframe, gpointer output)
     gst_structure_get_uint (pmeta->info, "input-tensor-width", &in_width);
   }
 
-  if (!in_height || !in_width) {
-    GST_ERROR ("Unsupported input size[%ux%u]!", in_height, in_width);
-    return FALSE;
-  }
-
   // The 2nd dimension represents the number of rows.
   n_rows = GST_ML_FRAME_DIM (mlframe, 0, 1);
 
-  if (GST_ML_FRAME_N_BLOCKS (mlframe) == 2) {
-    if (GST_ML_FRAME_DIM (mlframe, 0, 2) == 4) {
-      //Tensor dimensions looks like: <1, 8400, 4>, <1, 8400, 80>
-      bbox_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 0));
-      class_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 1));
-      n_classes = GST_ML_FRAME_DIM (mlframe, 1, 2);
-    } else {
-      //Tensor dimensions looks like: <1, 8400, 80>, <1, 8400, 4>
-      bbox_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 1));
-      class_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 0));
-      n_classes = GST_ML_FRAME_DIM (mlframe, 0, 2);
-    }
+  if (GST_ML_FRAME_DIM (mlframe, 0, 2) == 4) {
+    //Tensor dimensions looks like: <1, 8400, 4>, <1, 8400, 80>
+    bbox_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 0));
+    class_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 1));
+    n_classes = GST_ML_FRAME_DIM (mlframe, 1, 2);
+  } else {
+    //Tensor dimensions looks like: <1, 8400, 80>, <1, 8400, 4>
+    bbox_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 1));
+    class_data = GFLOAT_PTR_CAST (GST_ML_FRAME_BLOCK_DATA (mlframe, 0));
+    n_classes = GST_ML_FRAME_DIM (mlframe, 0, 2);
   }
 
-  if (!bbox_data || !class_data || !n_classes || !n_rows) {
-    GST_ERROR ("Unsupported tensors capabilities!");
-    return FALSE;
-  }
   GST_LOG ("Input size[%d:%d] SAR[%d/%d]. n_rows: %d. n_classes: %d"
       ". threshold: %f", in_height, in_width, sar_n, sar_d, n_rows,
       n_classes, submodule->threshold);
@@ -328,6 +247,7 @@ gst_ml_module_process (gpointer instance, GstMLFrame * mlframe, gpointer output)
     prediction.confidence = confidence * 100.0F;
     prediction.label = g_strdup (label ? label->name : "unknown");
     prediction.color = label ? label->color : 0x000000F;
+
     prediction.top = pbbox[1];
     prediction.left = pbbox[0];
     prediction.bottom = pbbox[3];
@@ -356,6 +276,6 @@ gst_ml_module_process (gpointer instance, GstMLFrame * mlframe, gpointer output)
 
     predictions = g_array_append_val (predictions, prediction);
   }
-  GST_DEBUG ("predictions->len: %d", predictions->len);
+
   return TRUE;
 }
