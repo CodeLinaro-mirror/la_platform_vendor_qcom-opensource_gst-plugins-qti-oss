@@ -552,6 +552,8 @@ gboolean c2componentStore_delete(void* comp_store);
 // Component API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb callback, BLOCK_MODE_TYPE block);
+gboolean c2component_setMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type, guint max);
+guint    c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type);
 gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer);
 gboolean c2component_queue(void* const comp, BufferDescriptor* buffer);
 gboolean c2component_flush(void* const comp, FLUSH_MODE_TYPE mode);
