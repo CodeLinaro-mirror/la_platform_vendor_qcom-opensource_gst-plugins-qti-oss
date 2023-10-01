@@ -1403,6 +1403,34 @@ gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb
     return ret;
 }
 
+gboolean c2component_setMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type, guint max)
+{
+
+    LOG_MESSAGE("Comp %p set max: %u type: %d", comp, max, type);
+    c2_status_t status = C2_BAD_VALUE;
+
+    if (comp) {
+        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
+        status = comp_wrapper->setMaxAllocationCount((uint32_t)max, type);
+    }
+
+    return C2_OK == status ? TRUE : FALSE;
+}
+
+guint c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type)
+{
+    uint32_t count = 0;
+
+    if (comp) {
+        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
+        count = comp_wrapper->getMaxAllocationCount(type);
+    }
+
+    LOG_MESSAGE("Comp %p get max: %u type: %d", comp, count, type);
+
+    return (guint)count;
+}
+
 gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
 {
 

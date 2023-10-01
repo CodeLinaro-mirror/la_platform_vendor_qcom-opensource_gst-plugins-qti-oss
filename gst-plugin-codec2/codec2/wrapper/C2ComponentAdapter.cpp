@@ -476,6 +476,30 @@ void C2ComponentAdapter::onBufferDestroyed(const C2Buffer* buf, void* arg)
     }
 }
 
+c2_status_t C2ComponentAdapter::setMaxAllocationCount(uint32_t max, BUFFER_POOL_TYPE type)
+{
+    c2_status_t status = C2_BAD_VALUE;
+
+    if (BUFFER_POOL_BASIC_GRAPHIC == type)
+        status = mC2AllocatorGBM->setMaxAllocationCount(max);
+    else
+        LOG_ERROR("Unsupported pool type: %d", type);
+
+    return status;
+}
+
+uint32_t C2ComponentAdapter::getMaxAllocationCount(BUFFER_POOL_TYPE type)
+{
+    uint32_t count = 0;
+
+    if (BUFFER_POOL_BASIC_GRAPHIC == type)
+        count = mC2AllocatorGBM->getMaxAllocationCount();
+    else
+        LOG_ERROR("Unsupported pool type: %d", type);
+
+    return count;
+}
+
 std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
 {
     c2_status_t ret = C2_OK;

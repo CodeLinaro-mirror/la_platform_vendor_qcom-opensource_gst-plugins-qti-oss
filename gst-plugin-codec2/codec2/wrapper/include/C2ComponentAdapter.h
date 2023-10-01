@@ -114,6 +114,9 @@ public:
     void acquireExtBuf(uint32_t width, uint32_t height);
     void cancelPendingWork();
 
+    c2_status_t setMaxAllocationCount(uint32_t max, BUFFER_POOL_TYPE type);
+    uint32_t    getMaxAllocationCount(BUFFER_POOL_TYPE type);
+
 private:
     c2_status_t prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf, BufferDescriptor* buffer);
     c2_status_t writePlane(uint8_t* dest, BufferDescriptor* buffer_info);
