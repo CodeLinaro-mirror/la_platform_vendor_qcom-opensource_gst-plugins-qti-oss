@@ -536,7 +536,11 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     ret = C2_CORRUPTED;
                 } else {
                     buf = createGraphicBuffer(graphicBlock);
-                    fd = handle->data[0];
+                    if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
+                        fd = handle->data[2]; // external fd
+                    } else {
+                        fd = handle->data[0];
+                    }
                     /* ref the buffer and store it. When the fd is queued,
                      * we can find the graphic block with the input fd */
                     mInPendingBuffer[fd] = graphicBlock;
@@ -818,10 +822,12 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
             ret = C2_NOT_FOUND;
         } else {
             mC2AllocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(allocator);
-            auto func = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
+            auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
                 std::placeholders::_1, std::placeholders::_2);
+            auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
             if (mC2AllocatorGBM) {
-                mC2AllocatorGBM->setAcquireExtBufCb(func);
+                mC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
+                mC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
             }
         }
     }
@@ -853,9 +859,10 @@ c2_status_t C2ComponentAdapter::configBlockPool(C2BlockPool::local_id_t poolType
     return ret;
 }
 
-uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate)
+uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate, bool& deinterlaced)
 {
     uint32_t interlace = INTERLACE_MODE_PROGRESSIVE;
+    uint32_t is_deinterlaced = 0;
     android::ReflectedParamUpdater::Dict paramsMap;
     android::ReflectedParamUpdater::Value paramVal;
     C2Value c2Value;
@@ -866,6 +873,15 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&interlace)) {
                 LOG_DEBUG("interlace type:%u", interlace);
+            }
+        }
+    }
+    if (paramsMap.find("vendor.qti-ext-dec-info-interlace.deinterlaced") != paramsMap.end()) {
+        paramVal = paramsMap["vendor.qti-ext-dec-info-interlace.deinterlaced"];
+        if (paramVal.find(&c2Value)) {
+            if (c2Value.get(&is_deinterlaced)) {
+                deinterlaced = (is_deinterlaced != 0);
+                LOG_DEBUG("deinterlace is %s", deinterlaced ? "enabled" : "disabled");
             }
         }
     }
@@ -923,8 +939,10 @@ void C2ComponentAdapter::handleWorkDone(
         uint64_t bufferIdx = 0;
         C2FrameData::flags_t outputFrameFlag = worklet->output.flags;
         uint64_t timestamp = worklet->output.ordinal.timestamp.peeku();
-        uint32_t interlace = getInterlaceMode(worklet->output.configUpdate);
-        uint32_t frame_qp = getAvgFrameQP(worklet->output.configUpdate);
+        bool deinterlaced = false;
+        uint32_t interlaceMode = getInterlaceMode(worklet->output.configUpdate, deinterlaced);
+        InterlaceInfo interlaceInfo = {interlaceMode, deinterlaced};
+        uint32_t frameQp = getAvgFrameQP(worklet->output.configUpdate);
 
         while (!worklet->output.configUpdate.empty()) {
             std::unique_ptr<C2Param> param;
@@ -975,11 +993,11 @@ void C2ComponentAdapter::handleWorkDone(
                 mOutPendingBuffer[bufferIdx] = buffer;
             }
 
-            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
+            mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
                 LOG_MESSAGE("Component(%p) reached EOS on output", this);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
+                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
@@ -998,7 +1016,7 @@ void C2ComponentAdapter::handleWorkDone(
 
                 LOG_MESSAGE("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
                     this, bufferIdx, timestamp);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlace, frame_qp, outputFrameFlag);
+                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else {
                 LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
@@ -1184,7 +1202,16 @@ do_exit:
 
 void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height)
 {
-    mCallback->onAcquireExtBuffer(width, height);
+    if (mCallback) {
+        mCallback->onAcquireExtBuffer(width, height);
+    }
+}
+
+void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
+{
+    if (mCallback) {
+        mCallback->onReleaseExtBuffer(extFd);
+    }
 }
 
 void C2ComponentAdapter::cancelPendingWork()
