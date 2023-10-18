@@ -110,7 +110,6 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define parent_class gst_qcodec2_venc_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
-#define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
 #define DYNAMIC_PROP_BIT(x) ((1) << (x))
 #define DYNAMIC_PROP_BITRATE DYNAMIC_PROP_BIT(0)
@@ -1108,7 +1107,10 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
 
     ret = c2component_createBlockpool (enc->comp, BUFFER_POOL_BASIC_GRAPHIC);
     if (ret == FALSE) {
-      GST_DEBUG_OBJECT (enc, "Failed to create graphics pool");
+      GST_ERROR_OBJECT (enc, "Failed to create graphics pool");
+    } else {
+      enc->max_input_buffers = c2component_getMaxAllocationCount (enc->comp,
+          BUFFER_POOL_BASIC_GRAPHIC);
     }
   } else {
     GST_DEBUG_OBJECT (enc, "Component store is Null");
@@ -1852,7 +1854,6 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   GstCaps *caps;
   GstVideoInfo info;
   GstAllocator *allocator = NULL;
-  guint num_max_buffers = MAX_INPUT_BUFFERS;
   GstBufferPoolInitParam param;
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
 
@@ -1899,7 +1900,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
 
       /* add pool into allocation query */
       gst_query_add_allocation_pool (query, enc->pool,
-          GST_VIDEO_INFO_SIZE (&info), 0, num_max_buffers);
+          GST_VIDEO_INFO_SIZE (&info), 0, enc->max_input_buffers);
       gst_object_unref (enc->pool);
 
       /* add c2buf meta into allocation query */
@@ -2108,6 +2109,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     }
     case EVENT_ACQUIRE_EXT_BUF:{
       GST_DEBUG_OBJECT (enc, "Ignore event:acquire_ext_buf:%d on enc", type);
+      break;
+    }
+    case EVENT_RELEASE_EXT_BUF:{
+      GST_DEBUG_OBJECT (enc, "Ignore event:release_ext_buf:%d on enc", type);
       break;
     }
     default:{
@@ -3252,6 +3257,8 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->ratio_size = 0;
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
+
+  enc->max_input_buffers = 0;
 
   g_value_init (&enc->ltr_mark, GST_TYPE_ARRAY);
   g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);
