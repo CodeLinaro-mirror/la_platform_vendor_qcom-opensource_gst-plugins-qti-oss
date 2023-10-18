@@ -1613,16 +1613,18 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (!dec->use_external_buf && (!dec->output_setup ||
                 dec->width != out_buf->width ||
                 dec->height != out_buf->height)) {
-          /* will not negotiate with downstream in flushing state, just release the buffer here */
-          if (dec->is_flushing) {
+          /* Should not negotiate with downstream, just release the buffer here.
+           * case 1: in flushing state
+           * case 2: state is being changed to ready */
+          if (dec->is_flushing || GST_STATE_TARGET(dec) < GST_STATE_PAUSED) {
             GstVideoCodecFrame *frame = NULL;
             frame = gst_video_decoder_get_frame (decoder, out_buf->index);
             if (frame) {
               gst_video_decoder_release_frame (decoder, frame);
             }
             if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
-              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of flushing",
-                  out_buf->index);
+              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of %s",
+                  out_buf->index, dec->is_flushing ? "flushing" : "state change");
             }
             break;
           }
