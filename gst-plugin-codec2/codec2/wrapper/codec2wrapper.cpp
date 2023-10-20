@@ -665,7 +665,9 @@ std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setVideoFramerate input not implemented");
+        C2StreamFrameRateInfo::input framerate;
+        framerate.value = config->framerate;
+        return C2Param::Copy(framerate);
     } else {
         C2StreamFrameRateInfo::output framerate;
         framerate.value = config->framerate;

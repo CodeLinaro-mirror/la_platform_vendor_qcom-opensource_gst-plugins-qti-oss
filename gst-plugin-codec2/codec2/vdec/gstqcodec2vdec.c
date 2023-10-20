@@ -802,6 +802,9 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   ConfigParams output_picture_order_mode;
   ConfigParams low_latency_mode;
   ConfigParams use_external_buf;
+  ConfigParams frame_rate;
+  GstVideoInfo input_info;
+  gfloat fps = COMMON_FRAMERATE;
 
   GST_DEBUG_OBJECT (dec, "set format caps:%" GST_PTR_FORMAT, state->caps);
 
@@ -812,6 +815,8 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
         GST_PTR_FORMAT, state->caps);
     return FALSE;
   }
+
+  gst_video_info_from_caps (&input_info, state->caps);
 
   if (!dec->output_setup) {
     retval = gst_structure_get_int (structure, "width", &width);
@@ -894,6 +899,15 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     use_external_buf = make_external_buf_param (TRUE);
     g_ptr_array_add (config, &use_external_buf);
   }
+
+  if (input_info.fps_n != 0 && input_info.fps_d != 0) {
+    fps = (float) input_info.fps_n / input_info.fps_d;
+    GST_DEBUG_OBJECT (dec, "got fps %0.2f from caps", fps);
+  }
+
+  frame_rate = make_framerate_param (fps, TRUE);
+  g_ptr_array_add (config, &frame_rate);
+  GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
 
   if (!c2componentInterface_initReflectedParamUpdater (dec->comp_store,
           dec->comp_intf)) {

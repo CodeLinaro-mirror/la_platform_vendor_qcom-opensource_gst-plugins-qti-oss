@@ -83,3 +83,17 @@ gst_c2_comp_unref (GstC2Comp * comp)
 
   gst_mini_object_unref (GST_MINI_OBJECT_CAST (comp));
 }
+
+ConfigParams
+make_framerate_param (gfloat framerate, gboolean is_input)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.isInput = is_input;
+  param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
+  param.framerate = framerate;
+
+  return param;
+}

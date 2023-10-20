@@ -91,7 +91,6 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 
-#define COMMON_FRAMERATE                          (30)
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
@@ -543,18 +542,6 @@ make_profile_level_param (C2W_PROFILE_T profile, C2W_LEVEL_T level)
   return param;
 }
 
-static ConfigParams
-make_framerate_param (gfloat framerate)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
-  param.framerate = framerate;
-
-  return param;
-}
 
 static ConfigParams
 make_dynamic_framerate_param (gfloat framerate)
@@ -1496,9 +1483,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   if (enc->input_info.fps_n != 0 && enc->input_info.fps_d != 0) {
     fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
+    GST_DEBUG_OBJECT (enc, "got fps %0.2f from caps", fps);
   }
 
-  framerate = make_framerate_param (fps);
+  framerate = make_framerate_param (fps, FALSE);
   g_ptr_array_add (config, &framerate);
   GST_DEBUG_OBJECT (enc, "set framerate %0.2f", fps);
 
@@ -1743,7 +1731,7 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
       if (enc->interval_intraframes != enc->configured_interval_intraframes) {
         // need to reset framerate while I-interval changing combined
         GST_DEBUG_OBJECT (enc, "reset fps as i-interval changing combined");
-        framerate = make_framerate_param (fps);
+        framerate = make_framerate_param (fps, FALSE);
       } else {
         framerate = make_dynamic_framerate_param (fps);
       }
