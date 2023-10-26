@@ -28,6 +28,8 @@ void qvratevpp_term(void *ctx)
   }
 
   vpp_term(ctx);
+
+  GST_DEBUG("VPP term done ctx:%p", ctx);
 }
 
 gboolean qvratevpp_open(void *ctx)
@@ -66,6 +68,28 @@ gboolean qvratevpp_close(void *ctx)
     ret = TRUE;
   else
     GST_ERROR ("vpp_close error: %d, ctx: %p", vpp_ret, ctx);
+
+  GST_DEBUG("VPP close done ctx:%p", ctx);
+
+  return ret;
+}
+
+gboolean qvratevpp_drain(void *ctx)
+{
+  gboolean ret = FALSE;
+  enum vpp_error vpp_ret = VPP_OK;
+
+  GST_DEBUG("VPP drain ctx:%p", ctx);
+  if (!ctx) {
+    GST_ERROR("error input parameter ctx:%p", ctx);
+    return ret;
+  }
+
+  vpp_ret = vpp_drain(ctx);
+  if (vpp_ret == VPP_OK)
+    ret = TRUE;
+  else
+    GST_ERROR ("vpp_drain error: %d, ctx: %p", vpp_ret, ctx);
 
   return ret;
 }
@@ -135,13 +159,16 @@ gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *b
 {
   gboolean ret = FALSE;
   enum vpp_error vpp_ret = VPP_OK;
+  GstBuffer *gst_buf = NULL;
 
-  GST_DEBUG("VPP queue buf, port=%u, buf=%p", port, buf);
 
   if (!ctx || !buf || (port != VPP_PORT_INPUT && port != VPP_PORT_OUTPUT)) {
     GST_ERROR("error input parameter cxt:%p port:%u buf=%p", ctx, port, buf);
     return ret;
   }
+
+  gst_buf = buf->pvGralloc;
+  GST_DEBUG("VPP queue buf, port=%u, vpp buf=%p, gst buf=%p", port, buf, gst_buf);
 
   vpp_ret = vpp_queue_buf(ctx, port, buf);
   if (vpp_ret == VPP_OK) {
@@ -158,7 +185,7 @@ gboolean qvratevpp_flush(void *ctx, enum vpp_port port)
   gboolean ret = FALSE;
   enum vpp_error vpp_ret = VPP_OK;
 
-  GST_DEBUG("VPP flush ctx:%p", ctx);
+  GST_DEBUG("VPP flush port=%u ctx:%p", port, ctx);
   if (!ctx || (port != VPP_PORT_INPUT && port != VPP_PORT_OUTPUT)) {
     GST_ERROR("error input parameter ctx:%p port:%u", ctx, port);
     return ret;
