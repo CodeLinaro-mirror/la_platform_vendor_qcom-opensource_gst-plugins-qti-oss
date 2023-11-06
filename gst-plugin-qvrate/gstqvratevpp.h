@@ -4,6 +4,7 @@
 #ifndef __GST_QVRATEVPP_H__
 #define __GST_QVRATEVPP_H__
 
+#include <inttypes.h>
 #include <vpp.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>

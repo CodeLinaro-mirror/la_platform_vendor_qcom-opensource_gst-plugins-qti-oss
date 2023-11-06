@@ -91,7 +91,6 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 
-#define COMMON_FRAMERATE                          (30)
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
@@ -110,7 +109,6 @@ G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
 #define parent_class gst_qcodec2_venc_parent_class
 #define NANO_TO_MILLI(x)  ((x) / 1000)
 #define EOS_WAITING_TIMEOUT 5
-#define MAX_INPUT_BUFFERS 32
 #define ROI_ARRAY_SIZE 128
 #define DYNAMIC_PROP_BIT(x) ((1) << (x))
 #define DYNAMIC_PROP_BITRATE DYNAMIC_PROP_BIT(0)
@@ -544,18 +542,6 @@ make_profile_level_param (C2W_PROFILE_T profile, C2W_LEVEL_T level)
   return param;
 }
 
-static ConfigParams
-make_framerate_param (gfloat framerate)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
-  param.framerate = framerate;
-
-  return param;
-}
 
 static ConfigParams
 make_dynamic_framerate_param (gfloat framerate)
@@ -1108,7 +1094,10 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
 
     ret = c2component_createBlockpool (enc->comp, BUFFER_POOL_BASIC_GRAPHIC);
     if (ret == FALSE) {
-      GST_DEBUG_OBJECT (enc, "Failed to create graphics pool");
+      GST_ERROR_OBJECT (enc, "Failed to create graphics pool");
+    } else {
+      enc->max_input_buffers = c2component_getMaxAllocationCount (enc->comp,
+          BUFFER_POOL_BASIC_GRAPHIC);
     }
   } else {
     GST_DEBUG_OBJECT (enc, "Component store is Null");
@@ -1494,9 +1483,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   if (enc->input_info.fps_n != 0 && enc->input_info.fps_d != 0) {
     fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
+    GST_DEBUG_OBJECT (enc, "got fps %0.2f from caps", fps);
   }
 
-  framerate = make_framerate_param (fps);
+  framerate = make_framerate_param (fps, FALSE);
   g_ptr_array_add (config, &framerate);
   GST_DEBUG_OBJECT (enc, "set framerate %0.2f", fps);
 
@@ -1741,7 +1731,7 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
       if (enc->interval_intraframes != enc->configured_interval_intraframes) {
         // need to reset framerate while I-interval changing combined
         GST_DEBUG_OBJECT (enc, "reset fps as i-interval changing combined");
-        framerate = make_framerate_param (fps);
+        framerate = make_framerate_param (fps, FALSE);
       } else {
         framerate = make_dynamic_framerate_param (fps);
       }
@@ -1852,7 +1842,6 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
   GstCaps *caps;
   GstVideoInfo info;
   GstAllocator *allocator = NULL;
-  guint num_max_buffers = MAX_INPUT_BUFFERS;
   GstBufferPoolInitParam param;
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
 
@@ -1899,7 +1888,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
 
       /* add pool into allocation query */
       gst_query_add_allocation_pool (query, enc->pool,
-          GST_VIDEO_INFO_SIZE (&info), 0, num_max_buffers);
+          GST_VIDEO_INFO_SIZE (&info), 0, enc->max_input_buffers);
       gst_object_unref (enc->pool);
 
       /* add c2buf meta into allocation query */
@@ -2108,6 +2097,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     }
     case EVENT_ACQUIRE_EXT_BUF:{
       GST_DEBUG_OBJECT (enc, "Ignore event:acquire_ext_buf:%d on enc", type);
+      break;
+    }
+    case EVENT_RELEASE_EXT_BUF:{
+      GST_DEBUG_OBJECT (enc, "Ignore event:release_ext_buf:%d on enc", type);
       break;
     }
     default:{
@@ -3252,6 +3245,8 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->ratio_size = 0;
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
+
+  enc->max_input_buffers = 0;
 
   g_value_init (&enc->ltr_mark, GST_TYPE_ARRAY);
   g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);

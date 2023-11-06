@@ -85,6 +85,11 @@ namespace QTI {
 typedef std::unique_ptr<C2Param> (*configFunction)(gpointer data);
 typedef std::unique_ptr<C2Param> (*configFunctionForVendorParams)(gpointer data, void* const comp_intf);
 
+typedef struct {
+    uint32_t interlaceMode; // interlace mode of the stream
+    gboolean deinterlaced; // whether the video has been deinterlaced
+} InterlaceInfo;
+
 class EventCallback {
 public:
     // Notify that an output buffer is available with given index.
@@ -92,7 +97,7 @@ public:
         const std::shared_ptr<C2Buffer>& buffer,
         uint64_t index,
         uint64_t timestamp,
-        uint32_t interlace,
+        InterlaceInfo &interlaceInfo,
         uint32_t frame_qp,
         C2FrameData::flags_t flag)
         = 0;
@@ -101,6 +106,7 @@ public:
     virtual void onError(uint32_t errorCode) = 0;
     virtual void onUpdateMaxBufCount(uint32_t outputDelay) = 0;
     virtual void onAcquireExtBuffer(uint32_t width, uint32_t height) = 0;
+    virtual void onReleaseExtBuffer(int32_t extFd) = 0;
 
     virtual ~EventCallback() {}
 };

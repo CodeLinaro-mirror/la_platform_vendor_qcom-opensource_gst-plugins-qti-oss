@@ -135,6 +135,7 @@ std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setVideoDynamicFramerate(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf);
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -175,6 +176,7 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_LTR_MARK_INDEX, setLTRMarkIndex },
     { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
     { CONFIG_FUNCTION_KEY_DYNAMIC_FRAMERATE, setVideoDynamicFramerate },
+    { CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER, setUseExternalBuf },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -663,7 +665,9 @@ std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setVideoFramerate input not implemented");
+        C2StreamFrameRateInfo::input framerate;
+        framerate.value = config->framerate;
+        return C2Param::Copy(framerate);
     } else {
         C2StreamFrameRateInfo::output framerate;
         framerate.value = config->framerate;
@@ -931,6 +935,27 @@ std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf)
     return nullptr;
 }
 
+std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> use_external_buf;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value item;
+
+    item.set((int32_t)config->use_external_buf);
+    kvpairs.emplace("vendor.qti-ext-dec-external-buf.enable", item);
+    LOG_DEBUG("set to use external buffer:%d", config->use_external_buf);
+
+    use_external_buf = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return use_external_buf;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // CodecCallback API handling
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -943,13 +968,14 @@ public:
         const std::shared_ptr<C2Buffer>& buffer,
         uint64_t index,
         uint64_t timestamp,
-        uint32_t interlace,
-        uint32_t frame_qp,
+        InterlaceInfo &interlaceInfo,
+        uint32_t frameQp,
         C2FrameData::flags_t flag) override;
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
     void onAcquireExtBuffer(uint32_t width, uint32_t height) override;
+    void onReleaseExtBuffer(int32_t extFd) override;
 
 private:
     listener_cb mCallback;
@@ -1064,8 +1090,8 @@ void CodecCallback::onOutputBufferAvailable(
     const std::shared_ptr<C2Buffer>& buffer,
     uint64_t index,
     uint64_t timestamp,
-    uint32_t interlace,
-    uint32_t frame_qp,
+    InterlaceInfo &interlaceInfo,
+    uint32_t frameQp,
     C2FrameData::flags_t flag)
 {
 
@@ -1082,11 +1108,12 @@ void CodecCallback::onOutputBufferAvailable(
         outBuf.timestamp = timestamp;
         outBuf.index = index;
         outBuf.flag = toWrapperFlag(flag);
-        outBuf.interlaceMode = interlace;
+        outBuf.interlaceMode = interlaceInfo.interlaceMode;
+        outBuf.deinterlaced = interlaceInfo.deinterlaced;
 
         if (buf_type == C2BufferData::GRAPHIC) {
             const C2ConstGraphicBlock graphic_block = buffer->data().graphicBlocks().front();
-            const C2Handle* handle = graphic_block.handle();
+            C2Handle* handle = const_cast<C2Handle*>(graphic_block.handle());
             if (nullptr == handle) {
                 LOG_ERROR("C2ConstGraphicBlock handle is null");
                 return;
@@ -1094,6 +1121,9 @@ void CodecCallback::onOutputBufferAvailable(
             outBuf.fd = handle->data[0];
             outBuf.meta_fd = handle->data[1];
             outBuf.ext_fd = handle->data[2];
+            /* Since this buffer will be pushed downstream, set data[15] which represents
+             * need_free_ext_buf to 0, refer to ExtraData definition in C2AllocatorGBM.h */
+            handle->data[15] = 0;
             outBuf.c2Buffer = static_cast<void*>(buffer.get());
             guint32 stride = 0;
             guint64 usage = 0;
@@ -1118,7 +1148,7 @@ void CodecCallback::onOutputBufferAvailable(
             LOG_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
             outBuf.width = crop.width;
             outBuf.height = crop.height;
-            setBufLayout(&outBuf, format, gbmUsage, width, height, interlace);
+            setBufLayout(&outBuf, format, gbmUsage, width, height, outBuf.interlaceMode);
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
@@ -1135,7 +1165,7 @@ void CodecCallback::onOutputBufferAvailable(
             outBuf.size = linear_block.size();
             outBuf.fd = handle->data[0];
             outBuf.data = (guint8*)view.data();
-            outBuf.avg_frame_qp = frame_qp;
+            outBuf.avg_frame_qp = frameQp;
             LOG_INFO("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
             /* Check for codec data */
             auto csd = std::static_pointer_cast<const C2StreamInitDataInfo::output>(
@@ -1152,7 +1182,7 @@ void CodecCallback::onOutputBufferAvailable(
         outBuf.timestamp = timestamp;
         outBuf.index = index;
         outBuf.flag = toWrapperFlag(flag);
-        outBuf.interlaceMode = interlace;
+        outBuf.interlaceMode = interlaceInfo.interlaceMode;
         LOG_MESSAGE("Mark drop frame index: %lu, pts: %lu", index, timestamp);
         mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
     } else if (flag & C2FrameData::FLAG_END_OF_STREAM) {
@@ -1219,6 +1249,16 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
     resolution.height = height;
 
     mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, &resolution);
+}
+
+void CodecCallback::onReleaseExtBuffer(int32_t extFd)
+{
+    if (!mCallback) {
+        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        return;
+    }
+
+    mCallback(mHandle, EVENT_RELEASE_EXT_BUF, &extFd);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1401,6 +1441,34 @@ gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb
     }
 
     return ret;
+}
+
+gboolean c2component_setMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type, guint max)
+{
+
+    LOG_MESSAGE("Comp %p set max: %u type: %d", comp, max, type);
+    c2_status_t status = C2_BAD_VALUE;
+
+    if (comp) {
+        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
+        status = comp_wrapper->setMaxAllocationCount((uint32_t)max, type);
+    }
+
+    return C2_OK == status ? TRUE : FALSE;
+}
+
+guint c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type)
+{
+    uint32_t count = 0;
+
+    if (comp) {
+        C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
+        count = comp_wrapper->getMaxAllocationCount(type);
+    }
+
+    LOG_MESSAGE("Comp %p get max: %u type: %d", comp, count, type);
+
+    return (guint)count;
 }
 
 gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
