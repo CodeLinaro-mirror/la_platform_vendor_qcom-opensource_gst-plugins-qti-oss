@@ -2213,7 +2213,7 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
 }
 
 gboolean
-gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array)
+gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
 {
   /* debug category for filtering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_vdec_debug, "qcodec2vdec",
@@ -2227,23 +2227,16 @@ gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array)
   }
 
   guint count = 0;
-  if (array) {
-    for (guint i = 0; i < array->len; i++) {
-      for (guint j = 0; j < G_N_ELEMENTS (kDECODER_ELEMENTS); j++) {
-        if (!strcmp (kDECODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
-          if (gst_element_register (plugin, kDECODER_ELEMENTS[j].element,
-                  kDECODER_ELEMENTS[j].rank,
-                  kDECODER_ELEMENTS[j].register_type ())) {
-            count++;
-            GST_INFO ("register element %s", kDECODER_ELEMENTS[j].element);
-          } else {
-            GST_ERROR ("failed to register element %s",
-                kDECODER_ELEMENTS[j].element);
-          }
-          break;
-        }
+  for (guint i = 0; i < G_N_ELEMENTS (kDECODER_ELEMENTS); i++) {
+      if (gst_element_register (plugin, kDECODER_ELEMENTS[i].element,
+            kDECODER_ELEMENTS[i].rank,
+            kDECODER_ELEMENTS[i].register_type ())) {
+        count++;
+        GST_INFO ("register element %s", kDECODER_ELEMENTS[i].element);
+      } else {
+        GST_ERROR ("failed to register element %s",
+            kDECODER_ELEMENTS[i].element);
       }
-    }
   }
 
   return count > 0 ? TRUE : FALSE;
