@@ -32,8 +32,8 @@ typedef enum {
   GST_QVRATE_MESSAGE_INPUT_BUF_DONE,
   GST_QVRATE_MESSAGE_OUTPUT_BUF_DONE,
   GST_QVRATE_MESSAGE_FLUSH_DONE,
-  GST_QVRATE_MESSAGE_ERROR,
-  GST_QVRATE_MESSAGE_EOS
+  GST_QVRATE_MESSAGE_DRAIN_DONE,
+  GST_QVRATE_MESSAGE_ERROR
 } GstQvrateMessageType;
 
 struct _GstQvrateMessage {
@@ -75,7 +75,7 @@ struct _GstQvrate {
   struct vpp_callbacks cb;
   GstSegment segment;
   guint32 vpp_buf_size;
-  GThread *thread;
+  GThread *msg_thread;
   GQueue messages; /* Queue of GstQvrateMessages */
   GMutex messages_lock;
   GCond flush_cond;
@@ -88,8 +88,10 @@ struct _GstQvrate {
   GstCaps *sink_caps;
   GstCaps *src_caps;
   gboolean eos;
-  GCond eos_cond;
-  GMutex eos_lock;
+  GCond drain_cond;
+  GMutex drain_lock;
+  GstTask *outbuf_task;
+  GRecMutex outbuf_lock;
 };
 
 struct _GstQvrateClass {

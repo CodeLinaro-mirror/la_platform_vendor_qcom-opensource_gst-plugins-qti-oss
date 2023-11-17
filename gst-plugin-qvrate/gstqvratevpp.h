@@ -30,6 +30,8 @@ gboolean qvratevpp_open(void *ctx);
 
 gboolean qvratevpp_close(void *ctx);
 
+gboolean qvratevpp_drain(void *ctx);
+
 gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl);
 
 gboolean qvratevpp_set_parameter(void *ctx, enum vpp_port port, struct vpp_port_param param);
