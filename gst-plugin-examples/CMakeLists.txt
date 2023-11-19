@@ -16,6 +16,10 @@ pkg_check_modules(GST_VIDEO
 include(CheckIncludeFileCXX)
 check_include_file_cxx("media/drm/DrmAPI.h" HAVE_DRM_API_H)
 
+# Check whether CDM libs are present.
+include(CheckIncludeFileCXX)
+check_include_file_cxx("ce_cdm/cdm.h" HAVE_CDM_H)
+
 if (HAVE_DRM_API_H)
   add_subdirectory(gst-drm-player-example)
 endif()
