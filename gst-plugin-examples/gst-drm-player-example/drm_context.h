@@ -12,7 +12,7 @@
 #include <vector>
 
 #ifdef ENABLE_WIDEVINE
-#include <ce_cdm/cdm.h>
+#include <cdm.h>
 #endif
 #include <media/drm/DrmAPI.h>
 
