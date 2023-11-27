@@ -9,7 +9,7 @@
 
 #include "drmdecryptor.h"
 
-#include <gst/memory/gstmempool.h>
+#include "gstmempool.h"
 
 #define GST_CAT_DEFAULT decryptor_debug
 GST_DEBUG_CATEGORY_STATIC (decryptor_debug);
@@ -118,8 +118,8 @@ gst_drm_decryptor_create_pool (GstDrmDecryptor *decryptor)
   gst_buffer_pool_config_set_params (config, NULL, DEFAULT_BUFFER_SIZE,
       DEFAULT_MIN_BUFFERS, DEFAULT_MAX_BUFFERS);
 
-  if (!(allocator = gst_fd_allocator_new ())) {
-    GST_ERROR_OBJECT (decryptor, "Failed to create fd allocator !");
+  if (!(allocator = gst_dmabuf_allocator_new ())) {
+    GST_ERROR_OBJECT (decryptor, "Failed to create dmabuf allocator !");
     g_clear_object (&pool);
     return NULL;
   }
