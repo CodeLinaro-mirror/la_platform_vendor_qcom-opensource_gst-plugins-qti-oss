@@ -8,18 +8,22 @@
 #include <gst/video/video.h>
 #include <gst/base/gstbasetransform.h>
 
+// these IDs are fixed worldwide, see https://dashif.org/identifiers/content_protection/
+#define PLAYREADY_PROTECTION_SYSTEM_ID "9a04f079-9840-4286-ab92-e65be0885f95"
+#define WIDEVINE_PROTECTION_SYSTEM_ID  "edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"
+
 G_BEGIN_DECLS
 #define COMMON_VIDEO_CAPS(min, max) \
     "width = (int) [" #min ", " #max "], "    \
     "height = (int) [" #min ", " #max "]"
 #define H264_CAPS \
     "video/x-h264, " \
-    "stream-format = (string) { byte-stream }, " \
+    "stream-format = (string) { byte-stream, avc }, " \
     "alignment = (string) { au }, " \
     COMMON_VIDEO_CAPS(96, 8192)
 #define H265_CAPS \
     "video/x-h265, " \
-    "stream-format = (string) { byte-stream }, " \
+    "stream-format = (string) { byte-stream, hvc1, hev1 }, " \
     "alignment = (string) { au }, " \
     COMMON_VIDEO_CAPS(96, 8192)
 #define VP9_CAPS \
@@ -33,6 +37,22 @@ G_BEGIN_DECLS
 #define AV1_CAPS \
     "video/x-av1, " \
     COMMON_VIDEO_CAPS(96, 8192)
+#define PLAYREADY_CENC_H264_CAPS \
+    "application/x-cenc, " \
+    "original-media-type=(string)video/x-h264, " \
+    "protection-system = (string) " PLAYREADY_PROTECTION_SYSTEM_ID
+#define PLAYREADY_CENC_H265_CAPS \
+    "application/x-cenc, " \
+    "original-media-type=(string)video/x-h265, " \
+    "protection-system = (string) " PLAYREADY_PROTECTION_SYSTEM_ID
+#define WIDEVINE_CENC_H264_CAPS \
+    "application/x-cenc, " \
+    "original-media-type=(string)video/x-h264, " \
+    "protection-system = (string) " WIDEVINE_PROTECTION_SYSTEM_ID
+#define WIDEVINE_CENC_H265_CAPS \
+    "application/x-cenc, " \
+    "original-media-type=(string)video/x-h265, " \
+    "protection-system = (string) " WIDEVINE_PROTECTION_SYSTEM_ID
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
@@ -61,6 +81,13 @@ typedef int (*Content_Protection_Copy_Func) (void *handle,
     uint32_t sec_buf_offset, uint32_t * sec_buf_len, int copy_dir);
 typedef int (*Content_Protection_Copy_Terminate_Func) (void **p_handle);
 
+typedef enum
+{
+  TRANSFORM_DISABLE,
+  TRANSFORM_CENC_TO_CLEAR,
+  TRANSFORM_CLEAR_TO_CENC,
+} TRANSFORM_CAPS;
+
 struct _GstVesDeliver
 {
   GstBaseTransform parent;
@@ -68,6 +95,7 @@ struct _GstVesDeliver
   SECURE_MODE secure;
   gboolean buf_recycle;
   gboolean buf_contiguous;
+  TRANSFORM_CAPS transform_caps;
   void *secure_handle;
   void *crypto_handle;
 #ifdef USE_DMAHEAP

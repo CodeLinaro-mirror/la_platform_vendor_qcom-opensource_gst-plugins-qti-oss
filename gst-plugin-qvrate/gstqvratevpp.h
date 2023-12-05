@@ -4,6 +4,7 @@
 #ifndef __GST_QVRATEVPP_H__
 #define __GST_QVRATEVPP_H__
 
+#include <inttypes.h>
 #include <vpp.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -28,6 +29,8 @@ void qvratevpp_term(void *ctx);
 gboolean qvratevpp_open(void *ctx);
 
 gboolean qvratevpp_close(void *ctx);
+
+gboolean qvratevpp_drain(void *ctx);
 
 gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl);
 

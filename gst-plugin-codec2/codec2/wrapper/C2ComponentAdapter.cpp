@@ -673,7 +673,7 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
     } else if (isEOSFrame) {
         LOG_MESSAGE("queue EOS frame");
     } else {
-        LOG_ERROR("invalid buffer decriptor");
+        LOG_ERROR("invalid buffer descriptor");
         result = C2_BAD_VALUE;
     }
 

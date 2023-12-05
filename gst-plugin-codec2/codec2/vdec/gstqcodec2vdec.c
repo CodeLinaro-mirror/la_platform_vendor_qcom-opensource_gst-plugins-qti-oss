@@ -802,6 +802,9 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   ConfigParams output_picture_order_mode;
   ConfigParams low_latency_mode;
   ConfigParams use_external_buf;
+  ConfigParams frame_rate;
+  GstVideoInfo input_info;
+  gfloat fps = COMMON_FRAMERATE;
 
   GST_DEBUG_OBJECT (dec, "set format caps:%" GST_PTR_FORMAT, state->caps);
 
@@ -812,6 +815,8 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
         GST_PTR_FORMAT, state->caps);
     return FALSE;
   }
+
+  gst_video_info_from_caps (&input_info, state->caps);
 
   if (!dec->output_setup) {
     retval = gst_structure_get_int (structure, "width", &width);
@@ -894,6 +899,15 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     use_external_buf = make_external_buf_param (TRUE);
     g_ptr_array_add (config, &use_external_buf);
   }
+
+  if (input_info.fps_n != 0 && input_info.fps_d != 0) {
+    fps = (float) input_info.fps_n / input_info.fps_d;
+    GST_DEBUG_OBJECT (dec, "got fps %0.2f from caps", fps);
+  }
+
+  frame_rate = make_framerate_param (fps, TRUE);
+  g_ptr_array_add (config, &frame_rate);
+  GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
 
   if (!c2componentInterface_initReflectedParamUpdater (dec->comp_store,
           dec->comp_intf)) {
@@ -1599,16 +1613,18 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (!dec->use_external_buf && (!dec->output_setup ||
                 dec->width != out_buf->width ||
                 dec->height != out_buf->height)) {
-          /* will not negotiate with downstream in flushing state, just release the buffer here */
-          if (dec->is_flushing) {
+          /* Should not negotiate with downstream, just release the buffer here.
+           * case 1: in flushing state
+           * case 2: state is being changed to ready */
+          if (dec->is_flushing || GST_STATE_TARGET(dec) < GST_STATE_PAUSED) {
             GstVideoCodecFrame *frame = NULL;
             frame = gst_video_decoder_get_frame (decoder, out_buf->index);
             if (frame) {
               gst_video_decoder_release_frame (decoder, frame);
             }
             if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
-              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of flushing",
-                  out_buf->index);
+              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of %s",
+                  out_buf->index, dec->is_flushing ? "flushing" : "state change");
             }
             break;
           }
@@ -2199,7 +2215,7 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
 }
 
 gboolean
-gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array)
+gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
 {
   /* debug category for filtering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_vdec_debug, "qcodec2vdec",
@@ -2213,23 +2229,16 @@ gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array)
   }
 
   guint count = 0;
-  if (array) {
-    for (guint i = 0; i < array->len; i++) {
-      for (guint j = 0; j < G_N_ELEMENTS (kDECODER_ELEMENTS); j++) {
-        if (!strcmp (kDECODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
-          if (gst_element_register (plugin, kDECODER_ELEMENTS[j].element,
-                  kDECODER_ELEMENTS[j].rank,
-                  kDECODER_ELEMENTS[j].register_type ())) {
-            count++;
-            GST_INFO ("register element %s", kDECODER_ELEMENTS[j].element);
-          } else {
-            GST_ERROR ("failed to register element %s",
-                kDECODER_ELEMENTS[j].element);
-          }
-          break;
-        }
+  for (guint i = 0; i < G_N_ELEMENTS (kDECODER_ELEMENTS); i++) {
+      if (gst_element_register (plugin, kDECODER_ELEMENTS[i].element,
+            kDECODER_ELEMENTS[i].rank,
+            kDECODER_ELEMENTS[i].register_type ())) {
+        count++;
+        GST_INFO ("register element %s", kDECODER_ELEMENTS[i].element);
+      } else {
+        GST_ERROR ("failed to register element %s",
+            kDECODER_ELEMENTS[i].element);
       }
-    }
   }
 
   return count > 0 ? TRUE : FALSE;

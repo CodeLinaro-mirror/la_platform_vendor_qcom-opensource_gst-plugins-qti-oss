@@ -91,7 +91,6 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 
-#define COMMON_FRAMERATE                          (30)
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
@@ -543,18 +542,6 @@ make_profile_level_param (C2W_PROFILE_T profile, C2W_LEVEL_T level)
   return param;
 }
 
-static ConfigParams
-make_framerate_param (gfloat framerate)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
-  param.framerate = framerate;
-
-  return param;
-}
 
 static ConfigParams
 make_dynamic_framerate_param (gfloat framerate)
@@ -1496,9 +1483,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   if (enc->input_info.fps_n != 0 && enc->input_info.fps_d != 0) {
     fps = (float) enc->input_info.fps_n / enc->input_info.fps_d;
+    GST_DEBUG_OBJECT (enc, "got fps %0.2f from caps", fps);
   }
 
-  framerate = make_framerate_param (fps);
+  framerate = make_framerate_param (fps, FALSE);
   g_ptr_array_add (config, &framerate);
   GST_DEBUG_OBJECT (enc, "set framerate %0.2f", fps);
 
@@ -1743,7 +1731,7 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
       if (enc->interval_intraframes != enc->configured_interval_intraframes) {
         // need to reset framerate while I-interval changing combined
         GST_DEBUG_OBJECT (enc, "reset fps as i-interval changing combined");
-        framerate = make_framerate_param (fps);
+        framerate = make_framerate_param (fps, FALSE);
       } else {
         framerate = make_dynamic_framerate_param (fps);
       }
@@ -3267,7 +3255,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
 }
 
 gboolean
-gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array)
+gst_qcodec2_venc_plugin_init (GstPlugin * plugin)
 {
   /* debug category for fltering log messages */
   GST_DEBUG_CATEGORY_INIT (gst_qcodec2_venc_debug, "qcodec2venc",
@@ -3281,22 +3269,15 @@ gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array)
   }
 
   guint count = 0;
-  if (array) {
-    for (guint i = 0; i < array->len; i++) {
-      for (guint j = 0; j < G_N_ELEMENTS (kENCODER_ELEMENTS); j++) {
-        if (!strcmp (kENCODER_ELEMENTS[j].codec, g_ptr_array_index (array, i))) {
-          if (gst_element_register (plugin, kENCODER_ELEMENTS[j].element,
-                  kENCODER_ELEMENTS[j].rank,
-                  kENCODER_ELEMENTS[j].register_type ())) {
-            count++;
-            GST_INFO ("register element %s", kENCODER_ELEMENTS[j].element);
-          } else {
-            GST_ERROR ("failed to register element %s",
-                kENCODER_ELEMENTS[j].element);
-          }
-          break;
-        }
-      }
+  for (guint i = 0; i < G_N_ELEMENTS (kENCODER_ELEMENTS); i++) {
+    if (gst_element_register (plugin, kENCODER_ELEMENTS[i].element,
+          kENCODER_ELEMENTS[i].rank,
+          kENCODER_ELEMENTS[i].register_type ())) {
+      count++;
+      GST_INFO ("register element %s", kENCODER_ELEMENTS[i].element);
+    } else {
+      GST_ERROR ("failed to register element %s",
+          kENCODER_ELEMENTS[i].element);
     }
   }
 
