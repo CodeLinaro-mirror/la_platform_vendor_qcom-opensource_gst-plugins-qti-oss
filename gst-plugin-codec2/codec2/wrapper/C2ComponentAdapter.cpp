@@ -328,8 +328,8 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                          * TODO: In buffer non-copy mode, HEIC encode still fails,
                          * need to fix.
                          */
-                        dim_x = static_cast<uint32_t>(ALIGN(dim_x, 512));
-                        dim_y = static_cast<uint32_t>(ALIGN(dim_y, 512));
+                        dim_x = static_cast<uint32_t>(GST_ROUND_UP_N(dim_x, 512));
+                        dim_y = static_cast<uint32_t>(GST_ROUND_UP_N(dim_y, 512));
                     }
                 }
                 C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
@@ -555,8 +555,8 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                 * TODO: In buffer non-copy mode, HEIC encode still fails,
                 * need to fix.
                 */
-                dim_x = static_cast<uint32_t>(ALIGN(dim_x, 512));
-                dim_y = static_cast<uint32_t>(ALIGN(dim_y, 512));
+                dim_x = static_cast<uint32_t>(GST_ROUND_UP_N(dim_x, 512));
+                dim_y = static_cast<uint32_t>(GST_ROUND_UP_N(dim_y, 512));
             }
 
             C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
