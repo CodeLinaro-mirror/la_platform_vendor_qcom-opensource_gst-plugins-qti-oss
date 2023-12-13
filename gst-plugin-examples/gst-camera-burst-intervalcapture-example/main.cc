@@ -19,24 +19,37 @@ namespace camera = android::hardware::camera::common::V1_0::helper;
 #define DEFAULT_OUTPUT_WIDTH 3840
 #define DEFAULT_OUTPUT_HEIGHT 2160
 
+#define DEFAULT_WAYLAND_WIDTH 960
+#define DEFAULT_WAYLAND_HEIGHT 720
+
+#define DEFAULT_BURST_ROUND 1
+
 #define DEFAULT_OUTPUT_PREVIEW  GST_PREVIEW_OUTPUT_DISPLAY
 #define DEFAULT_FORMAT_CAPTURE  GST_CAPTURE_FORMAT_JPEG
 #define DEFAULT_REQUIRE_CAPTURE GST_CAPTURE_5PIC_IN_1SEC
 
-#define TIMEOUT_S 10
+#define WAITTIME_S 10
 
 #define FILE_MP4 "/data/mux.mp4"
 
 typedef struct _GstAppContext GstAppContext;
 struct _GstAppContext {
   GMainLoop *loop;
-  GstElement *pipeline, *qmmfsrc;
-  const char *file_ext;
-  gboolean quit_requested;
+  GstElement *pipeline;
+  GstElement *camsrc;
+  const char *suffixes[2];
+  guint pending;
+  GstPad *vidpad;
+
+  // Used for waiting time interval or 10 seconds.
   GMutex mutex;
   GCond cond_quit;
-  guint pending;
-  GstPad *video_pad;
+  gboolean quit_requested;
+
+  // Used for waiting 2A locked or unlocked.
+  GMutex awb_ae_mutex;
+  GCond awb_ae_changed;
+  gboolean awb_ae_locked;
 };
 
 /*** Data Structure ***/
@@ -55,6 +68,7 @@ typedef enum {
   GST_CAPTURE_FORMAT_JPEG,
   GST_CAPTURE_FORMAT_YUV,
   GST_CAPTURE_FORMAT_BAYER,
+  GST_CAPTURE_FORMAT_JPEG_PLUS_BAYER,
 } GstCaptureFormat;
 
 typedef enum {
@@ -79,6 +93,11 @@ typedef enum {
 static gint width = DEFAULT_OUTPUT_WIDTH;
 static gint height = DEFAULT_OUTPUT_HEIGHT;
 
+static gint width_preview = DEFAULT_WAYLAND_WIDTH;
+static gint height_preview = DEFAULT_WAYLAND_HEIGHT;
+
+static guint burst_round = DEFAULT_BURST_ROUND;
+
 static GstPreviewOutput preview_output   = DEFAULT_OUTPUT_PREVIEW;
 static GstCaptureFormat capture_format   = DEFAULT_FORMAT_CAPTURE;
 static GstCaptureRequire capture_require = DEFAULT_REQUIRE_CAPTURE;
@@ -95,20 +114,38 @@ static GOptionEntry entries[] = {
     "height",
     "image height of stream"
   },
+  { "width_preview", 'a', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
+    &width_preview,
+    "width_preview",
+    "preview width of stream"
+  },
+  { "height_preview", 'b', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
+    &height_preview,
+    "height_preview",
+    "preview height of stream"
+  },
+  { "burst_round", 'd', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
+    &burst_round,
+    "burst_round",
+    "rounds of burst snapshot"
+  },
   { "output_preview", 'p', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
     &preview_output,
-    "output preview",
+    "output preview"
+    "(default: 1 - Display)",
     "preview output type:"
     "\n\t0 - AVC"
     "\n\t1 - Display\n"
   },
   { "capture_format", 'c', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
     &capture_format,
-    "capture format",
+    "capture format"
+    "(default: 0 - JPEG)",
     "capture format type:"
     "\n\t0 - JPEG"
     "\n\t1 - YUV"
-    "\n\t2 - BAYER\n"
+    "\n\t2 - BAYER"
+    "\n\t3 - JPEG+BAYER\n"
   },
   { "capture_require", 'r', G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_INT,
     &capture_require,
@@ -169,6 +206,42 @@ gst_camera_metadata_release (gpointer data)
   delete meta;
 }
 
+// Phase2
+static void
+result_metadata (GstElement * element, gpointer metadata, gpointer userdata)
+{
+  ::camera::CameraMetadata *meta = NULL;
+  meta = static_cast<::camera::CameraMetadata*> (metadata);
+  GstAppContext *ctx = (GstAppContext *)userdata;
+  guint8 awblock = 0, aelock = 0;
+
+  if (meta->exists(ANDROID_CONTROL_AWB_STATE)
+      && meta->exists(ANDROID_CONTROL_AE_STATE)) {
+    camera_metadata_entry entry = {};
+
+    entry   = meta->find(ANDROID_CONTROL_AWB_STATE);
+    awblock = entry.data.u8[0];
+    entry   = meta->find(ANDROID_CONTROL_AE_STATE);
+    aelock  = entry.data.u8[0];
+
+    g_print ("\nChecking: AWB Lock: %d, AE Lock: %d\n", awblock, aelock);
+
+    if ((ANDROID_CONTROL_AWB_STATE_LOCKED == awblock)
+        && (ANDROID_CONTROL_AE_STATE_LOCKED == aelock)
+            && (TRUE != ctx->awb_ae_locked)) {
+      ctx->awb_ae_locked = TRUE;
+
+      g_mutex_lock (&ctx->awb_ae_mutex);
+      g_cond_signal (&ctx->awb_ae_changed);
+      g_mutex_unlock (&ctx->awb_ae_mutex);
+    } else if (TRUE != ctx->awb_ae_locked) {
+      g_print ("\nNO LOCK: AWB Lock: %d, AE Lock: %d\n", awblock, aelock);
+    }
+  } else {
+    g_printerr ("\nNo AWB or AE state found in result metadata!\n");
+  }
+}
+
 static gboolean
 capture_get_imgtype (gint * imgtype)
 {
@@ -197,22 +270,15 @@ capture_get_imgtype (gint * imgtype)
 }
 
 static gboolean
-capture_set_compensation (GstAppContext *ctx, GPtrArray * gmetas,
+capture_prepare_metadata (GstAppContext *ctx, GPtrArray * gmetas,
     gint n_snapshots)
 {
-  ::camera::CameraMetadata *smeta = nullptr, *meta = nullptr;
+  ::camera::CameraMetadata *meta = nullptr;
 
   // Get high quality metadata, which will be used for submitting capture-image.
-  g_object_get (G_OBJECT (ctx->qmmfsrc), "image-metadata", &meta, NULL);
+  g_object_get (G_OBJECT (ctx->camsrc), "image-metadata", &meta, NULL);
   if (!meta) {
     g_printerr ("failed to get image metadata\n");
-    goto cleanupset;
-  }
-
-  // Get static metadata, which will be used for submitting capture-image.
-  g_object_get (G_OBJECT (ctx->qmmfsrc), "static-metadata", &smeta, NULL);
-  if (!smeta) {
-    g_printerr ("failed to get static metadata\n");
     goto cleanupset;
   }
 
@@ -222,34 +288,26 @@ capture_set_compensation (GstAppContext *ctx, GPtrArray * gmetas,
     goto cleanupset;
   }
 
-  // Capture burst of images with AE bracketing.
-  if (smeta->exists(ANDROID_CONTROL_AE_COMPENSATION_RANGE)) {
-    camera_metadata_entry entry = {};
-    gint32 compensation = 0;
+  // Capture burst of images with metadata.
+  // Modify a copy of the capture metadata and add it to the meta array.
+  for (guint i_meta = 0; i_meta < n_snapshots; i_meta++) {
+    ::camera::CameraMetadata *metadata = new ::camera::CameraMetadata(*meta);
 
-    entry = smeta->find(ANDROID_CONTROL_AE_COMPENSATION_RANGE);
+    // Set OFF focus mode
+    guchar afmode = ANDROID_CONTROL_AF_MODE_OFF;
+    metadata->update(ANDROID_CONTROL_AF_MODE, &afmode, 1);
 
-    compensation = (entry.data.i32[0] + entry.data.i32[1]) / 2;
+    if (1 == i_meta) {
+      // Unlock AWB in second capture.
+      guchar awbmode = ANDROID_CONTROL_AWB_LOCK_OFF;
+      metadata->update(ANDROID_CONTROL_AWB_LOCK, &awbmode, 1);
 
-    g_print ("\nCapturing images with bracketing %d\n", compensation);
-
-    // Modify a copy of the capture metadata and add it to the meta array.
-    for (guint i_meta = 0; i_meta < n_snapshots; i_meta++) {
-      ::camera::CameraMetadata *metadata = new ::camera::CameraMetadata(*meta);
-
-      // Set OFF focus mode
-      guchar afmode = ANDROID_CONTROL_AF_MODE_OFF;
-      metadata->update(ANDROID_CONTROL_AF_MODE, &afmode, 1);
-      metadata->update(ANDROID_CONTROL_AE_EXPOSURE_COMPENSATION, &compensation,
-          1);
-
-      g_ptr_array_add (gmetas, (gpointer) metadata);
+      // Unlock AEC in second capture.
+      guchar lock = ANDROID_CONTROL_AE_LOCK_OFF;
+      metadata->update(ANDROID_CONTROL_AE_LOCK, &lock, 1);
     }
-  } else {
-    g_printerr ("WARN: EV Compensation not supported!\n"
-        "Using default meta\n");
-    g_ptr_array_add (gmetas, (gpointer) meta);
-    meta = nullptr;
+
+    g_ptr_array_add (gmetas, (gpointer) metadata);
   }
 
   return TRUE;
@@ -257,8 +315,6 @@ capture_set_compensation (GstAppContext *ctx, GPtrArray * gmetas,
 cleanupset:
   if (meta)
     delete meta;
-  if (smeta)
-    delete smeta;
 
   return FALSE;
 }
@@ -271,28 +327,32 @@ capture_thread (gpointer userdata)
   gint imgtype;
   gboolean success = FALSE, error = TRUE;
   guint i_snap = 0;
+  guint i_round = 0;
   gint64 end_time;
 
-  gfloat s_timeout_backup = (gfloat)TIMEOUT_S;
-  gfloat s_timeout = (gfloat)TIMEOUT_S;
+  gfloat s_waittime_backup = (gfloat)WAITTIME_S;
+  gfloat s_waittime = (gfloat)WAITTIME_S;
   gint n_snapshots = 0;
+  ::camera::CameraMetadata *vmeta = nullptr;
+  guchar awbmode = 0, lock = 0;
+  gulong handler_id = -1;
 
   switch (capture_require) {
     case 0 :
       n_snapshots = 5;
-      s_timeout = 0.2;
+      s_waittime  = 0.2;
       break;
     case 1 :
       n_snapshots = 10;
-      s_timeout = 0.1;
+      s_waittime  = 0.1;
       break;
     case 2 :
       n_snapshots = 15;
-      s_timeout = 0.2;
+      s_waittime  = 0.2;
       break;
     case 3 :
       n_snapshots = 30;
-      s_timeout = 0.1;
+      s_waittime  = 0.1;
       break;
     default:
       g_printerr ("\n invalid capture_require \n");
@@ -307,91 +367,150 @@ capture_thread (gpointer userdata)
   }
 
   // Set compensation.
-  success = capture_set_compensation (ctx, gmetas, n_snapshots);
+  success = capture_prepare_metadata (ctx, gmetas, n_snapshots);
   if (!success) {
-    g_printerr ("capture_set_compensation() fail ...\n");
+    g_printerr ("capture_prepare_metadata() fail ...\n");
     goto cleanup;
   }
 
-  for (i_snap = 0; i_snap < n_snapshots; ++i_snap) {
-    if (0 == i_snap) {
-      s_timeout_backup = s_timeout;
-      s_timeout = (gfloat)TIMEOUT_S;
-    } else {
-      s_timeout = s_timeout_backup;
-    }
-    end_time = g_get_monotonic_time ()
-        + (gint64)(s_timeout * G_TIME_SPAN_SECOND);
-    g_mutex_lock (&ctx->mutex);
-    g_print ("delaying next request for %f seconds...\n", s_timeout);
-
-    while (!ctx->quit_requested) {
-      if (!g_cond_wait_until (&ctx->cond_quit, &ctx->mutex, end_time)) {
-        g_print ("Waiting is over...\n");
-        break;
-      }
-    }
-
-    if (ctx->quit_requested) {
-      error = FALSE;
-      g_mutex_unlock (&ctx->mutex);
-      goto cleanup;
-    }
-
-    if (0 == i_snap) {
-      g_print ("Pause preview stream for NZSL Burst...\n");
-      // Deactivation the preview pad
-      gst_pad_set_active (ctx->video_pad, FALSE);
-
-      g_print ("requesting %d snapshot...\n", n_snapshots);
-    }
-
-    g_signal_emit_by_name (ctx->qmmfsrc, "capture-image", imgtype, 1,
-        gmetas, &success);
-    if (!success) {
-      g_mutex_unlock (&ctx->mutex);
-      g_printerr ("failed to send capture request\n");
-      goto cleanup;
-    }
-
-    g_print ("snapshot request %d send\n", i_snap);
-
-    if (n_snapshots - 1 == i_snap) {
-      g_print ("Resume preview stream for NZSL Burst...\n");
-      // Activation the preview pad
-      gst_pad_set_active (ctx->video_pad, TRUE);
-    }
-
-    ctx->pending += 1;
-    g_mutex_unlock (&ctx->mutex);
+  // Check Lock in snapshot stream metadata
+  handler_id = g_signal_connect (ctx->camsrc, "result-metadata",
+      G_CALLBACK (result_metadata), ctx);
+  if (-1 != handler_id)
+    g_print ("result-metadata signal connect done...\n");
+  else {
+    g_printerr ("result-metadata signal connect fail ...\n");
+    goto cleanup;
   }
 
-  g_print ("snapshot requests send...\n");
-  g_mutex_lock (&ctx->mutex);
+  for (i_round = 0; i_round < burst_round; ++i_round) {
+    for (i_snap = 0; i_snap < n_snapshots; ++i_snap) {
+      if (0 == i_snap) {
+        s_waittime_backup = s_waittime;
+        s_waittime = (gfloat)WAITTIME_S;
+      } else {
+        s_waittime = s_waittime_backup;
+      }
+      end_time = g_get_monotonic_time ()
+          + (gint64)(s_waittime * G_TIME_SPAN_SECOND);
+      g_mutex_lock (&ctx->mutex);
+      g_print ("delaying next request for %f seconds...\n", s_waittime);
 
-  while (ctx->pending && !ctx->quit_requested)
-    g_cond_wait (&ctx->cond_quit, &ctx->mutex);
+      while (!ctx->quit_requested) {
+        if (!g_cond_wait_until (&ctx->cond_quit, &ctx->mutex, end_time)) {
+          g_print ("Waiting is over...\n");
+          break;
+        }
+      }
 
-  g_mutex_unlock (&ctx->mutex);
+      if (ctx->quit_requested) {
+        // Activation the preview pad, or it will lead to camera service die.
+        gst_pad_set_active (ctx->vidpad, TRUE);
+
+        error = FALSE;
+        g_mutex_unlock (&ctx->mutex);
+        goto cleanup;
+      }
+
+      if (0 == i_snap) {
+        g_print ("Lock AE && AWB in preview stream...\n");
+
+        // Lock AE && AWB in preview stream metadata
+        g_object_get (G_OBJECT (ctx->camsrc), "video-metadata", &vmeta, NULL);
+        awbmode = ANDROID_CONTROL_AWB_LOCK_ON;
+        vmeta->update(ANDROID_CONTROL_AWB_LOCK, &awbmode, 1);
+        lock = ANDROID_CONTROL_AE_LOCK_ON;
+        vmeta->update(ANDROID_CONTROL_AE_LOCK, &lock, 1);
+        g_object_set (G_OBJECT (ctx->camsrc), "video-metadata", vmeta, NULL);
+
+        g_print ("Wait until AWB Locked and AE Locked...\n");
+        g_mutex_lock (&ctx->awb_ae_mutex);
+        while (!ctx->awb_ae_locked && !ctx->quit_requested)
+          g_cond_wait (&ctx->awb_ae_changed, &ctx->awb_ae_mutex);
+        g_mutex_unlock (&ctx->awb_ae_mutex);
+        g_print ("AWB Locked and AE Locked...\n");
+
+        g_print ("Pause preview stream for NZSL Burst...\n");
+        // Deactivation the preview pad
+        gst_pad_set_active (ctx->vidpad, FALSE);
+
+        g_print ("requesting %d snapshot...\n", n_snapshots);
+      }
+
+      g_signal_emit_by_name (ctx->camsrc, "capture-image", imgtype, 1,
+          gmetas, &success);
+      if (!success) {
+        g_mutex_unlock (&ctx->mutex);
+        g_printerr ("failed to send capture request\n");
+        goto cleanup;
+      }
+
+      g_print ("snapshot request %d send\n", i_snap);
+
+      if (n_snapshots - 1 == i_snap) {
+        g_print ("Resume preview stream for NZSL Burst...\n");
+        // Activation the preview pad
+        gst_pad_set_active (ctx->vidpad, TRUE);
+
+        // Ensure after resuming preview, AEC will converge
+        ctx->awb_ae_locked = FALSE;
+        g_object_get (G_OBJECT (ctx->camsrc), "video-metadata", &vmeta, NULL);
+        awbmode = ANDROID_CONTROL_AWB_LOCK_OFF;
+        vmeta->update(ANDROID_CONTROL_AWB_LOCK, &awbmode, 1);
+        lock = ANDROID_CONTROL_AE_LOCK_OFF;
+        vmeta->update(ANDROID_CONTROL_AE_LOCK, &lock, 1);
+        g_object_set (G_OBJECT (ctx->camsrc), "video-metadata", vmeta, NULL);
+      }
+
+      ctx->pending +=
+          ((GST_CAPTURE_FORMAT_JPEG_PLUS_BAYER == capture_format) ? 2 : 1);
+      g_mutex_unlock (&ctx->mutex);
+    }
+
+    g_print ("snapshot requests send...\n");
+    g_mutex_lock (&ctx->mutex);
+
+    while (ctx->pending && !ctx->quit_requested)
+      g_cond_wait (&ctx->cond_quit, &ctx->mutex);
+
+    g_mutex_unlock (&ctx->mutex);
+
+    // Cancel capture in the end of each round, except the last round
+    if ((i_round + 1 < burst_round) && (i_snap > 0)) {
+      g_print ("cancelling capture\n");
+      g_signal_emit_by_name (G_OBJECT (ctx->camsrc),
+          "cancel-capture", &success);
+      if (!success) {
+        g_printerr ("cancel capture failed\n");
+        goto cleanup;
+      }
+    }
+  }
+
   error = FALSE;
 
 cleanup:
+  // Disconnect signal "result-metadata"
+  if (-1 != handler_id)
+    g_signal_handler_disconnect(ctx->camsrc, handler_id);
+
   // If we have send any capture requests, emit cancel-capture
   if (i_snap > 0) {
     g_print ("cancelling capture\n");
-    g_signal_emit_by_name (G_OBJECT (ctx->qmmfsrc), "cancel-capture", &success);
+    g_signal_emit_by_name (G_OBJECT (ctx->camsrc), "cancel-capture", &success);
     if (!success) {
       g_printerr ("cancel capture failed\n");
       error = TRUE;
     }
 
-    // Run TIMEOUT_S seconds after capturing
+    // Run WAITTIME_S seconds after capturing
     end_time = g_get_monotonic_time ()
-        + (gint64)(TIMEOUT_S * G_TIME_SPAN_SECOND);
+        + (gint64)(WAITTIME_S * G_TIME_SPAN_SECOND);
     g_mutex_lock (&ctx->mutex);
-    g_print ("After request, running for %d seconds...\n", TIMEOUT_S);
+    g_print ("After request, running for %d seconds...\n", WAITTIME_S);
     while (!ctx->quit_requested) {
       if (!g_cond_wait_until (&ctx->cond_quit, &ctx->mutex, end_time)) {
+        g_print ("Waiting is over...\n");
         break;
       }
     }
@@ -419,6 +538,11 @@ handle_interrupt_signal (gpointer userdata)
   ctx->quit_requested = TRUE;
   g_cond_signal (&ctx->cond_quit);
   g_mutex_unlock (&ctx->mutex);
+
+  g_mutex_lock (&ctx->awb_ae_mutex);
+  ctx->quit_requested = TRUE;
+  g_cond_signal (&ctx->awb_ae_changed);
+  g_mutex_unlock (&ctx->awb_ae_mutex);
 
   return TRUE;
 }
@@ -605,7 +729,66 @@ new_sample (GstElement * element, gpointer userdata)
   g_print ("Camera timestamp: %" G_GUINT64_FORMAT "\n", timestamp);
 
   filename = g_strdup_printf ("/data/frame_%" G_GUINT64_FORMAT "%s", timestamp,
-      ctx->file_ext);
+      ctx->suffixes[0]);
+
+  if (!g_file_set_contents (filename, (const gchar*) memmap.data, memmap.size,
+      &error)) {
+    g_printerr ("ERROR: Writing to %s failed: %s\n", filename, error->message);
+    g_clear_error (&error);
+  } else {
+    g_print ("Buffer written to file system: %s\n", filename);
+  }
+
+  g_free (filename);
+  gst_buffer_unmap (buffer, &memmap);
+  gst_sample_release (sample);
+
+  return GST_FLOW_OK;
+}
+
+// Used for JPEG+BAYER
+static GstFlowReturn
+new_sample_2nd (GstElement * element, gpointer userdata)
+{
+  GstAppContext *ctx = (GstAppContext *)userdata;
+  GstSample *sample = NULL;
+  GstBuffer *buffer = NULL;
+  GError *error = NULL;
+  GstMapInfo memmap;
+  gchar *filename = NULL;
+  guint64 timestamp = 0;
+
+  // New sample is available, retrieve the buffer from the sink.
+  g_signal_emit_by_name (element, "pull-sample", &sample);
+
+  if (sample == NULL) {
+    g_printerr ("ERROR: Pulled sample is NULL!\n");
+    return GST_FLOW_ERROR;
+  }
+
+  if ((buffer = gst_sample_get_buffer (sample)) == NULL) {
+    g_printerr ("ERROR: Pulled buffer is NULL!\n");
+    gst_sample_release (sample);
+    return GST_FLOW_ERROR;
+  }
+
+  if (!gst_buffer_map (buffer, &memmap, GST_MAP_READ)) {
+    g_printerr ("ERROR: Failed to map the pulled buffer!\n");
+    gst_sample_release (sample);
+    return GST_FLOW_ERROR;
+  }
+
+  g_mutex_lock (&ctx->mutex);
+  if (--(ctx->pending) == 0)
+    g_cond_signal (&ctx->cond_quit);
+  g_mutex_unlock (&ctx->mutex);
+
+  // Extract the original camera timestamp from GstBuffer OFFSET_END field
+  timestamp = GST_BUFFER_OFFSET_END (buffer);
+  g_print ("Camera timestamp: %" G_GUINT64_FORMAT "\n", timestamp);
+
+  filename = g_strdup_printf ("/data/frame_%" G_GUINT64_FORMAT "%s", timestamp,
+      ctx->suffixes[1]);
 
   if (!g_file_set_contents (filename, (const gchar*) memmap.data, memmap.size,
       &error)) {
@@ -674,9 +857,62 @@ link_capture_output (GstCaps * stream_caps, GstElement * pipeline,
   return TRUE;
 }
 
+// Used for JPEG+BAYER
+static gboolean
+link_2nd_capture_output (GstCaps * stream_caps, GstElement * pipeline,
+    GstElement * qtiqmmfsrc, GstAppContext * smpl_ctx)
+{
+  GstElement *filter_caps_elem, *appsink;
+  gboolean success;
+
+  appsink = gst_element_factory_make ("appsink", "appsink-2");
+  filter_caps_elem = gst_element_factory_make ("capsfilter", "capsfilter-2");
+  if (!appsink || !filter_caps_elem) {
+    g_printerr ("failed to create elements for capture stream \n.");
+    cleanup_many_gst (&filter_caps_elem, &appsink, NULL);
+    return FALSE;
+  }
+
+  g_object_set (G_OBJECT (filter_caps_elem), "caps", stream_caps, NULL);
+
+  g_object_set (G_OBJECT (appsink), "sync", FALSE, NULL);
+  g_object_set (G_OBJECT (appsink), "emit-signals", TRUE, NULL);
+  g_object_set (G_OBJECT (appsink), "async", FALSE, NULL);
+  g_object_set (G_OBJECT (appsink), "enable-last-sample", FALSE, NULL);
+
+  // Add elements to the pipeline and link them
+  g_print ("Adding all elements to the pipeline...\n");
+  gst_bin_add_many (GST_BIN (pipeline), filter_caps_elem, appsink, NULL);
+
+  g_print ("Linking camera capture pad ...\n");
+
+  success = gst_element_link_pads (qtiqmmfsrc, "image_2",
+      filter_caps_elem, NULL);
+  if (!success) {
+    g_printerr ("failed to link camera.image_2 to capture filter\n");
+    gst_bin_remove_many (GST_BIN (pipeline), filter_caps_elem, appsink, NULL);
+    return FALSE;
+  }
+
+  // Linking the stream
+  success = gst_element_link_many (filter_caps_elem, appsink, NULL);
+  if (!success) {
+    g_printerr ("failed to link multifilesink\n");
+    gst_bin_remove_many (GST_BIN (pipeline), filter_caps_elem, appsink, NULL);
+    return FALSE;
+  }
+
+  g_print ("All elements are linked successfully\n");
+
+  g_signal_connect (G_OBJECT (appsink), "new-sample",
+      G_CALLBACK (new_sample_2nd), smpl_ctx);
+
+  return TRUE;
+}
+
 static gboolean
 link_avc_output (GstCaps * stream_caps, GstElement * pipeline,
-    GstElement * qtiqmmfsrc, GstPad * video_pad)
+    GstElement * qtiqmmfsrc, GstPad * vidpad)
 {
   GstElement *filesink, *encoder, *h264parse, *mp4mux,
       *filter_caps_elem;
@@ -722,7 +958,7 @@ link_avc_output (GstCaps * stream_caps, GstElement * pipeline,
   g_print ("Linking camera video pad ...\n");
 
   success = gst_element_link_pads (qtiqmmfsrc,
-      gst_pad_get_name (video_pad), filter_caps_elem, NULL);
+      gst_pad_get_name (vidpad), filter_caps_elem, NULL);
   if (!success) {
     g_printerr ("failed to link camera.video_0 to nv12 filter\n");
     gst_bin_remove_many (GST_BIN (pipeline), filter_caps_elem, encoder,
@@ -749,7 +985,7 @@ link_avc_output (GstCaps * stream_caps, GstElement * pipeline,
 
 static gboolean
 link_wayland_output (GstCaps * stream_caps, GstElement * pipeline,
-    GstElement * qtiqmmfsrc, GstPad * video_pad)
+    GstElement * qtiqmmfsrc, GstPad * vidpad)
 {
   GstElement *waylandsink, *filter_caps_elem;
   gboolean success;
@@ -776,7 +1012,7 @@ link_wayland_output (GstCaps * stream_caps, GstElement * pipeline,
   g_print ("Linking camera video pad ...\n");
 
   success = gst_element_link_pads (qtiqmmfsrc,
-      gst_pad_get_name (video_pad), filter_caps_elem, NULL);
+      gst_pad_get_name (vidpad), filter_caps_elem, NULL);
   if (!success) {
     g_printerr ("failed to link camera.video_0 to nv12 filter\n");
     gst_bin_remove_many (GST_BIN (pipeline), filter_caps_elem,
@@ -807,10 +1043,10 @@ main (int argc, char * * argv)
   GError *gerr = NULL;
   gboolean success = FALSE;
   gint res = -1;
-  GstCaps *stream_caps = NULL, *capture_caps = NULL;
+  GstCaps *stream_caps = NULL, *capture_caps = NULL, *capture_caps_2nd = NULL;
   GstElementClass *qtiqmmfsrc_klass = NULL;
   GstPadTemplate *qtiqmmfsrc_template = NULL;
-  GstPad *video_pad = NULL;
+  GstPad *vidpad = NULL;
   GstElement *pipeline = NULL, *qtiqmmfsrc;
   GstBus *bus = NULL;
   guint intrpt_watch_id = 0;
@@ -820,7 +1056,12 @@ main (int argc, char * * argv)
   GThread *mthread = NULL;
 
   g_cond_init (&app_ctx.cond_quit);
+  g_cond_init (&app_ctx.awb_ae_changed);
   g_mutex_init (&app_ctx.mutex);
+  g_mutex_init (&app_ctx.awb_ae_mutex);
+  app_ctx.quit_requested = FALSE;
+  app_ctx.awb_ae_locked = FALSE;
+  app_ctx.pending = 0;
 
   ctx = g_option_context_new (NULL);
   if (!ctx) {
@@ -888,11 +1129,11 @@ main (int argc, char * * argv)
   switch (capture_format) {
     case GST_CAPTURE_FORMAT_JPEG:
       capture_caps = create_jpeg_caps (width, height);
-      app_ctx.file_ext = ".jpg";
+      app_ctx.suffixes[0] = ".jpg";
       break;
     case GST_CAPTURE_FORMAT_YUV:
       capture_caps = create_raw_caps (width, height);
-      app_ctx.file_ext = ".raw";
+      app_ctx.suffixes[0] = ".yuv";
       break;
     case GST_CAPTURE_FORMAT_BAYER:
     {
@@ -919,7 +1160,40 @@ main (int argc, char * * argv)
       g_print ("bayer, using sensor width: %d and height %d\n",
           sensor_width, sensor_height);
       capture_caps = create_bayer_caps (sensor_width, sensor_height);
-      app_ctx.file_ext = ".bayer";
+      app_ctx.suffixes[0] = ".bayer";
+      break;
+    }
+    case GST_CAPTURE_FORMAT_JPEG_PLUS_BAYER:
+    {
+      // JPEG
+      capture_caps = create_jpeg_caps (width, height);
+      app_ctx.suffixes[0] = ".jpg";
+
+      // BAYER
+      GValue value = G_VALUE_INIT;
+      gint sensor_width, sensor_height;
+
+      // Retrieve sensor width and height form active-sensor-size property
+      g_value_init (&value, GST_TYPE_ARRAY);
+
+      g_object_get_property (G_OBJECT (qtiqmmfsrc),
+          "active-sensor-size", &value);
+      if (4 != gst_value_array_get_size (&value)) {
+        g_printerr ("ERROR: Expected 4 values for active sensor size,"
+            " Recieved %d", gst_value_array_get_size (&value));
+        g_value_unset (&value);
+        goto cleanup;
+      }
+
+      sensor_width  = g_value_get_int (gst_value_array_get_value (&value, 2));
+      sensor_height = g_value_get_int (gst_value_array_get_value (&value, 3));
+
+      g_value_unset (&value);
+
+      g_print ("bayer, using sensor width: %d and height %d\n",
+          sensor_width, sensor_height);
+      capture_caps_2nd = create_bayer_caps (sensor_width, sensor_height);
+      app_ctx.suffixes[1] = ".bayer";
       break;
     }
     default:
@@ -931,6 +1205,11 @@ main (int argc, char * * argv)
     g_printerr ("failed to create capture caps\n");
     goto cleanup;
   }
+  if ((GST_CAPTURE_FORMAT_JPEG_PLUS_BAYER == capture_format)
+      && (!capture_caps_2nd)) {
+    g_printerr ("failed to create second capture caps for JPEG + RAW\n");
+    goto cleanup;
+  }
 
   success = link_capture_output (capture_caps, pipeline, qtiqmmfsrc, &app_ctx);
   if (!success) {
@@ -938,10 +1217,20 @@ main (int argc, char * * argv)
     goto cleanup;
   }
 
+  if ((GST_CAPTURE_FORMAT_JPEG_PLUS_BAYER == capture_format)) {
+    success = link_2nd_capture_output (capture_caps_2nd, pipeline,
+        qtiqmmfsrc, &app_ctx);
+    if (!success) {
+      g_printerr ("failed to link second capture stream\n");
+      goto cleanup;
+    }
+  }
+
   // Create the stream caps with the input camera resolution
-  stream_caps = create_stream_caps (width, height);
+  stream_caps = create_stream_caps (width_preview,
+      height_preview);
   if (!stream_caps) {
-    g_printerr ("failed to create prevew caps\n");
+    g_printerr ("failed to create preview caps\n");
     goto cleanup;
   }
 
@@ -953,24 +1242,24 @@ main (int argc, char * * argv)
       gst_element_class_get_pad_template (qtiqmmfsrc_klass, "video_%u");
 
   // Request a pad from qmmfsrc
-  video_pad = gst_element_request_pad (qtiqmmfsrc, qtiqmmfsrc_template,
+  vidpad = gst_element_request_pad (qtiqmmfsrc, qtiqmmfsrc_template,
       "video_%u", NULL);
-  if (!video_pad) {
+  if (!vidpad) {
     g_printerr ("Error: pad cannot be retrieved from qmmfsrc!\n");
     goto cleanup;
   }
-  g_print ("Pad received - %s\n",  gst_pad_get_name (video_pad));
+  g_print ("Pad received - %s\n",  gst_pad_get_name (vidpad));
 
   // Set properties of elements
-  g_object_set (G_OBJECT (video_pad), "type", 1, NULL);
+  g_object_set (G_OBJECT (vidpad), "type", 1, NULL);
 
   switch (preview_output) {
     case GST_PREVIEW_OUTPUT_AVC:
-      success = link_avc_output (stream_caps, pipeline, qtiqmmfsrc, video_pad);
+      success = link_avc_output (stream_caps, pipeline, qtiqmmfsrc, vidpad);
       break;
     case GST_PREVIEW_OUTPUT_DISPLAY:
       success =
-          link_wayland_output (stream_caps, pipeline, qtiqmmfsrc, video_pad);
+          link_wayland_output (stream_caps, pipeline, qtiqmmfsrc, vidpad);
       break;
     default:
       g_printerr ("unknown option for preview output\n");
@@ -994,10 +1283,10 @@ main (int argc, char * * argv)
     goto cleanup;
   }
 
-  app_ctx.loop      = loop;
-  app_ctx.pipeline  = pipeline;
-  app_ctx.qmmfsrc   = qtiqmmfsrc;
-  app_ctx.video_pad = video_pad;
+  app_ctx.loop     = loop;
+  app_ctx.pipeline = pipeline;
+  app_ctx.camsrc   = qtiqmmfsrc;
+  app_ctx.vidpad   = vidpad;
 
   // Watch for messages on the pipeline's bus.
   gst_bus_add_signal_watch (bus);
@@ -1102,17 +1391,21 @@ cleanup:
     gst_caps_unref (stream_caps);
   if (capture_caps)
     gst_caps_unref (capture_caps);
+  if (capture_caps_2nd)
+    gst_caps_unref (capture_caps_2nd);
 
-  if (video_pad) {
+  if (vidpad) {
     // Release the unlinked pad
-    gst_element_release_request_pad (qtiqmmfsrc, video_pad);
+    gst_element_release_request_pad (qtiqmmfsrc, vidpad);
   }
 
   if (pipeline)
     gst_object_unref (pipeline);
 
   g_cond_clear (&app_ctx.cond_quit);
+  g_cond_clear (&app_ctx.awb_ae_changed);
   g_mutex_clear (&app_ctx.mutex);
+  g_mutex_clear (&app_ctx.awb_ae_mutex);
 
   return res;
 }
