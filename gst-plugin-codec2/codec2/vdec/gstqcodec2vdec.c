@@ -445,6 +445,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
            */
           output_format = GST_VIDEO_FORMAT_NV12_10LE32;
         } else {
+          dec->is_ubwc = FALSE;
           output_format = GST_VIDEO_FORMAT_P010_10LE;
         }
 
@@ -636,7 +637,8 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 
   s = gst_caps_get_structure (intersection, 0);
   format_str = gst_structure_get_string (s, "format");
-  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d", format_str,
+  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d, "
+      "both of them will be updated for 10bit clip", format_str,
       dec->is_ubwc);
 
   if (!format_str || (output_format = gst_video_format_from_string (format_str))
