@@ -163,6 +163,12 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
             uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_NV12, width);
             uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_NV12, height);
 
+            if (buffer_info->heic_flag) {
+                y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12_512, width);
+                uv_stride = VENUS_UV_STRIDE(COLOR_FMT_NV12_512, width);
+                y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_NV12_512, height);
+            }
+
             src += buffer_info->offset[0];
             for (int i = 0; i < height; i++) {
                 memcpy(dst, src, width);
@@ -226,6 +232,8 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
     uint32_t frameSize = buffer->size;
     c2_status_t result = C2_OK;
     uint32_t allocSize = 0;
+    uint32_t dim_x = buffer->width;
+    uint32_t dim_y = buffer->height;
 
     if (rawBuffer == nullptr) {
         LOG_ERROR("Inavlid buffer in prepareC2Buffer(%p)", this);
@@ -308,11 +316,25 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                     } else if (buffer->heic_flag) {
                         LOG_MESSAGE("NV12: usage add NV12 512 QTI");
                         gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
+
+                        /* In HEIC encode, align width & height to multiples of 512
+                         * because in codec2, VENUS_NV12_512 is deprecated. if this
+                         * format is enabled for HEIC, C2D will be invoked and used
+                         * to create a buffer of width & height which are mutliples
+                         * of 512 and then copy buffer.
+                         * Now, As VENUS_NV12_512 is deprecated, allocate buffer
+                         * with 512 aligned width & height here itself and copy frame
+                         * data from gst buffer to C2 graphic buffer.
+                         * TODO: In buffer non-copy mode, HEIC encode still fails,
+                         * need to fix.
+                         */
+                        dim_x = static_cast<uint32_t>(ALIGN(dim_x, 512));
+                        dim_y = static_cast<uint32_t>(ALIGN(dim_y, 512));
                     }
                 }
                 C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
 
-                err = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
+                err = mGraphicPool->fetchGraphicBlock(dim_x, dim_y,
                     gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphic_block);
                 if (C2_OK != err || !graphic_block) {
                     LOG_ERROR("fetchGraphicBlock failed: %d", err);
@@ -506,6 +528,8 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
     std::shared_ptr<C2Buffer> buf = nullptr;
     gint32 fd = -1;
     guint32 size = 0;
+    uint32_t dim_x = buffer->width;
+    uint32_t dim_y = buffer->height;
 
     if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
         std::shared_ptr<C2GraphicBlock> graphicBlock = nullptr;
@@ -519,11 +543,25 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
             } else if (buffer->heic_flag) {
                 gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
+
+                /* In HEIC encode, align width & height to multiples of 512
+                 * because in codec2, VENUS_NV12_512 is deprecated. if this
+                 * format is enabled for HEIC, C2D will be invoked and used
+                * to create a buffer of width & height which are mutliples
+                * of 512 and then copy buffer.
+                * Now, As VENUS_NV12_512 is deprecated, allocate buffer
+                * with 512 aligned width & height here itself and copy frame
+                * data from gst buffer to C2 graphic buffer.
+                * TODO: In buffer non-copy mode, HEIC encode still fails,
+                * need to fix.
+                */
+                dim_x = static_cast<uint32_t>(ALIGN(dim_x, 512));
+                dim_y = static_cast<uint32_t>(ALIGN(dim_y, 512));
             }
 
             C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
 
-            ret = mGraphicPool->fetchGraphicBlock(buffer->width, buffer->height,
+            ret = mGraphicPool->fetchGraphicBlock(dim_x, dim_y,
                 gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphicBlock);
 
             if (ret != C2_OK || graphicBlock == nullptr) {
