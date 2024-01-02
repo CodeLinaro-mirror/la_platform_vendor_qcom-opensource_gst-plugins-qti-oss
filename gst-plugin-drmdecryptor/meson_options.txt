@@ -1,0 +1,2 @@
+option('usedmaheap', type : 'boolean', value : 'false', description: 'Use DMA buffer heap.')
+option('widevine', type : 'feature', value : 'disabled', yield : true,  description: 'Enable Widevine support')
