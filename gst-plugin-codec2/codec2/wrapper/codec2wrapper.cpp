@@ -665,7 +665,9 @@ std::unique_ptr<C2Param> setVideoFramerate(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setVideoFramerate input not implemented");
+        C2StreamFrameRateInfo::input framerate;
+        framerate.value = config->framerate;
+        return C2Param::Copy(framerate);
     } else {
         C2StreamFrameRateInfo::output framerate;
         framerate.value = config->framerate;
@@ -1849,7 +1851,7 @@ void _push_to_settings(gpointer data, gpointer user_data)
         LOG_DEBUG("C2 config name:%s", conf_param->config_name);
         param = (*iter->second)(conf_param);
     } else {
-        /* Iterator for vendor paramters */
+        /* Iterator for vendor parameters */
         auto iterVendor = sConfigFunctionForVendorParamsMap.find(conf_param->config_name);
         if (iterVendor != sConfigFunctionForVendorParamsMap.end()) {
             LOG_DEBUG("vendor config name:%s", conf_param->config_name);
