@@ -26,8 +26,8 @@
 * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *
-* Changes from Qualcomm Innovation Center are provided under the following license:
-* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+* Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
+* Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
 * SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
@@ -45,6 +45,10 @@
 #include <set>
 #include <condition_variable>
 #include <C2Buffer.h>
+
+#ifdef USE_AGL_C2SERVICE
+#include "QC2ClientGBMAllocator.h"
+#endif
 
 namespace android {
 class C2AllocatorGBM;
@@ -162,6 +166,11 @@ private:
     std::map<uint64_t, std::shared_ptr<C2Buffer> > mOutPendingBuffer;
     std::set<TrackBuffer*> mTrackBuffers;
     std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
+#ifdef USE_AGL_C2SERVICE
+    std::shared_ptr<aglqc2::QC2Client::GBMAllocator> mIC2AllocatorGBM;
+#else
+    std::shared_ptr<android::C2AllocatorGBM> mIC2AllocatorGBM;
+#endif
     std::shared_ptr<C2Allocator> mC2LinearAllocator;
 
     uint32_t mNumPendingWorks;
@@ -171,6 +180,8 @@ private:
     std::condition_variable mPendingWorkCond;
     fnDataCopy mDataCopyFunc;
     void* mDataCopyFuncParam;
+
+    bool mUseAglC2Service = false;
 };
 
 } // namespace QTI

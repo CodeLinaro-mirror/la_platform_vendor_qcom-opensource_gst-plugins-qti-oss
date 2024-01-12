@@ -28,9 +28,9 @@
 */
 
 /*
-Changes from Qualcomm Innovation Center are provided under the following license:
+Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
 
-Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted (subject to the limitations in the
@@ -1226,7 +1226,12 @@ void CodecCallback::onOutputBufferAvailable(
             }
             outBuf.fd = handle->data[0];
             outBuf.meta_fd = handle->data[1];
+#ifndef USE_AGL_C2SERVICE
             outBuf.ext_fd = handle->data[2];
+#else
+            auto extraData = C2HandleGBM::getExtraData(handle);
+            outBuf.ext_fd = extraData != nullptr ? extraData->idx : -1;
+#endif
             /* Since this buffer will be pushed downstream, set data[15] which represents
              * need_free_ext_buf to 0, refer to ExtraData definition in C2AllocatorGBM.h */
             handle->data[15] = 0;
