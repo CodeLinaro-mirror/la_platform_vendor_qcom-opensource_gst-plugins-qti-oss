@@ -38,6 +38,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <gst/gst.h>
 #include <gst/video/video.h>

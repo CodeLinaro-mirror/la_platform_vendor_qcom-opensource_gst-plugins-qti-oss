@@ -161,6 +161,8 @@ struct _GstQcodec2Venc
   guint32 ltr_count;
   GValue ltr_mark;
   GValue ltr_use;
+
+  guint max_input_buffers;
 };
 
 /*
@@ -182,7 +184,7 @@ GType gst_qcodec2_venc_get_type (void);
 ConfigParams make_profile_level_param (C2W_PROFILE_T profile,
     C2W_LEVEL_T level);
 
-gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin, GPtrArray * array);
+gboolean gst_qcodec2_venc_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
 #endif /* __GST_QCODEC2_VENC_H__ */

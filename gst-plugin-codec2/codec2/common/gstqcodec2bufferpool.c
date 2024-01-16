@@ -118,21 +118,24 @@ gst_qcodec2_buffer_pool_set_config (GstBufferPool * bpool,
     GstStructure * config)
 {
   GstCaps *caps;
-  guint32 size, min, max;
+  guint size, min, max;
   GstQcodec2BufferPool *pool = GST_QCODEC2_BUFFER_POOL_CAST (bpool);
 
   if (NULL == config) {
-    GST_ERROR_OBJECT (bpool, "null config");
+    GST_ERROR_OBJECT (pool, "null config");
     return FALSE;
   }
 
   if (!gst_buffer_pool_config_get_params (config, &caps, &size, &min, &max)) {
-    GST_ERROR_OBJECT (bpool, "invalid config");
+    GST_ERROR_OBJECT (pool, "invalid config");
     return FALSE;
   }
 
+  GST_INFO_OBJECT (pool, "pool:%p min:%u max:%u size:%u",
+                   pool, min, max, size);
+
   if (NULL == caps) {
-    GST_WARNING_OBJECT (bpool, "no caps in config, ignore this config");
+    GST_WARNING_OBJECT (pool, "no caps in config, ignore this config");
     return FALSE;
   }
 
@@ -175,7 +178,7 @@ destroy_gst_buffer (gpointer data)
 {
   GstBuffer *gst_buf = (GstBuffer *) data;
   if (gst_buf) {
-    GST_LOG ("destory gst buffer:%p ref_cnt:%d", gst_buf,
+    GST_LOG ("destroy gst buffer:%p ref_cnt:%d", gst_buf,
         GST_OBJECT_REFCOUNT (gst_buf));
     gst_buffer_unref (gst_buf);
   }
@@ -281,19 +284,23 @@ gst_qcodec2_buffer_pool_alloc_buffer (GstBufferPool * bpool,
 {
   GstQcodec2BufferPool *pool = GST_QCODEC2_BUFFER_POOL_CAST (bpool);
   GstBufferPoolClass *pclass = GST_BUFFER_POOL_CLASS (parent_class);
-  GstFlowReturn ret = GST_FLOW_OK;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   PoolMode mode = pool->param.mode;
 
   switch (mode) {
     case DMABUF_MODE:
-    case FDBUF_MODE:
+    case FDBUF_MODE: {
       *buffer = _gst_qcodec2_alloc_buf (bpool);
+      if (*buffer)
+        ret = GST_FLOW_OK;
       break;
+    }
     case DMABUF_WRAP_MODE:
-    case FDBUF_WRAP_MODE:
-      pclass->alloc_buffer (bpool, buffer, NULL);
-      GST_DEBUG_OBJECT (bpool, "call default alloc buffer function");
+    case FDBUF_WRAP_MODE: {
+      ret = pclass->alloc_buffer (bpool, buffer, NULL);
+      GST_DEBUG_OBJECT (bpool, "default alloc_buffer ret %d", ret);
       break;
+    }
   }
   return ret;
 }
@@ -321,6 +328,31 @@ gst_qcodec2_buffer_pool_acquire_buffer (GstBufferPool * bpool,
   return GST_FLOW_OK;
 }
 
+static void
+_attach_video_meta (GstBuffer * buf, GstVideoInfo * vinfo)
+{
+  gsize offset[GST_VIDEO_MAX_PLANES] = { 0, };
+  gint stride[GST_VIDEO_MAX_PLANES] = { 0, };
+
+  for (int i = 0; i < 2; i++) {
+    stride[i] = vinfo->stride[i];
+    offset[i] = vinfo->offset[i];
+  }
+
+  gst_buffer_add_video_meta_full (buf, GST_VIDEO_FRAME_FLAG_NONE,
+      GST_VIDEO_INFO_FORMAT (vinfo), GST_VIDEO_INFO_WIDTH (vinfo),
+      GST_VIDEO_INFO_HEIGHT (vinfo), GST_VIDEO_INFO_N_PLANES (vinfo), offset,
+      stride);
+
+  /* Add video meta data, which is needed for downstream element. */
+  GST_DEBUG ("attach video meta: width:%d height:%d offset:0x%lx 0x%lx"
+      " stride:%d %d planes:%d size:%lu gst size:%lu",
+      GST_VIDEO_INFO_WIDTH (vinfo), GST_VIDEO_INFO_HEIGHT (vinfo),
+      offset[0], offset[1], stride[0], stride[1],
+      GST_VIDEO_INFO_N_PLANES (vinfo), GST_VIDEO_INFO_SIZE (vinfo),
+      gst_buffer_get_size (buf));
+}
+
 static GstFlowReturn
 _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GstBuffer ** buffer, GstBufferPoolAcquireParams * params)
@@ -334,7 +366,6 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   GstQcodec2BufferPool *pool = GST_QCODEC2_BUFFER_POOL_CAST (bpool);
 
   GstVideoInfo *vinfo = &pool->param.info;
-  gboolean is_ubwc = pool->param.is_ubwc;
   PoolMode mode = pool->param.mode;
   GHashTable *buffer_table = pool->buffer_table;
 
@@ -342,7 +373,6 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   gint64 *buf_key = NULL;
   GValue new_index = { 0, };
   g_value_init (&new_index, G_TYPE_UINT64);
-  guint32 color_fmt = 0;
   GstVideoC2BufMeta *video_c2buf_meta = NULL;
 
   gst_buf = (GstBuffer *) g_hash_table_lookup (buffer_table, &key);
@@ -390,45 +420,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
       goto done;
     }
     gst_buffer_append_memory (gst_buf, mem);
-
-    gsize offset[GST_VIDEO_MAX_PLANES] = { 0, };
-    gint stride[GST_VIDEO_MAX_PLANES] = { 0, };
-
-    switch (GST_VIDEO_INFO_FORMAT (vinfo)) {
-      case GST_VIDEO_FORMAT_NV12:
-        if (is_ubwc) {
-          color_fmt = COLOR_FMT_NV12_UBWC;
-        } else {
-          color_fmt = COLOR_FMT_NV12;
-        }
-        break;
-      case GST_VIDEO_FORMAT_NV12_10LE32:
-        color_fmt = COLOR_FMT_NV12_BPP10_UBWC;
-        break;
-      case GST_VIDEO_FORMAT_P010_10LE:
-        color_fmt = COLOR_FMT_P010;
-        break;
-      default:
-        g_assert_not_reached ();
-        break;
-    }
-
-    stride[0] = stride[1] =
-        VENUS_Y_STRIDE (color_fmt, GST_VIDEO_INFO_WIDTH (vinfo));
-    offset[0] = 0;
-    offset[1] = stride[0] * VENUS_Y_SCANLINES (color_fmt,
-        GST_VIDEO_INFO_HEIGHT (vinfo));
-
-    /* Add video meta data, which is needed for downstream element. */
-    GST_DEBUG_OBJECT (bpool,
-        "attach video meta: width:%d height:%d offset:%lu %lu stride:%d %d planes:%d size:%lu gst size:%lu",
-        GST_VIDEO_INFO_WIDTH (vinfo), GST_VIDEO_INFO_HEIGHT (vinfo), offset[0],
-        offset[1], stride[0], stride[1], GST_VIDEO_INFO_N_PLANES (vinfo),
-        GST_VIDEO_INFO_SIZE (vinfo), gst_buffer_get_size (gst_buf));
-    gst_buffer_add_video_meta_full (gst_buf, GST_VIDEO_FRAME_FLAG_NONE,
-        GST_VIDEO_INFO_FORMAT (vinfo), GST_VIDEO_INFO_WIDTH (vinfo),
-        GST_VIDEO_INFO_HEIGHT (vinfo), GST_VIDEO_INFO_N_PLANES (vinfo), offset,
-        stride);
+    _attach_video_meta (gst_buf, vinfo);
 
     /* Attach QTI video decoder meta */
     GstCustomMeta *qvd_meta =

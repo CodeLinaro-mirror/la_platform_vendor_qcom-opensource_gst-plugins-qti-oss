@@ -26,7 +26,6 @@ typedef struct _GstQcodec2AV1DecClass GstQcodec2AV1DecClass;
 struct _GstQcodec2AV1Dec
 {
   GstQcodec2Vdec parent;
-  gboolean check_av1_bitdepth;
 };
 
 struct _GstQcodec2AV1DecClass

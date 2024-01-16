@@ -4,6 +4,7 @@
 #ifndef __GST_QVRATEVPP_H__
 #define __GST_QVRATEVPP_H__
 
+#include <inttypes.h>
 #include <vpp.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -29,6 +30,8 @@ gboolean qvratevpp_open(void *ctx);
 
 gboolean qvratevpp_close(void *ctx);
 
+gboolean qvratevpp_drain(void *ctx);
+
 gboolean qvratevpp_set_ctrl(void *ctx, struct hqv_control ctrl);
 
 gboolean qvratevpp_set_parameter(void *ctx, enum vpp_port port, struct vpp_port_param param);
@@ -36,10 +39,6 @@ gboolean qvratevpp_set_parameter(void *ctx, enum vpp_port port, struct vpp_port_
 gboolean qvratevpp_get_buf_requirements(void *ctx, struct vpp_requirements *req);
 
 gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *buf);
-
-gboolean qvratevpp_reconfigure(void *ctx,
-                         struct vpp_port_param input_param,
-                         struct vpp_port_param output_param);
 
 gboolean qvratevpp_flush(void *ctx, enum vpp_port port);
 

@@ -108,8 +108,6 @@ enum color_fmts {
 extern "C" {
 #endif
 
-#define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))
-
 #define CONFIG_FUNCTION_KEY_PIXELFORMAT "pixelformat"
 #define CONFIG_FUNCTION_KEY_RESOLUTION "resolution"
 #define CONFIG_FUNCTION_KEY_BITRATE "bitrate"
@@ -132,6 +130,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_INTERLACE_INFO "interlace_info"
 #define CONFIG_FUNCTION_KEY_DEINTERLACE "deinterlace"
 #define CONFIG_FUNCTION_KEY_FRAMERATE "framerate"
+#define CONFIG_FUNCTION_KEY_DYNAMIC_FRAMERATE "dynamic_framerate"
 #define CONFIG_FUNCTION_KEY_INTRAFRAMES_PERIOD "intraframes_period"
 #define CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST "intra_video_frame_request"
 #define CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE "video_header_mode"
@@ -142,6 +141,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_LTR_COUNT "ltr_count"
 #define CONFIG_FUNCTION_KEY_LTR_MARK_INDEX "ltr_mark_index"
 #define CONFIG_FUNCTION_KEY_LTR_USE_INDEX "ltr_use_index"
+#define CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER "external_buffer"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -214,6 +214,8 @@ typedef enum {
     EVENT_ERROR,
     EVENT_UPDATE_MAX_BUF_CNT,
     EVENT_ACQUIRE_EXT_BUF,
+    EVENT_RELEASE_EXT_BUF,
+    EVENT_DROP_FRAME,
 } EVENT_TYPE;
 
 typedef enum {
@@ -377,6 +379,7 @@ typedef struct {
     guint8* data;
     gint32 fd;
     gint32 meta_fd;
+    gint32 ext_fd;
     guint32 size;
     guint32 capacity; ///< Total allocation size
     guint64 timestamp;
@@ -397,6 +400,7 @@ typedef struct {
     guint32 interlaceMode;
     gboolean heic_flag;
     guint32 avg_frame_qp;
+    gboolean deinterlaced;
 } BufferDescriptor;
 
 typedef struct {
@@ -414,6 +418,7 @@ typedef struct {
         gboolean force_idr;
         gboolean inline_sps_pps_headers;
         gboolean report_average_frame_qp;
+        gboolean use_external_buf;
 
         union {
             guint32 u32;
@@ -463,7 +468,7 @@ typedef struct {
             guint32 layerCount;
             guint32 bLayerCount;
             guint32 ratioSize;
-            gfloat *ratios;
+            gfloat* ratios;
         } temporalLayer;
 
         struct {
@@ -529,10 +534,13 @@ typedef struct {
 
 typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 
+void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t usage,
+    uint32_t width, uint32_t height, uint32_t interlace_mode);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Component Store API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void* c2componentStore_create();
+void* c2componentStore_create(void);
 const gchar* c2componentStore_getName(void* const comp_store);
 gboolean c2componentStore_createComponent(void* const comp_store, const gchar* name, void** const component, comp_cb* cb);
 gboolean c2componentStore_createInterface(void* const comp_store, const gchar* name, void** const interface);
@@ -544,6 +552,8 @@ gboolean c2componentStore_delete(void* comp_store);
 // Component API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb callback, BLOCK_MODE_TYPE block);
+gboolean c2component_setMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type, guint max);
+guint    c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type);
 gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer);
 gboolean c2component_queue(void* const comp, BufferDescriptor* buffer);
 gboolean c2component_flush(void* const comp, FLUSH_MODE_TYPE mode);
@@ -559,6 +569,7 @@ gboolean c2component_freeOutBuffer(void* const comp, guint64 bufferId);
 gboolean c2component_delete(void* comp);
 gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd);
 gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gboolean useExternal);
+void c2component_cancelPendingWork(void* const comp);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ComponentInterface API

@@ -95,6 +95,7 @@ typedef guint64 (*f_get_modifier) (void *bo);
 ConfigParams make_pixel_format_param (guint32 fmt, gboolean is_input);
 guint32 gst_to_c2_pixelformat (GstQcodec2Vdec * decoder, GstVideoFormat format);
 gboolean gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder);
+gboolean dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state);
 
 #define DEFAULT_DEINTERLACE TRUE
 
@@ -117,7 +118,7 @@ struct _GstQcodec2Vdec
   GstVideoCodecState *output_state;
 
   gboolean eos_reached;
-  gboolean input_setup;
+  gboolean comp_started;
   gboolean output_setup;
 
   gint width;
@@ -138,18 +139,20 @@ struct _GstQcodec2Vdec
   void *gbm_lib;
   f_get_modifier gbm_api_bo_get_modifier;
   gboolean is_ubwc;
-  gboolean is_10bit;
+  gboolean check_10bit;
   gboolean secure;
   gboolean delay_start;
   comp_cb cb;
   gboolean deinterlace;
 
   gboolean use_external_buf;
-  GHashTable *buffer_table;
+  GHashTable *external_buf_table;
   guint max_external_buf_cnt;
+  gboolean doubled_max_ext_buf_cnt;
   guint acquired_external_buf;
   GMutex external_buf_lock;
   GCond external_buf_cond;
+  gboolean is_flushing;
 };
 
 /* Param function */
@@ -171,7 +174,7 @@ struct _GstQcodec2VdecClass
 
 GType gst_qcodec2_vdec_get_type (void);
 
-gboolean gst_qcodec2_vdec_plugin_init (GstPlugin * plugin, GPtrArray * array);
+gboolean gst_qcodec2_vdec_plugin_init (GstPlugin * plugin);
 
 G_END_DECLS
 #endif /* __GST_QCODEC2_VDEC_H__ */
