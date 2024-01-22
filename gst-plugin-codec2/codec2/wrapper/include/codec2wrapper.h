@@ -526,6 +526,11 @@ typedef struct {
 } BufferResolution;
 
 typedef struct {
+    BufferResolution resolution;
+    gboolean is_c2d;
+} AcquireExtBufInfo;
+
+typedef struct {
     const gchar* codec;
     const gchar* element;
     guint rank;

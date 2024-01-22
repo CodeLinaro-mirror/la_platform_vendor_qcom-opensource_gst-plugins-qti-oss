@@ -54,6 +54,8 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
  * If count of pending works are more than 6, it causes queue overflow issue.
  */
 #define MAX_PENDING_WORK 6
+/* max external buffer count extension */
+#define MAX_EXT_BUF_CNT_EXTENSION 3
 
 using namespace std::chrono_literals;
 
@@ -873,7 +875,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         } else {
             mC2AllocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(allocator);
             auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
-                std::placeholders::_1, std::placeholders::_2);
+                std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
             if (mC2AllocatorGBM) {
                 mC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
@@ -1011,7 +1013,11 @@ void C2ComponentAdapter::handleWorkDone(
                                 outputDelay.value, mGraphicPool->getLocalId());
                             if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                                 /* Update the max acquirable buffer count for external buffer pool */
-                                mCallback->onUpdateMaxBufCount(outputDelay.value);
+                                uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
+                                if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
+                                    maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
+                                }
+                                mCallback->onUpdateMaxBufCount(maxBufCnt);
                             } else {
                                 mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
                             }
@@ -1025,7 +1031,7 @@ void C2ComponentAdapter::handleWorkDone(
         }
 
         // Expected only one output stream.
-        if (worklet->output.buffers.size() == 1u) {
+        if (worklet->output.buffers.size() == 1u && !(outputFrameFlag & C2FrameData::FLAG_DROP_FRAME)) {
             buffer = worklet->output.buffers[0];
             bufferIdx = worklet->output.ordinal.frameIndex.peeku();
             if (!buffer) {
@@ -1250,10 +1256,10 @@ do_exit:
     return result;
 }
 
-void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height)
+void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC2D)
 {
     if (mCallback) {
-        mCallback->onAcquireExtBuffer(width, height);
+        mCallback->onAcquireExtBuffer(width, height, isC2D);
     }
 }
 

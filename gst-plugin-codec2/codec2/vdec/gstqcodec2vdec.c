@@ -981,7 +981,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->delay_start = FALSE;
   dec->external_buf_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
-  dec->doubled_max_ext_buf_cnt = FALSE;
   dec->acquired_external_buf = 0;
   dec->gst_c2_comp = NULL;
 
@@ -1112,67 +1111,39 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
   GstBuffer *buffer = NULL;
   GstMemory *memory = NULL;
   gint fd = -1;
-  gint64 timeout;
-  gboolean acquired = FALSE;
 
   if (!dec->out_port_pool) {
     GST_ERROR_OBJECT (dec, "External pool is NULL");
     return;
   }
-  while (!acquired) {
-    g_mutex_lock (&dec->external_buf_lock);
-    if (dec->acquired_external_buf < dec->max_external_buf_cnt) {
-      GstBufferPoolAcquireParams params = { 0 };
-      params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-      ret =
-          gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, &params);
-      if (buffer) {
-        memory = gst_buffer_peek_memory (buffer, 0);
-        if (memory) {
-          fd = gst_dmabuf_memory_get_fd (memory);
-          GST_DEBUG_OBJECT (dec,
-              "Acquired external buffer fd: %d in buffer: %p from pool: %p", fd,
-              buffer, dec->out_port_pool);
-
-          /* Attach the fd to c2component */
-          if (!c2component_attachExternalFd (dec->comp,
-                  BUFFER_POOL_BASIC_GRAPHIC, fd)) {
-            GST_ERROR_OBJECT (dec, "Failed to attach fd to Codec2");
-          }
-          /* Insert the corresponding gstbuffer to hashtable */
-          insert_external_buf_to_hashtable (decoder, fd, buffer);
-
-          acquired = TRUE;
-          dec->acquired_external_buf++;
-        }
-      } else {
-        GST_WARNING_OBJECT (dec,
-            "Failed to acquire buffer from pool: %p with ret=%d",
-            dec->out_port_pool, ret);
-        g_mutex_unlock (&dec->external_buf_lock);
-        break;
-      }
-    } else {
+  ret = gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, NULL);
+  if (buffer) {
+    memory = gst_buffer_peek_memory (buffer, 0);
+    if (memory) {
+      fd = gst_dmabuf_memory_get_fd (memory);
       GST_DEBUG_OBJECT (dec,
-          "Waiting for external buffers, acquired_external_buf=%u, "
-          "max_external_buf_cnt=%u", dec->acquired_external_buf,
-          dec->max_external_buf_cnt);
-      timeout =
-          g_get_monotonic_time () +
-          (EXT_BUF_WAIT_TIMEOUT_MS * G_TIME_SPAN_MILLISECOND);
-      if (!g_cond_wait_until (&dec->external_buf_cond, &dec->external_buf_lock,
-              timeout)) {
-        if (!dec->eos_reached) {
-          dec->max_external_buf_cnt++;
-          GST_WARNING_OBJECT (dec,
-              "Timed out on wait for external buf! Updated "
-              "max_external_buf_cnt to %u", dec->max_external_buf_cnt);
-        }
-        g_mutex_unlock (&dec->external_buf_lock);
-        break;
+          "Acquired external buffer fd: %d in buffer: %p from pool: %p", fd,
+          buffer, dec->out_port_pool);
+
+      /* Attach the fd to c2component */
+      if (!c2component_attachExternalFd (dec->comp,
+              BUFFER_POOL_BASIC_GRAPHIC, fd)) {
+        GST_ERROR_OBJECT (dec, "Failed to attach fd to Codec2");
       }
+      /* Insert the corresponding gstbuffer to hashtable */
+      g_mutex_lock (&dec->external_buf_lock);
+      insert_external_buf_to_hashtable (decoder, fd, buffer);
+      dec->acquired_external_buf++;
+      g_mutex_unlock (&dec->external_buf_lock);
     }
-    g_mutex_unlock (&dec->external_buf_lock);
+  } else {
+    if (GST_FLOW_FLUSHING == ret) {
+      GST_DEBUG_OBJECT (dec, "Failed to acquire buffer since pool is flushing");
+    } else {
+      GST_ERROR_OBJECT (dec,
+          "Failed to acquire buffer from pool: %p with ret=%d",
+          dec->out_port_pool, ret);
+    }
   }
 }
 
@@ -1293,9 +1264,7 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
           GST_DEBUG_OBJECT (dec, "Updated the max_external_buf_cnt to %u",
               dec->max_external_buf_cnt);
         }
-        /* both decoder and C2D may acquire buffers from external buffer pool，
-         * so double the maximum number of buffers for external pool */
-        max = MAX (MAX (min, max), QCODEC2_MAX_OUTBUFFERS) * 2;
+        max = MAX (MAX (min, max), QCODEC2_MAX_OUTBUFFERS);
 
         gst_buffer_pool_config_set_params (config, outcaps, size, min, max);
         gst_buffer_pool_set_config (pool, config);
@@ -1448,7 +1417,6 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
       if (dec->acquired_external_buf > 0) {
         dec->acquired_external_buf--;
       }
-      g_cond_signal (&dec->external_buf_cond);
       GST_DEBUG_OBJECT (dec,
           "Found an external gstbuf:%p, ext_fd:%d, idx:%lu, size=%u. Updated "
           "acquired_external_buf to %u", gst_buf, decode_buf->ext_fd,
@@ -1603,7 +1571,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
   GstVideoInfo *info = NULL;
 
-  GST_LOG_OBJECT (dec, "handle_video_event");
+  GST_LOG_OBJECT (dec, "handle_video_event, type=%d", type);
 
   switch (type) {
     case EVENT_OUTPUTS_DONE:{
@@ -1729,16 +1697,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         g_cond_signal (&dec->pending_cond);
         g_mutex_unlock (&dec->pending_lock);
       }
-
-      if (dec->use_external_buf && out_buf->deinterlaced &&
-          !dec->doubled_max_ext_buf_cnt) {
-        g_mutex_lock (&dec->external_buf_lock);
-        dec->max_external_buf_cnt *= 2;
-        GST_DEBUG_OBJECT (dec, "Double max_external_buf_cnt to %u",
-            dec->max_external_buf_cnt);
-        dec->doubled_max_ext_buf_cnt = TRUE;
-        g_mutex_unlock (&dec->external_buf_lock);
-      }
       break;
     }
     case EVENT_DROP_FRAME:{
@@ -1778,7 +1736,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         g_mutex_lock (&dec->external_buf_lock);
         if (max_buf_cnt > dec->max_external_buf_cnt) {
           dec->max_external_buf_cnt = max_buf_cnt;
-          g_cond_signal (&dec->external_buf_cond);
           GST_DEBUG_OBJECT (dec, "Updated max_external_buf_cnt to %u",
               dec->max_external_buf_cnt);
         }
@@ -1787,8 +1744,26 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     case EVENT_ACQUIRE_EXT_BUF:{
-      BufferResolution *resolution = (BufferResolution *) data;
+      AcquireExtBufInfo *acquire_info = (AcquireExtBufInfo *) data;
+      BufferResolution *resolution = &acquire_info->resolution;
       GstVideoCodecState *output_state = NULL;
+
+      g_mutex_lock (&dec->external_buf_lock);
+      GST_DEBUG_OBJECT (dec,
+          "acquired_external_buf=%u, max_external_buf_cnt=%u, is_c2d=%s",
+          dec->acquired_external_buf, dec->max_external_buf_cnt,
+          acquire_info->is_c2d ? "true" : "false");
+      /* Since the number of buffers in the external pool is limited, we need
+       * to limit the number of buffers that decoder can take to avoid having
+       * no buffer when C2D tries to acquire. */
+      if (!acquire_info->is_c2d
+          && dec->acquired_external_buf > dec->max_external_buf_cnt) {
+        GST_INFO_OBJECT (dec, "already hold %u buffers, ignore this request!",
+            dec->acquired_external_buf);
+        g_mutex_unlock (&dec->external_buf_lock);
+        break;
+      }
+      g_mutex_unlock (&dec->external_buf_lock);
 
       if (dec->is_flushing) {
         GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
@@ -2056,7 +2031,6 @@ gst_qcodec2_vdec_finalize (GObject * object)
   g_cond_clear (&dec->pending_cond);
 
   g_mutex_clear (&dec->external_buf_lock);
-  g_cond_clear (&dec->external_buf_cond);
 
   if (dec->gbm_lib) {
     GST_INFO_OBJECT (dec, "dlclose gbm lib:%p", dec->gbm_lib);
@@ -2198,7 +2172,6 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   g_mutex_init (&dec->pending_lock);
 
   g_mutex_init (&dec->external_buf_lock);
-  g_cond_init (&dec->external_buf_cond);
 
   dec->silent = FALSE;
   dec->gbm_lib = dlopen ("libgbm.so", RTLD_NOW);

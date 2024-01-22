@@ -148,7 +148,6 @@ struct _GstQcodec2Vdec
   gboolean use_external_buf;
   GHashTable *external_buf_table;
   guint max_external_buf_cnt;
-  gboolean doubled_max_ext_buf_cnt;
   guint acquired_external_buf;
   GMutex external_buf_lock;
   GCond external_buf_cond;
