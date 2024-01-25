@@ -416,7 +416,8 @@ retry:
     GST_LOG_OBJECT (qeavbtssrc, "receive data len %d", recv_len);
     if (recv_len > 0) {
       if (qeavbtssrc->is_first_tspacket) {
-        kpi_place_marker("M - qeavbtssrc receive the first packet");
+        snprintf(tips, sizeof(tips), "M - qeavbtssrc receive the first packet %d.", recv_len);
+        kpi_place_marker(tips);
         GST_INFO_OBJECT(qeavbtssrc,"receive the first ts packet");
         qeavbtssrc->is_first_tspacket = FALSE;
       }
