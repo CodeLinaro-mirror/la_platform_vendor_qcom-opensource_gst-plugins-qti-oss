@@ -33,6 +33,8 @@
 GST_DEBUG_CATEGORY_EXTERN (gst_debug_qeavbutility);
 #define GST_CAT_DEFAULT gst_debug_qeavbutility
 
+#define KPI_MARKER_NODE "/sys/kernel/boot_kpi/kpi_values"
+
 int qeavb_create_stream_remote(int eavb_fd, char* file_path, eavb_ioctl_hdr_t* hdr)
 {
   GST_INFO ("Calling %s() with par: fd %d, file %s, hdr %p", __func__, eavb_fd, file_path==NULL?"NULL":file_path, hdr);
@@ -88,12 +90,13 @@ int qeavb_receive_done(int eavb_fd, eavb_ioctl_hdr_t* hdr, eavb_ioctl_buf_data_t
 
 int kpi_place_marker(const char* str)
 {
-  int fd = open("/dev/mpm", O_WRONLY);
+  int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
     close(fd);
     return ret;
   }
+  GST_ERROR("open kpi marker node failed");
   return -1;
 }
 
