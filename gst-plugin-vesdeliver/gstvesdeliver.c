@@ -43,19 +43,22 @@ enum
   PROP_SECURE,
   PROP_BUF_RECYCLE,
   PROP_BUF_CONTIGUOUS,
+  PROP_TRANSFORM_CAPS,
 };
 
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS));
+        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS));
+        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
@@ -63,6 +66,7 @@ G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
 #define SECURE_COPY_RETURN_SUCCESS      0
 #define SECURE_COPY_NONSECURE_TO_SECURE 0
 #define GST_TYPE_VESDELIVER_SECURE_MODE (gst_vesdeliver_secure_mode_get_type ())
+#define GST_TYPE_VESDELIVER_TRANSFORM_CAPS (gst_vesdeliver_transform_caps_get_type ())
 
 static GstFlowReturn
 gst_vesdeliver_prepare_output_buffer (GstBaseTransform * base,
@@ -78,6 +82,8 @@ gst_vesdeliver_get_property (GObject * object, guint property_id,
     GValue * value, GParamSpec * pspec);
 static gboolean gst_vesdeliver_start (GstBaseTransform * trans);
 static gboolean gst_vesdeliver_stop (GstBaseTransform * trans);
+static GstCaps *gst_vesdeliver_transform_caps (GstBaseTransform * trans,
+    GstPadDirection direction, GstCaps * caps, GstCaps * filter);
 
 static GType
 gst_vesdeliver_secure_mode_get_type (void)
@@ -93,6 +99,26 @@ gst_vesdeliver_secure_mode_get_type (void)
     };
 
     qtype = g_enum_register_static ("GstVesdeliverSecureMode", values);
+  }
+  return qtype;
+}
+
+static GType
+gst_vesdeliver_transform_caps_get_type (void)
+{
+  static GType qtype = 0;
+
+  if (qtype == 0) {
+    static const GEnumValue values[] = {
+      {TRANSFORM_DISABLE, "Do not transform caps", "disable"},
+      {TRANSFORM_CENC_TO_CLEAR, "Transform caps from CENC to clear",
+          "cenc-to-clear"},
+      {TRANSFORM_CLEAR_TO_CENC, "Transform caps from clear to CENC",
+          "clear-to-cenc"},
+      {0, NULL, NULL}
+    };
+
+    qtype = g_enum_register_static ("GstVesdeliverTransformCaps", values);
   }
   return qtype;
 }
@@ -137,11 +163,22 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class,
+      PROP_TRANSFORM_CAPS,
+      g_param_spec_enum ("transform-caps", "Transform Caps",
+          "Transform the caps of sink and source pad, the buffer will pass through intact",
+          GST_TYPE_VESDELIVER_TRANSFORM_CAPS,
+          TRANSFORM_DISABLE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gstbasetrans_class->transform = GST_DEBUG_FUNCPTR (gst_vesdeliver_transform);
   gstbasetrans_class->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_vesdeliver_prepare_output_buffer);
   gstbasetrans_class->start = GST_DEBUG_FUNCPTR (gst_vesdeliver_start);
   gstbasetrans_class->stop = GST_DEBUG_FUNCPTR (gst_vesdeliver_stop);
+  gstbasetrans_class->transform_caps =
+      GST_DEBUG_FUNCPTR (gst_vesdeliver_transform_caps);
 
   gst_element_class_add_static_pad_template (gstelement_class, &sink_tmpl);
   gst_element_class_add_static_pad_template (gstelement_class, &src_tmpl);
@@ -161,6 +198,7 @@ gst_vesdeliver_init (GstVesDeliver * vesdeliver)
   vesdeliver->buf_contiguous = TRUE;
   vesdeliver->allocator = NULL;
   vesdeliver->secure_handle = NULL;
+  vesdeliver->transform_caps = TRANSFORM_DISABLE;
 
   gst_base_transform_set_in_place (GST_BASE_TRANSFORM (vesdeliver), FALSE);
 }
@@ -170,6 +208,11 @@ gst_vesdeliver_start (GstBaseTransform * trans)
 {
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
   gboolean status = FALSE;
+
+  if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
+    /* allocator is not needed if enable transform caps */
+    return TRUE;
+  }
 
   if (LEND_DMABUF == vesdeliver->secure) {
 #ifdef USE_DMAHEAP
@@ -351,12 +394,17 @@ gst_vesdeliver_prepare_output_buffer (GstBaseTransform * trans,
 {
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
 
-  *outbuf = gst_buffer_new_allocate (vesdeliver->allocator,
-      gst_buffer_get_size (inbuf), NULL);
+  if (TRANSFORM_DISABLE == vesdeliver->transform_caps) {
+    *outbuf = gst_buffer_new_allocate (vesdeliver->allocator,
+        gst_buffer_get_size (inbuf), NULL);
 
-  g_return_val_if_fail (*outbuf != NULL, GST_FLOW_ERROR);
-  GST_BASE_TRANSFORM_CLASS (parent_class)->copy_metadata (trans, inbuf,
-      *outbuf);
+    g_return_val_if_fail (*outbuf != NULL, GST_FLOW_ERROR);
+    GST_BASE_TRANSFORM_CLASS (parent_class)->copy_metadata (trans, inbuf,
+        *outbuf);
+  } else {
+    /* The incoming buffer will not be modified, so just reuse it */
+    *outbuf = inbuf;
+  }
 
   return GST_FLOW_OK;
 }
@@ -370,6 +418,10 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstMemory *out_mem = NULL;
   int buf_fd = -1;
   gsize fd_memory_size = 0;
+
+  if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
+    return GST_FLOW_OK;
+  }
 
   g_return_val_if_fail (gst_buffer_is_writable (outbuf), GST_FLOW_ERROR);
 
@@ -462,6 +514,141 @@ exit:
 }
 
 static void
+gst_vesdeliver_caps_append_if_not_included (GstCaps * destination,
+    GstStructure * structure)
+{
+  guint caps_size;
+  gboolean included = FALSE;
+
+  caps_size = gst_caps_get_size (destination);
+  for (guint index = 0; !included && index < caps_size; ++index) {
+    GstStructure *s = gst_caps_get_structure (destination, index);
+    if (gst_structure_is_equal (s, structure)) {
+      included = TRUE;
+    }
+  }
+  if (!included) {
+    gst_caps_append_structure (destination, structure);
+  } else {
+    gst_structure_free (structure);
+  }
+}
+
+static void
+gst_vesdeliver_transform_caps_from_cenc_to_clear (GstCaps * transformed_caps,
+    GstStructure * in)
+{
+  GstStructure *out = NULL;
+  const gchar *media_string = NULL;
+
+  out = gst_structure_copy (in);
+  media_string = gst_structure_get_string (out, "original-media-type");
+  if (media_string) {
+    gst_structure_set_name (out, media_string);
+  }
+  gst_vesdeliver_caps_append_if_not_included (transformed_caps, out);
+}
+
+static void
+gst_vesdeliver_transform_caps_from_clear_to_cenc (GstCaps * transformed_caps,
+    GstStructure * in, gboolean need_bytestream)
+{
+  const gchar *name;
+  GstStructure *out = NULL;
+
+  name = gst_structure_get_name (in);
+  if (strcmp (name, "application/x-cenc")) {
+    const char *supported_protection[] = {
+      PLAYREADY_PROTECTION_SYSTEM_ID,
+      WIDEVINE_PROTECTION_SYSTEM_ID,
+      NULL
+    };
+    for (int i = 0; supported_protection[i] != NULL; i++) {
+      out = gst_structure_copy (in);
+      gst_structure_set (out,
+          "protection-system", G_TYPE_STRING, supported_protection[i],
+          "original-media-type", G_TYPE_STRING, name, NULL);
+      gst_structure_set_name (out, "application/x-cenc");
+      if (need_bytestream) {
+        gst_structure_set (out, "stream-format", G_TYPE_STRING, "byte-stream",
+            NULL);
+      }
+      gst_vesdeliver_caps_append_if_not_included (transformed_caps, out);
+    }
+  }
+}
+
+static GstCaps *
+gst_vesdeliver_transform_caps (GstBaseTransform * trans,
+    GstPadDirection direction, GstCaps * caps, GstCaps * filter)
+{
+  GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
+  GstCaps *transformed_caps = NULL;
+  guint caps_size;
+
+  if (TRANSFORM_DISABLE == vesdeliver->transform_caps) {
+    GST_DEBUG_OBJECT (vesdeliver,
+        "direction=%d, identity from: %" GST_PTR_FORMAT, direction, caps);
+    /* no transform function, use the identity transform */
+    if (filter) {
+      transformed_caps =
+          gst_caps_intersect_full (filter, caps, GST_CAPS_INTERSECT_FIRST);
+    } else {
+      transformed_caps = gst_caps_ref (caps);
+    }
+    return transformed_caps;
+  }
+
+  GST_DEBUG_OBJECT (vesdeliver,
+      "Transforming caps %" GST_PTR_FORMAT " in direction %s", caps,
+      (direction == GST_PAD_SINK) ? "sink" : "src");
+
+  transformed_caps = gst_caps_new_empty ();
+  caps_size = gst_caps_get_size (caps);
+  for (guint index = 0; index < caps_size; ++index) {
+    GstStructure *in = gst_caps_get_structure (caps, index);
+
+    if (direction == GST_PAD_SINK) {
+      if (TRANSFORM_CENC_TO_CLEAR == vesdeliver->transform_caps) {
+        /* downstream is parser */
+        gst_vesdeliver_transform_caps_from_cenc_to_clear (transformed_caps, in);
+      } else if (TRANSFORM_CLEAR_TO_CENC == vesdeliver->transform_caps) {
+        /* downstream is decryptor */
+        gst_vesdeliver_transform_caps_from_clear_to_cenc (transformed_caps, in,
+            TRUE);
+      }
+    } else if (direction == GST_PAD_SRC) {
+      if (TRANSFORM_CENC_TO_CLEAR == vesdeliver->transform_caps) {
+        /* upstream is demux */
+        gst_vesdeliver_transform_caps_from_clear_to_cenc (transformed_caps, in,
+            FALSE);
+      } else if (TRANSFORM_CLEAR_TO_CENC == vesdeliver->transform_caps) {
+        /* upstream is parser */
+        gst_vesdeliver_transform_caps_from_cenc_to_clear (transformed_caps, in);
+      }
+    } else {
+      GST_ERROR_OBJECT (vesdeliver, "Invalid direction %d", direction);
+    }
+  }
+
+  if (filter) {
+    GstCaps *intersection;
+    GST_DEBUG_OBJECT (vesdeliver, "Using filter caps %" GST_PTR_FORMAT, filter);
+    intersection =
+        gst_caps_intersect_full (transformed_caps, filter,
+        GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (transformed_caps);
+    transformed_caps = intersection;
+  }
+
+  GST_DEBUG_OBJECT (vesdeliver,
+      "Return transformed caps %" GST_PTR_FORMAT " in direction %s",
+      transformed_caps, (direction == GST_PAD_SINK) ? "sink" : "src");
+
+  return transformed_caps;
+}
+
+static void
 gst_vesdeliver_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
@@ -477,6 +664,9 @@ gst_vesdeliver_set_property (GObject * object, guint property_id,
       break;
     case PROP_BUF_CONTIGUOUS:
       self->buf_contiguous = g_value_get_boolean (value);
+      break;
+    case PROP_TRANSFORM_CAPS:
+      self->transform_caps = g_value_get_enum (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -499,6 +689,9 @@ gst_vesdeliver_get_property (GObject * object, guint property_id,
       break;
     case PROP_BUF_CONTIGUOUS:
       g_value_set_boolean (value, self->buf_contiguous);
+      break;
+    case PROP_TRANSFORM_CAPS:
+      g_value_set_enum (value, self->transform_caps);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);

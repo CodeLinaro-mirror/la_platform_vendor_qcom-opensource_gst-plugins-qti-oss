@@ -39,6 +39,7 @@ Group=codec2
 Type=oneshot
 Restart=no
 ExecStart=/usr/bin/codec2-caps
+NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_RESOURCE
 AmbientCapabilities=CAP_SYS_RESOURCE
 

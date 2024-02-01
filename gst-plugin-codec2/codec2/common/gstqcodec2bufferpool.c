@@ -178,7 +178,7 @@ destroy_gst_buffer (gpointer data)
 {
   GstBuffer *gst_buf = (GstBuffer *) data;
   if (gst_buf) {
-    GST_LOG ("destory gst buffer:%p ref_cnt:%d", gst_buf,
+    GST_LOG ("destroy gst buffer:%p ref_cnt:%d", gst_buf,
         GST_OBJECT_REFCOUNT (gst_buf));
     gst_buffer_unref (gst_buf);
   }

@@ -1851,7 +1851,7 @@ void _push_to_settings(gpointer data, gpointer user_data)
         LOG_DEBUG("C2 config name:%s", conf_param->config_name);
         param = (*iter->second)(conf_param);
     } else {
-        /* Iterator for vendor paramters */
+        /* Iterator for vendor parameters */
         auto iterVendor = sConfigFunctionForVendorParamsMap.find(conf_param->config_name);
         if (iterVendor != sConfigFunctionForVendorParamsMap.end()) {
             LOG_DEBUG("vendor config name:%s", conf_param->config_name);

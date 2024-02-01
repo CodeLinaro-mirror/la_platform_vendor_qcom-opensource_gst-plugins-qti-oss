@@ -445,6 +445,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
            */
           output_format = GST_VIDEO_FORMAT_NV12_10LE32;
         } else {
+          dec->is_ubwc = FALSE;
           output_format = GST_VIDEO_FORMAT_P010_10LE;
         }
 
@@ -636,7 +637,8 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 
   s = gst_caps_get_structure (intersection, 0);
   format_str = gst_structure_get_string (s, "format");
-  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d", format_str,
+  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d, "
+      "both of them will be updated for 10bit clip", format_str,
       dec->is_ubwc);
 
   if (!format_str || (output_format = gst_video_format_from_string (format_str))
@@ -695,7 +697,7 @@ static GstFlowReturn
 gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-  gint64 timeout;
+  gint64 end_time = 0;
   BufferDescriptor inBuf;
 
   GST_DEBUG_OBJECT (dec, "finish");
@@ -718,17 +720,19 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
   /* wait for all the pending buffers to return */
   GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
   g_mutex_lock (&dec->pending_lock);
-  if (!dec->eos_reached) {
+
+  end_time =
+    g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
+  while (!dec->eos_reached) {
     GST_DEBUG_OBJECT (dec, "wait until EOS signal is triggered");
 
-    timeout =
-        g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
-    if (!g_cond_wait_until (&dec->pending_cond, &dec->pending_lock, timeout)) {
+    if (!g_cond_wait_until (&dec->pending_cond, &dec->pending_lock, end_time)) {
       GST_ERROR_OBJECT (dec, "Timed out on wait, exiting!");
+      break;
     }
-  } else {
-    GST_DEBUG_OBJECT (dec, "EOS reached on output, finish the decoding");
   }
+
+  dec->eos_reached = FALSE;
 
   g_mutex_unlock (&dec->pending_lock);
   GST_VIDEO_DECODER_STREAM_LOCK (decoder);
@@ -1613,16 +1617,18 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         if (!dec->use_external_buf && (!dec->output_setup ||
                 dec->width != out_buf->width ||
                 dec->height != out_buf->height)) {
-          /* will not negotiate with downstream in flushing state, just release the buffer here */
-          if (dec->is_flushing) {
+          /* Should not negotiate with downstream, just release the buffer here.
+           * case 1: in flushing state
+           * case 2: state is being changed to ready */
+          if (dec->is_flushing || GST_STATE_TARGET(dec) < GST_STATE_PAUSED) {
             GstVideoCodecFrame *frame = NULL;
             frame = gst_video_decoder_get_frame (decoder, out_buf->index);
             if (frame) {
               gst_video_decoder_release_frame (decoder, frame);
             }
             if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
-              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of flushing",
-                  out_buf->index);
+              GST_DEBUG_OBJECT (dec, "release the buffer %lu since of %s",
+                  out_buf->index, dec->is_flushing ? "flushing" : "state change");
             }
             break;
           }

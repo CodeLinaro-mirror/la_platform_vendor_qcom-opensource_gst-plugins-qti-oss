@@ -493,7 +493,8 @@ retry:
     GST_LOG_OBJECT (qeavbpcmsrc, "receive data len %d", recv_len);
     if (recv_len > 0) {
       if (qeavbpcmsrc->is_first_pcmpacket) {
-        kpi_place_marker("M - qeavbpcmsrc receive the first packet");
+        snprintf(tips, sizeof(tips), "M - qeavbpcmsrc receive the first packet %d.", recv_len);
+        kpi_place_marker(tips);
         GST_INFO_OBJECT(qeavbpcmsrc,"receive the first pcm packet");
         qeavbpcmsrc->is_first_pcmpacket = FALSE;
       }
