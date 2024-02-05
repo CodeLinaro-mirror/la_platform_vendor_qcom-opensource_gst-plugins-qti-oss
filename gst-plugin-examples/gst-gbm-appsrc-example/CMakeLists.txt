@@ -1,24 +1,24 @@
-# GStreamer camera-metadata-example example
-set(GST_EXAMPLE_BIN gst-camera-metadata-example)
+# GStreamer app source exmaple
+set(GST_EXAMPLE_BIN gst-gbm-appsrc-example)
 
 add_executable(${GST_EXAMPLE_BIN}
-  main.cc
+  main.c
 )
 
 target_include_directories(${GST_EXAMPLE_BIN} PRIVATE
   ${GST_INCLUDE_DIRS}
 )
 
-# Add target specific precompiler defintions.
-target_compile_definitions(${GST_EXAMPLE_BIN} PRIVATE
-  $<$<STREQUAL:${CAMERA_METADATA_VERSION},1.0ns>:CAMERA_METADATA_1_0_NS>
-)
-
 target_link_libraries(${GST_EXAMPLE_BIN} PRIVATE
   ${GST_LIBRARIES}
-  qmmf_camera_metadata
-  camera_metadata
-  utils
+  ${GST_BASE_LIBRARIES}
+  ${GST_ALLOC_LIBRARIES}
+  ${GST_VIDEO_LIBRARIES}
+  gstqtivideobase
+)
+
+target_compile_definitions(${GST_EXAMPLE_BIN} PRIVATE
+  $<$<BOOL:${CODEC2_ENCODE}>:CODEC2_ENCODE>
 )
 
 install(
@@ -28,3 +28,5 @@ install(
               GROUP_EXECUTE GROUP_READ
               WORLD_EXECUTE WORLD_READ
 )
+
+
