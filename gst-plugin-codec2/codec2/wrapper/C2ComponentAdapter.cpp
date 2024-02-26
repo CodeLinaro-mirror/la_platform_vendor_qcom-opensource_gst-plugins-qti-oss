@@ -85,6 +85,7 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
     mDataCopyFuncParam = nullptr;
     mC2AllocatorGBM = nullptr;
     mC2LinearAllocator = nullptr;
+    mPendingSignaled = false;
 }
 
 C2ComponentAdapter::~C2ComponentAdapter()
@@ -379,7 +380,6 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
 
     LOG_MESSAGE("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
 
-    // check if it's spurious wakeup
     if (mNumPendingWorks >= maxPendingWorks) {
         do {
             if (timeoutMs > 0) {
@@ -392,7 +392,7 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
             } else if (timeoutMs == 0) {
                 mPendingWorkCond.wait(ul);
             }
-        } while (!mPendingSignaled);
+        } while (!mPendingSignaled); // check if it's spurious wakeup
 
         mPendingSignaled = false;
         LOG_MESSAGE("wake up");
