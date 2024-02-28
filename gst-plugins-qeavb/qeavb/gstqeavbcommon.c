@@ -93,6 +93,8 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    if (ret <= 0)
+      GST_ERROR("kpi write error ret %d, str %s, fd %d", ret, str, fd);
     close(fd);
     return ret;
   }
