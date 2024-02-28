@@ -1492,7 +1492,11 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
   if (state) {
     vinfo = &state->info;
   } else {
-    GST_ERROR_OBJECT (dec, "video codec state is NULL, unexpected!");
+    if (dec->output_setup) {
+      GST_ERROR_OBJECT (dec, "video codec state is NULL, unexpected!");
+    } else {
+      GST_FIXME_OBJECT (dec, "code reach here is unexpected");
+    }
     ret = GST_FLOW_ERROR;
     goto out;
   }
