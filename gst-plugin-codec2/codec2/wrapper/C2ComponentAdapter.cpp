@@ -316,7 +316,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                         gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                     } else if (buffer->heic_flag) {
                         LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                        gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
+                        gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
 
                         /* In HEIC encode, align width & height to multiples of 512
                          * because in codec2, VENUS_NV12_512 is deprecated. if this
@@ -556,7 +556,7 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                 gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                 LOG_MESSAGE("NV12: usage add UBWC ALIGNED QTI");
             } else if (buffer->heic_flag) {
-                gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
+                gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
 
                 /* In HEIC encode, align width & height to multiples of 512
