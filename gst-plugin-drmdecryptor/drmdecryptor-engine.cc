@@ -169,7 +169,7 @@ GstDrmPREngine::decrypt (gboolean secure, GstMapInfo keyid_map_info,
     const guint8 *iv_arr, native_handle_t *nh, gboolean is_clear)
 {
   android::CryptoPlugin::Pattern pattern;
-  android::AString *error_detail_msg;
+  android::AString *error_detail_msg = nullptr;
   gint status = 0;
 
   android::CryptoPlugin::Mode mode = (is_clear ?
@@ -449,6 +449,7 @@ gst_drm_decryptor_engine_execute (GstDrmDecryptorEngine* engine,
   gst_buffer_map (in_buffer, &inbuff_map_info, GST_MAP_READ);
 
   native_handle_t *nh = native_handle_create (1 /*numFds*/, 0 /*numInts*/);
+  GST_RETURN_VAL_IF_FAIL (nh != NULL, -1, "Failed to create native handle");
   {
     GstMemory *mem = gst_buffer_get_memory (out_buffer, 0);
     mem->size = inbuff_map_info.size;
