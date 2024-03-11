@@ -113,6 +113,7 @@ std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param);
 std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param);
 std::unique_ptr<C2Param> setVideoHeaderMode(gpointer param);
 std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param);
+std::unique_ptr<C2Param> setHDRStaticInfo(gpointer param);
 
 // Function for vendor parameter configuration
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
@@ -152,6 +153,7 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST, setIntraVideoFrameRequest },
     { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
     { CONFIG_FUNCTION_KEY_TEMPORAL_LAYER, setVideoTemporalLayer },
+    { CONFIG_FUNCTION_KEY_HDR_STATIC_INFO, setHDRStaticInfo },
 };
 
 // Function map for vendor parameter configuration
@@ -182,6 +184,53 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Parameter Builder
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+std::unique_ptr<C2Param> setHDRStaticInfo(gpointer param)
+{
+
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+
+    if (config->isInput) {
+        C2StreamHdrStaticInfo::input hdrStaticInfo;
+
+        hdrStaticInfo.mastering.red.x = config->hdr_static_info.red_x;
+        hdrStaticInfo.mastering.red.y = config->hdr_static_info.red_y;
+        hdrStaticInfo.mastering.green.x = config->hdr_static_info.green_x;
+        hdrStaticInfo.mastering.green.y = config->hdr_static_info.green_y;
+        hdrStaticInfo.mastering.blue.x = config->hdr_static_info.blue_x;
+        hdrStaticInfo.mastering.blue.y = config->hdr_static_info.blue_y;
+        hdrStaticInfo.mastering.white.x = config->hdr_static_info.white_x;
+        hdrStaticInfo.mastering.white.y = config->hdr_static_info.white_y;
+        hdrStaticInfo.mastering.maxLuminance = config->hdr_static_info.maxLuminance;
+        hdrStaticInfo.mastering.minLuminance = config->hdr_static_info.minLuminance;
+        hdrStaticInfo.maxCll = config->hdr_static_info.maxCll;
+        hdrStaticInfo.maxFall = config->hdr_static_info.maxFall;
+
+        return C2Param::Copy(hdrStaticInfo);
+    } else {
+        C2StreamHdrStaticInfo::output hdrStaticInfo;
+
+        hdrStaticInfo.mastering.red.x = config->hdr_static_info.red_x;
+        hdrStaticInfo.mastering.red.y = config->hdr_static_info.red_y;
+        hdrStaticInfo.mastering.green.x = config->hdr_static_info.green_x;
+        hdrStaticInfo.mastering.green.y = config->hdr_static_info.green_y;
+        hdrStaticInfo.mastering.blue.x = config->hdr_static_info.blue_x;
+        hdrStaticInfo.mastering.blue.y = config->hdr_static_info.blue_y;
+        hdrStaticInfo.mastering.white.x = config->hdr_static_info.white_x;
+        hdrStaticInfo.mastering.white.y = config->hdr_static_info.white_y;
+        hdrStaticInfo.mastering.maxLuminance = config->hdr_static_info.maxLuminance;
+        hdrStaticInfo.mastering.minLuminance = config->hdr_static_info.minLuminance;
+        hdrStaticInfo.maxCll = config->hdr_static_info.maxCll;
+        hdrStaticInfo.maxFall = config->hdr_static_info.maxFall;
+
+        return C2Param::Copy(hdrStaticInfo);
+    }
+
+}
+
 std::unique_ptr<C2Param> setVideoPixelformat(gpointer param)
 {
 

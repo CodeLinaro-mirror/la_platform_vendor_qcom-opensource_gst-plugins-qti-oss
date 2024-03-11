@@ -29,5 +29,8 @@ GstC2Comp *gst_c2_comp_ref (GstC2Comp * comp);
 void gst_c2_comp_unref (GstC2Comp * comp);
 
 ConfigParams make_framerate_param (gfloat framerate, gboolean is_input);
+ConfigParams
+make_hdr_static_info_param (GstVideoMasteringDisplayInfo display_info,
+    GstVideoContentLightLevel content_light_level, gboolean is_input);
 
 #endif /* __GST_QCODEC2_UTILS_H__ */
