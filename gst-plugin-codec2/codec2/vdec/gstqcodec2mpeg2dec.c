@@ -53,6 +53,7 @@ enum
 {
   PROP_0,
   PROP_DEINTERLACE,
+  PROP_SET_GSTBUF_INTERLACE_FLAG,
 };
 
 /* class initialization */
@@ -87,6 +88,14 @@ gst_qcodec2_mpeg2_dec_class_init (GstQcodec2MPEG2DecClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_SET_GSTBUF_INTERLACE_FLAG,
+      g_param_spec_boolean ("set-gstbuf-interlace-flag", "set gstbuf interlace flag",
+          "set interlace flag on output gstbuf, "
+          "if deinterlace disabled and stream is interlace",
+          DEFAULT_SET_GSTBUF_INTERLACE_FLAG,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "Codec2 video MPEG-2 decoder", "Decoder/Video",
       "Video MPEG-2 Decoder based on Codec2.0", "QTI");
@@ -107,6 +116,9 @@ gst_qcodec2_mpeg2_dec_set_property (GObject * object, guint prop_id,
     case PROP_DEINTERLACE:
       base_dec->deinterlace = g_value_get_boolean (value);
       break;
+    case PROP_SET_GSTBUF_INTERLACE_FLAG:
+      base_dec->set_gstbuf_interlace_flag = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -122,6 +134,9 @@ gst_qcodec2_mpeg2_dec_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_DEINTERLACE:
       g_value_set_boolean (value, base_dec->deinterlace);
+      break;
+    case PROP_SET_GSTBUF_INTERLACE_FLAG:
+      g_value_set_boolean (value, base_dec->set_gstbuf_interlace_flag);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
