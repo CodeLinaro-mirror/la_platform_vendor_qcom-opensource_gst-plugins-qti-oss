@@ -600,6 +600,10 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
   GstStructure *s;
   const gchar *format_str;
 
+  if (dec->output_state) {
+    gst_video_codec_state_unref (dec->output_state);
+  }
+
   /* Set decoder output format to NV12 by default */
   dec->output_state =
       gst_video_decoder_set_output_state (decoder,
@@ -848,6 +852,9 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     dec->width = width;
     dec->height = height;
     dec->interlace_mode = interlace_mode;
+    if (dec->comp_name) {
+      g_free (dec->comp_name);
+    }
     dec->comp_name = comp_name;
 
     if (dec->input_state) {
@@ -983,6 +990,9 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
   dec->acquired_external_buf = 0;
   dec->gst_c2_comp = NULL;
+  dec->comp_name = NULL;
+  dec->input_state = NULL;
+  dec->output_state = NULL;
 
   memset (&dec->start_time, 0, sizeof (struct timeval));
   memset (&dec->first_frame_time, 0, sizeof (struct timeval));
@@ -1014,6 +1024,12 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
   /* handle state change from PAUSE to READY, then back to PAUSE */
   dec->output_setup = FALSE;
 
+  /* Stop the component */
+  if (dec->comp) {
+    c2component_stop (dec->comp);
+    dec->comp_started = FALSE;
+  }
+
   if (dec->use_external_buf) {
     clear_external_buf_hash_table (decoder);
   }
@@ -1028,11 +1044,6 @@ gst_qcodec2_vdec_close (GstVideoDecoder * decoder)
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
   GST_DEBUG_OBJECT (dec, "close");
-
-  /* Stop the component */
-  if (dec->comp) {
-    c2component_stop (dec->comp);
-  }
 
   if (dec->out_port_pool) {
     GST_DEBUG_OBJECT (dec, "pool ref cnt:%d",
@@ -1754,6 +1765,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       BufferResolution *resolution = &acquire_info->resolution;
       GstVideoCodecState *output_state = NULL;
 
+      if (!dec->output_setup) {
+        GST_DEBUG_OBJECT (dec, "output_setup is false, ignore EVENT_ACQUIRE_EXT_BUF");
+        break;
+      }
+      if (dec->is_flushing) {
+        GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
+        break;
+      }
+
       g_mutex_lock (&dec->external_buf_lock);
       GST_DEBUG_OBJECT (dec,
           "acquired_external_buf=%u, max_external_buf_cnt=%u, is_c2d=%s",
@@ -1771,10 +1791,6 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       }
       g_mutex_unlock (&dec->external_buf_lock);
 
-      if (dec->is_flushing) {
-        GST_DEBUG_OBJECT (dec, "dec is flushing, ignore EVENT_ACQUIRE_EXT_BUF");
-        break;
-      }
       /* Since firmware does not report crop info for mpeg2 video in reconfig,
        * aligned resolution will be used when acquiring external buffer.
        * Introduced a workaround to treat such case as resolution unchanged. */
@@ -1818,6 +1834,9 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
         GST_INFO_OBJECT (dec, "output caps: %" GST_PTR_FORMAT,
             output_state->caps);
+        if (dec->output_state) {
+          gst_video_codec_state_unref (dec->output_state);
+        }
         dec->output_state = output_state;
         if (!gst_video_decoder_negotiate (decoder)) {
           GST_ERROR_OBJECT (dec, "Failed to negotiate");
