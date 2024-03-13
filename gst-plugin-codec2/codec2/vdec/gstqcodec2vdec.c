@@ -1531,13 +1531,15 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
         gst_util_uint64_scale (decode_buf->timestamp, GST_SECOND,
         C2_TICKS_PER_SECOND);
 
-    if (decode_buf->interlaceMode == INTERLACE_MODE_FIELD_TOP_FIRST) {
-      GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_INTERLACED);
-      GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_TFF);
-      GST_DEBUG_OBJECT (dec, "interlaced top field");
-    } else if (decode_buf->interlaceMode == INTERLACE_MODE_FIELD_BOTTOM_FIRST) {
-      GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_INTERLACED);
-      GST_DEBUG_OBJECT (dec, "interlaced bottom field");
+    if (dec->set_gstbuf_interlace_flag) {
+      if (decode_buf->interlaceMode == INTERLACE_MODE_FIELD_TOP_FIRST) {
+        GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_INTERLACED);
+        GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_TFF);
+        GST_DEBUG_OBJECT (dec, "interlaced top field");
+      } else if (decode_buf->interlaceMode == INTERLACE_MODE_FIELD_BOTTOM_FIRST) {
+        GST_BUFFER_FLAG_SET (outbuf, GST_VIDEO_BUFFER_FLAG_INTERLACED);
+        GST_DEBUG_OBJECT (dec, "interlaced bottom field");
+      }
     }
 
     if (state->info.fps_d != 0 && state->info.fps_n != 0) {
@@ -2169,6 +2171,7 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->cb.data_copy_func = NULL;
   dec->cb.data_copy_func_param = NULL;
   dec->deinterlace = DEFAULT_DEINTERLACE;
+  dec->set_gstbuf_interlace_flag = DEFAULT_SET_GSTBUF_INTERLACE_FLAG;
   dec->use_external_buf = FALSE;
   dec->is_flushing = FALSE;
 
