@@ -3025,9 +3025,10 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  //4096 is from codec2 internal MIN_ENC_SLICE_BYTE_SIZE/MIN_SLICE_BYTE_SIZE
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SLICE_SIZE,
       g_param_spec_uint ("slice-size", "Slice size",
-          "Slice size, just set when slice mode setting to MB or Bytes (unit is bit when mode is Bytes)",
+          "Slice size, just set when slice mode setting to MB or Bytes (unit is bit and min is 4096 when mode is Bytes)",
           0, G_MAXUINT, 0,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
