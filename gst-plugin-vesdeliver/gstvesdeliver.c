@@ -268,6 +268,11 @@ gst_vesdeliver_start (GstBaseTransform * trans)
     }
 #endif
   } else if (SECURE_COPY == vesdeliver->secure) {
+#ifdef DISABLE_SECURE_COPY
+    GST_ERROR_OBJECT (vesdeliver, "secure copy mode is not supported!");
+    g_warn_if_fail (FALSE && "secure copy mode is not supported!");
+    return FALSE;
+#endif
     vesdeliver->crypto_handle = dlopen (crypto_lib_name, RTLD_NOW);
     if (NULL == vesdeliver->crypto_handle) {
       const char *dlerr = dlerror ();
