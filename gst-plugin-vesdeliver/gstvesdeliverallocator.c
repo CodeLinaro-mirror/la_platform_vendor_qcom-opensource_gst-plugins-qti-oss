@@ -11,6 +11,12 @@ static const char *lib_name = "libdmabufheap.so.0";
 static const char *lib_name = "libion.so.0";
 #endif
 
+#if CONTIGUOUS_MEM_OPTION == 0
+static const char *contiguous_mem_heap_name = "qcom,display";
+#elif CONTIGUOUS_MEM_OPTION == 1
+static const char *contiguous_mem_heap_name = "system-secure";
+#endif
+
 GST_DEBUG_CATEGORY_EXTERN (vesdeliver_debug);
 #define GST_CAT_DEFAULT vesdeliver_debug
 
@@ -302,7 +308,7 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
 
 #ifdef USE_DMAHEAP
   const char *heap_name = (alloc->param.secure_mode == LEND_DMABUF
-      && alloc->param.buf_contiguous) ? "qcom,display" : "qcom,system-uncached";
+      && alloc->param.buf_contiguous) ? contiguous_mem_heap_name : "qcom,system-uncached";
   if (is_secure_heap) {
     buf_fd =
         alloc->alloc_fd (alloc->dmaheap_allocator, "system-secure", alloc_size,
