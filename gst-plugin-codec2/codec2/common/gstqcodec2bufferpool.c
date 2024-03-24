@@ -131,8 +131,7 @@ gst_qcodec2_buffer_pool_set_config (GstBufferPool * bpool,
     return FALSE;
   }
 
-  GST_INFO_OBJECT (pool, "pool:%p min:%u max:%u size:%u",
-                   pool, min, max, size);
+  GST_INFO_OBJECT (pool, "pool:%p min:%u max:%u size:%u", pool, min, max, size);
 
   if (NULL == caps) {
     GST_WARNING_OBJECT (pool, "no caps in config, ignore this config");
@@ -289,14 +288,14 @@ gst_qcodec2_buffer_pool_alloc_buffer (GstBufferPool * bpool,
 
   switch (mode) {
     case DMABUF_MODE:
-    case FDBUF_MODE: {
+    case FDBUF_MODE:{
       *buffer = _gst_qcodec2_alloc_buf (bpool);
       if (*buffer)
         ret = GST_FLOW_OK;
       break;
     }
     case DMABUF_WRAP_MODE:
-    case FDBUF_WRAP_MODE: {
+    case FDBUF_WRAP_MODE:{
       ret = pclass->alloc_buffer (bpool, buffer, NULL);
       GST_DEBUG_OBJECT (bpool, "default alloc_buffer ret %d", ret);
       break;
