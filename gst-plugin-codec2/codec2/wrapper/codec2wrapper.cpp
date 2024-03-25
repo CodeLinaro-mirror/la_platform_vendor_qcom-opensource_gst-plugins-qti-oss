@@ -1417,15 +1417,18 @@ gboolean c2componentStore_createInterface(void* const comp_store, const gchar* n
 
 gboolean c2componentStore_listComponents(void* const comp_store, GPtrArray* array)
 {
-
     gboolean ret = FALSE;
+    LOG_MESSAGE("%s", __func__);
 
     if (comp_store) {
         C2ComponentStoreAdapter* store_Wrapper = (C2ComponentStoreAdapter*)comp_store;
 
-        std::vector<std::shared_ptr<const C2Component::Traits> > components = store_Wrapper->listComponents();
-        for (auto component : components) {
-            g_ptr_array_add(array, (gpointer)component->name.c_str());
+        std::vector<std::shared_ptr<const C2Component::Traits> > traits = store_Wrapper->listComponents();
+        LOG_MESSAGE("component traits size %zu", traits.size());
+        for (auto &trait : traits) {
+            const char *name = trait->name.c_str();
+            LOG_MESSAGE("trait name: %s", name);
+            g_ptr_array_add(array, (gpointer)name);
         }
         ret = TRUE;
     }
