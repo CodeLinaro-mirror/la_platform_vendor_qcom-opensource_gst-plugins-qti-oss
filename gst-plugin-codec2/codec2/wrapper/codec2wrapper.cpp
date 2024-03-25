@@ -974,7 +974,7 @@ public:
     void onTripped(uint32_t errorCode) override;
     void onError(uint32_t errorCode) override;
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
-    void onAcquireExtBuffer(uint32_t width, uint32_t height) override;
+    void onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC2D) override;
     void onReleaseExtBuffer(int32_t extFd) override;
 
 private:
@@ -1236,7 +1236,7 @@ void CodecCallback::onUpdateMaxBufCount(uint32_t outputDelay)
     mCallback(mHandle, EVENT_UPDATE_MAX_BUF_CNT, &outputDelay);
 }
 
-void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
+void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC2D)
 {
 
     if (!mCallback) {
@@ -1244,11 +1244,12 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height)
         return;
     }
 
-    BufferResolution resolution = { 0 };
-    resolution.width = width;
-    resolution.height = height;
+    AcquireExtBufInfo acquireInfo;
+    acquireInfo.resolution.width = width;
+    acquireInfo.resolution.height = height;
+    acquireInfo.is_c2d = isC2D;
 
-    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, &resolution);
+    mCallback(mHandle, EVENT_ACQUIRE_EXT_BUF, &acquireInfo);
 }
 
 void CodecCallback::onReleaseExtBuffer(int32_t extFd)

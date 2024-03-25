@@ -40,7 +40,7 @@ int qeavb_create_stream_remote(int eavb_fd, char* file_path, eavb_ioctl_hdr_t* h
   GST_INFO ("Calling %s() with par: fd %d, file %s, hdr %p", __func__, eavb_fd, file_path==NULL?"NULL":file_path, hdr);
   GST_DEBUG ("data receiving retry total time %d", MIN_RETRY_TOTALTIME_US);
   if(file_path) {
-    kpi_place_marker("M - qeavb qavb_create_stream_remote() calling");
+    kpi_place_marker("M - qeavb create-stm-remote() calling");
     return qavb_create_stream_remote(eavb_fd, file_path, hdr);
   }else{
     kpi_place_marker("M - qeavb file_path NULL fatal err!");
@@ -51,28 +51,28 @@ int qeavb_create_stream_remote(int eavb_fd, char* file_path, eavb_ioctl_hdr_t* h
 int qeavb_get_stream_info(int eavb_fd, eavb_ioctl_hdr_t* hdr, eavb_ioctl_stream_info_t* info)
 {
   GST_INFO ("Calling %s() with par: fd %d, hdr %p, info %p", __func__, eavb_fd, hdr, info);
-  kpi_place_marker("M - qeavb qavb_get_stream_info() calling");
+  kpi_place_marker("M - qeavb get-stream-info() calling");
   return qavb_get_stream_info(eavb_fd, hdr, info);
 }
 
 int qeavb_destroy_stream(int eavb_fd, eavb_ioctl_hdr_t* hdr)
 {
   GST_INFO ("Calling %s() with par: fd %d, hdr %p", __func__, eavb_fd, hdr);
-  kpi_place_marker("M - qeavb qavb_destroy_stream() calling");
+  kpi_place_marker("M - qeavb destroy-stream() calling");
   return qavb_destroy_stream(eavb_fd, hdr);
 }
 
 int qeavb_connect_stream(int eavb_fd, eavb_ioctl_hdr_t* hdr)
 {
   GST_INFO ("Calling %s() with par: fd %d, hdr %p", __func__, eavb_fd, hdr);
-  kpi_place_marker("M - qeavb qavb_connect_stream() calling");
+  kpi_place_marker("M - qeavb connect-stream() calling");
   return qavb_connect_stream(eavb_fd, hdr);
 }
 
 int qeavb_disconnect_stream(int eavb_fd, eavb_ioctl_hdr_t* hdr)
 {
   GST_INFO ("Calling %s() with par: fd %d, hdr %p", __func__, eavb_fd, hdr);
-  kpi_place_marker("M - qeavb qavb_disconnect_stream() calling");
+  kpi_place_marker("M - qeavb disconnect-stream() calling");
   return qavb_disconnect_stream(eavb_fd, hdr);
 }
 
@@ -93,6 +93,8 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    if (ret <= 0)
+      GST_ERROR("kpi write error ret %d, str %s, fd %d", ret, str, fd);
     close(fd);
     return ret;
   }
@@ -130,7 +132,7 @@ int log_heartbeat_counter_click(LOG_HEARTBEAT_CTX* ctx)
       return 1;
     }else{
       ctx->last_t_valid = 0;
-      kpi_place_marker("M - qeavb clock_gettime() for 1st click fail!");
+      kpi_place_marker("M - qeavb gettime() 1st click fail!");
       GST_ERROR ("clock_gettime() return error for 1st click");
       return 0;
     }
@@ -160,7 +162,7 @@ int log_heartbeat_counter_click(LOG_HEARTBEAT_CTX* ctx)
       GST_DEBUG ("log heartbeat period update to %d(%d, dif %lldns, cur %lld.%09d sec)", ctx->period, period_new, t_dif, (long long)t.tv_sec, (int)t.tv_nsec);
     }else{
       ctx->last_t_valid = 0;
-      kpi_place_marker("M - qeavb clock_gettime() for Nth click fail!");
+      kpi_place_marker("M - qeavb gettime() Nth click fail!");
       GST_ERROR ("clock_gettime() return error for Nth click");
     }
     ctx->counter = ctx->period - 1;

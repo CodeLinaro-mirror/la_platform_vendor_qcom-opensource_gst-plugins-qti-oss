@@ -2425,6 +2425,12 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   mem = gst_buffer_get_memory (buf, 0);
 
   if (gst_is_dmabuf_memory (mem)) {
+    if (frame->system_frame_number == 0) {
+      enc->is_input_dmabuf = TRUE;
+    } else if (!enc->is_input_dmabuf) {
+      GST_ERROR_OBJECT (enc,
+        "Fatal error: input buf feature changed from need copy to zero copy");
+    }
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
     inBuf.data = NULL;
@@ -2435,6 +2441,12 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     GST_DEBUG_OBJECT (enc, "input c2 buffer:%p fd:%d", inBuf.c2Buffer,
         inBuf.fd);
   } else {
+    if (frame->system_frame_number == 0) {
+      enc->is_input_dmabuf = FALSE;
+    } else if (enc->is_input_dmabuf) {
+      GST_ERROR_OBJECT (enc,
+        "Fatal error: input buf feature changed from zero copy to need copy");
+    }
     gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
     mem_mapped = TRUE;
     inBuf.fd = -1;
@@ -3015,7 +3027,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SLICE_SIZE,
       g_param_spec_uint ("slice-size", "Slice size",
-          "Slice size, just set when slice mode setting to MB or Bytes",
+          "Slice size, just set when slice mode setting to MB or Bytes (unit is bit when mode is Bytes)",
           0, G_MAXUINT, 0,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
@@ -3247,6 +3259,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->ratio_size = 0;
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
+  enc->is_input_dmabuf = FALSE;
 
   enc->max_input_buffers = 0;
 
