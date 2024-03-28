@@ -45,9 +45,9 @@
 /**
  * Default models path and labels path
  */
-#define DEFAULT_SNPE_OBJECT_DETECTION_MODEL "/opt/yolov5.dlc"
-#define DEFAULT_OBJECT_DETECTION_LABELS "/opt/yolov5.labels"
-#define DEFAULT_TFLITE_CLASSIFICATION_MODEL "/opt/mobilenetv2.tflite"
+#define DEFAULT_SNPE_OBJECT_DETECTION_MODEL "/opt/yolonas.dlc"
+#define DEFAULT_OBJECT_DETECTION_LABELS "/opt/yolonas.labels"
+#define DEFAULT_TFLITE_CLASSIFICATION_MODEL "/opt/inceptionv3.tflite"
 #define DEFAULT_CLASSIFICATION_LABELS "/opt/classification.labels"
 #define DEFAULT_TFLITE_POSE_DETECTION_MODEL "/opt/posenet_mobilenet_v1.tflite"
 #define DEFAULT_POSE_DETECTION_LABELS "/opt/posenet_mobilenet_v1.labels"
@@ -160,6 +160,26 @@ help (const gchar *app_name)
   g_print ("\nTo use your own model and labels replace at the default paths\n");
 }
 
+/*
+ * Update Window Grid
+ * Change position of grid as per display resolution
+ */
+static void
+update_window_grid ()
+{
+  gint width, height;
+  if (get_active_display_mode (&width, &height)) {
+    gint win_w = width/2;
+    gint win_h = height/2;
+    pipeline_data[0].position = {0, 0, win_w, win_h};
+    pipeline_data[1].position = {win_w, 0, win_w, win_h};
+    pipeline_data[2].position = {0, win_h, win_w, win_h};
+    pipeline_data[3].position = {win_w, win_h, win_w, win_h};
+  } else {
+    g_warning ("Failed to get active display mode, using 1080p default config");
+  }
+}
+
 /**
  * Create GST pipeline: has 3 main steps
  * 1. Create all elements/GST Plugins
@@ -187,6 +207,8 @@ create_pipe (GstAppContext * appctx)
   gint width = DEFAULT_CAMERA_OUTPUT_WIDTH;
   gint height = DEFAULT_CAMERA_OUTPUT_HEIGHT;
   gint framerate = DEFAULT_CAMERA_FRAME_RATE;
+
+  update_window_grid ();
 
   // 1. Create the elements or Plugins
   // Create qtiqmmfsrc plugin for camera stream
@@ -351,19 +373,17 @@ create_pipe (GstAppContext * appctx)
       case GST_OBJECT_DETECTION:
         g_value_init (&layers, GST_TYPE_ARRAY);
         g_value_init (&value, G_TYPE_STRING);
-        g_value_set_string (&value, "Conv_198");
+        g_value_set_string (&value, "/heads/Mul");
         gst_value_array_append_value (&layers, &value);
-        g_value_set_string (&value, "Conv_232");
-        gst_value_array_append_value (&layers, &value);
-        g_value_set_string (&value, "Conv_266");
+        g_value_set_string (&value, "/heads/Sigmoid");
         gst_value_array_append_value (&layers, &value);
         g_object_set_property (G_OBJECT (qtimlelement[i]), "layers", &layers);
-        module_id = get_enum_value (qtimlvpostproc[i], "module", "yolov5");
+        module_id = get_enum_value (qtimlvpostproc[i], "module", "yolo-nas");
         if (module_id != -1) {
           g_object_set (G_OBJECT (qtimlvpostproc[i]),
               "module", module_id, NULL);
         } else {
-          g_printerr ("Module yolov5 is not available in qtimlvdetection\n");
+          g_printerr ("Module yolo-nas is not available in qtimlvdetection\n");
           goto error;
         }
         // Set the object detection module threshold limit
@@ -374,7 +394,7 @@ create_pipe (GstAppContext * appctx)
       case GST_CLASSIFICATION:
         module_id = get_enum_value (qtimlvpostproc[i], "module", "mobilenet");
         if (module_id != -1) {
-          g_object_set (G_OBJECT (qtimlvpostproc[i]), "threshold", 60.0,
+          g_object_set (G_OBJECT (qtimlvpostproc[i]), "threshold", 40.0,
               "results", 2, "module", module_id, NULL);
         } else {
           g_printerr ("Module mobilenet not available in qtimlvclassifivation\n");
@@ -541,8 +561,8 @@ create_pipe (GstAppContext * appctx)
       case GST_CLASSIFICATION:
         g_value_init (&position, GST_TYPE_ARRAY);
         g_value_init (&dimension, GST_TYPE_ARRAY);
-        pos_vals[0] = 0; pos_vals[1] = 0;
-        dim_vals[0] = 500; dim_vals[1] = 250;
+        pos_vals[0] = 30; pos_vals[1] = 45;
+        dim_vals[0] = 320; dim_vals[1] = 180;
         composer_sink = gst_element_get_static_pad (
             qtivcomposer[GST_CLASSIFICATION], "sink_1");
         if (!composer_sink) {
@@ -642,8 +662,20 @@ main (gint argc, gchar * argv[])
   }
 
   // Set Display environment variables
-  setenv("XDG_RUNTIME_DIR", "/run/user/root", 0);
-  setenv("WAYLAND_DISPLAY", "wayland-1", 0);
+  setenv ("XDG_RUNTIME_DIR", "/run/user/root", 0);
+  setenv ("WAYLAND_DISPLAY", "wayland-1", 0);
+
+  for (gint i = 0; i < GST_PIPELINE_CNT; i++) {
+    if (!file_exists (pipeline_data[i].model)) {
+      g_printerr ("File does not exist: %s\n", pipeline_data[i].model);
+      return -EINVAL;
+    }
+
+    if (!file_exists (pipeline_data[i].labels)) {
+      g_printerr ("File does not exist: %s\n", pipeline_data[i].labels);
+      return -EINVAL;
+    }
+  }
 
   // Initialize GST library.
   gst_init (&argc, &argv);
