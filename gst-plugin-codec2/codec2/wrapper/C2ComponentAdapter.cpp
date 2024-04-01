@@ -1022,7 +1022,10 @@ void C2ComponentAdapter::handleWorkDone(
                                 mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
                             }
                         } else {
+                            /* mC2AllocatorGBM is not created in Codec2 service mode. */
+#ifndef USE_AGL_C2SERVICE
                             LOG_ERROR("mC2AllocatorGBM is NULL");
+#endif
                         }
                     }
                 }
@@ -1191,7 +1194,10 @@ bool C2ComponentAdapter::isUseExternalBuffer(BUFFER_POOL_TYPE type)
         if (mC2AllocatorGBM) {
             ret = mC2AllocatorGBM->isUseExternalBuffer();
         } else {
+            /* mC2AllocatorGBM is not created in Codec2 service mode. */
+#ifndef USE_AGL_C2SERVICE
             LOG_ERROR("mC2AllocatorGBM is NULL");
+#endif
         }
     } else {
         LOG_ERROR("Invalid buffer pool type %d", type);

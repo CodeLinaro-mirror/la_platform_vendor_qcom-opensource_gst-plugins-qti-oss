@@ -37,6 +37,12 @@
 #include "gstqcodec2bufferpool.h"
 #include "codec2wrapper.h"
 
+#ifdef USE_AGL_C2SERVICE // for fstat to get inode
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif /* USE_AGL_C2SERVICE */
+
 GST_DEBUG_CATEGORY_EXTERN (qcodec2bufferpool_debug);
 #define GST_CAT_DEFAULT qcodec2bufferpool_debug
 
@@ -352,6 +358,23 @@ _attach_video_meta (GstBuffer * buf, GstVideoInfo * vinfo)
       gst_buffer_get_size (buf));
 }
 
+#ifdef USE_AGL_C2SERVICE
+static inline int _get_inode (int fd, ino_t *i)
+{
+  struct stat sb;
+  int ret = fstat (fd, &sb);
+  if (0 == ret) {
+    *i = sb.st_ino;
+    GST_DEBUG ("fd=%d, dev 0x%lx, inode 0x%lx, rdev 0x%lx",
+        fd, sb.st_dev, sb.st_ino, sb.st_rdev);
+  } else {
+    GST_ERROR ("fd=%d, fstat error: %s", fd, strerror(errno));
+  }
+
+  return ret;
+}
+#endif /* USE_AGL_C2SERVICE */
+
 static GstFlowReturn
 _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GstBuffer ** buffer, GstBufferPoolAcquireParams * params)
@@ -368,11 +391,22 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   PoolMode mode = pool->param.mode;
   GHashTable *buffer_table = pool->buffer_table;
 
-  gint64 key = ((gint64) param_ext->fd << 32) | param_ext->meta_fd;
   gint64 *buf_key = NULL;
   GValue new_index = { 0, };
   g_value_init (&new_index, G_TYPE_UINT64);
   GstVideoC2BufMeta *video_c2buf_meta = NULL;
+
+#ifndef USE_AGL_C2SERVICE
+  gint64 key = ((gint64) param_ext->fd << 32) | param_ext->meta_fd;
+#else
+  gint64 key = 0;
+  ino_t ino = 0;
+
+  if (_get_inode (param_ext->fd, &ino))
+    return GST_FLOW_ERROR;
+  else
+    key = (gint64)ino;
+#endif /* USE_AGL_C2SERVICE */
 
   gst_buf = (GstBuffer *) g_hash_table_lookup (buffer_table, &key);
   if (gst_buf) {
@@ -400,16 +434,38 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
      * for the same gst buffer. The mapped address may be used by waylandsink
      * for checking whether need to create a new wayland buffer.
      */
+#ifndef USE_AGL_C2SERVICE
+    GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_DONT_CLOSE |
+        GST_FD_MEMORY_FLAG_KEEP_MAPPED;
+    int fd = param_ext->fd;
+#else
+    /* Dup the fd and cache it in gst buffer to make the fd fixed in C2 client
+     * process's lifetime, whereby decoder's downstream like waylandsink and
+     * qvdeinterlace can work as previously. No need to cache the meta data fd
+     * for C2 client C2AllocatorGBM::rebuildAllocationGBM() imports the GBM bo
+     * with both buffer fd & meta data fd, so downstream can get meta data fd
+     * by GBM API and set meta data like qvdeinterlace/libgpudi set interlace
+     * info. Once downstream return the buffer back, C2AllocationGBM shall be
+     * destructed and buffer fd & meta data fd shall be closed, so need to dup
+     * the buffer fd here.
+     * The dup-ed buffer fd need to be closed when destructing gst buffer pool
+     * and freeing the gst memory, so remove GST_FD_MEMORY_FLAG_DONT_CLOSE. */
+    GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_KEEP_MAPPED;
+    int fd = dup(param_ext->fd);
+    if (fd < 0) {
+      GST_ERROR_OBJECT (bpool, "param_ext->fd=%d, dup error: %s",
+          param_ext->fd, strerror(errno));
+      return GST_FLOW_ERROR;
+    }
+#endif /* USE_AGL_C2SERVICE */
+
     gst_buf = gst_buffer_new ();
     if (mode == DMABUF_WRAP_MODE) {
       mem = gst_dmabuf_allocator_alloc_with_flags (pool->allocator,
-          param_ext->fd, param_ext->size,
-          GST_FD_MEMORY_FLAG_DONT_CLOSE | GST_FD_MEMORY_FLAG_KEEP_MAPPED);
+          fd, param_ext->size, flags);
     } else if (mode == FDBUF_WRAP_MODE) {
-      mem =
-          gst_fd_allocator_alloc (pool->allocator, param_ext->fd,
-          param_ext->size,
-          GST_FD_MEMORY_FLAG_DONT_CLOSE | GST_FD_MEMORY_FLAG_KEEP_MAPPED);
+      mem = gst_fd_allocator_alloc (pool->allocator, fd,
+          param_ext->size, flags);
     }
     if (G_UNLIKELY (!mem)) {
       GST_ERROR_OBJECT (bpool, "failed to allocate gst memory");
@@ -441,9 +497,9 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     *buf_key = key;
     g_hash_table_insert (buffer_table, buf_key, gst_buf);
     GST_DEBUG_OBJECT (bpool,
-        "add a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d", gst_buf,
+        "add a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d, key:0x%lx", gst_buf,
         param_ext->fd, param_ext->meta_fd, param_ext->index,
-        GST_OBJECT_REFCOUNT (gst_buf));
+        GST_OBJECT_REFCOUNT (gst_buf), key);
 
     structure = gst_structure_new_empty ("BUFFER");
     g_value_set_uint64 (&new_index, param_ext->index);

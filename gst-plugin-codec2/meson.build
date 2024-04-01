@@ -19,7 +19,14 @@ else
   color_fmt_args = []
 endif
 
-gst_plugin_codec2_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
+use_agl_c2service = get_option('agl-c2service')
+if use_agl_c2service
+  agl_c2service_args = ['-DUSE_AGL_C2SERVICE']
+else
+  agl_c2service_args = []
+endif
+
+gst_plugin_codec2_args = ['-DHAVE_CONFIG_H'] + color_fmt_args + agl_c2service_args
 
 if get_option('c2dec-deinterlace').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_C2DEC_DEINTERLACE']
