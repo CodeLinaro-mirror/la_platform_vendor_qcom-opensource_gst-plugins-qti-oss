@@ -133,6 +133,8 @@ private:
     c2_status_t importExternalBuf(std::shared_ptr<C2Buffer>& c2Buf, int fd, uint32_t size);
     uint32_t getInterlaceMode(std::vector<std::unique_ptr<C2Param> >& configUpdate, bool& deinterlaced);
     uint32_t getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate);
+    static void paramHelper(const std::shared_ptr<C2Buffer>& buffer, uint64_t index);
+    static void printHDRStaticInfo(const C2StreamHdrStaticInfo::output& hsi);
 
     std::weak_ptr<C2ComponentStore> mStore;
     std::shared_ptr<C2Component> mComp;
