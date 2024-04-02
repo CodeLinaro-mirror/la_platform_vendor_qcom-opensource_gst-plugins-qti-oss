@@ -441,7 +441,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
         gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
       if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
         if (dec->is_ubwc && (dec->secure
-              || dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
+                || dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
           /* TODO: remove format/secure condition above
            * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
            * otherwise, prefer to P010.
@@ -468,13 +468,13 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
     config = g_ptr_array_new ();
     if (config) {
       pixelformat =
-        make_pixel_format_param (gst_to_c2_pixelformat (dec,
+          make_pixel_format_param (gst_to_c2_pixelformat (dec,
               output_format), FALSE);
       GST_LOG_OBJECT (dec, "set c2 output format: %d",
           pixelformat.pixelFormat.fmt);
       g_ptr_array_add (config, &pixelformat);
       if (!c2componentInterface_config (dec->comp_intf,
-            config, BLOCK_MODE_MAY_BLOCK)) {
+              config, BLOCK_MODE_MAY_BLOCK)) {
         GST_ERROR_OBJECT (dec, "Failed to set config");
         ret = FALSE;
       }
@@ -645,8 +645,7 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
   s = gst_caps_get_structure (intersection, 0);
   format_str = gst_structure_get_string (s, "format");
   GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d, "
-      "both of them will be updated for 10bit clip", format_str,
-      dec->is_ubwc);
+      "both of them will be updated for 10bit clip", format_str, dec->is_ubwc);
 
   if (!format_str || (output_format = gst_video_format_from_string (format_str))
       == GST_VIDEO_FORMAT_UNKNOWN) {
@@ -729,7 +728,7 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
   g_mutex_lock (&dec->pending_lock);
 
   end_time =
-    g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
+      g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
   while (!dec->eos_reached) {
     GST_DEBUG_OBJECT (dec, "wait until EOS signal is triggered");
 
@@ -806,6 +805,8 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   gint height = 0;
   GstVideoInterlaceMode interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
   INTERLACE_MODE_TYPE c2interlace_mode = INTERLACE_MODE_PROGRESSIVE;
+  GstVideoMasteringDisplayInfo display_info;
+  GstVideoContentLightLevel content_light_level;
   gchar *comp_name;
   GPtrArray *config = NULL;
   ConfigParams resolution;
@@ -814,6 +815,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   ConfigParams low_latency_mode;
   ConfigParams use_external_buf;
   ConfigParams frame_rate;
+  ConfigParams hdr_static_info;
   GstVideoInfo input_info;
   gfloat fps = COMMON_FRAMERATE;
 
@@ -922,6 +924,32 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   frame_rate = make_framerate_param (fps, TRUE);
   g_ptr_array_add (config, &frame_rate);
   GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
+
+  if (gst_video_mastering_display_info_from_caps (&display_info, state->caps)
+      && gst_video_content_light_level_from_caps (&content_light_level,
+          state->caps)) {
+    GST_DEBUG_OBJECT (dec,
+        "SEI R(%hu,%hu)G(%hu,%hu)B(%hu,%hu)WP(%hu,%hu)L(max %u, min %u)",
+        display_info.display_primaries[0].x,
+        display_info.display_primaries[0].y,
+        display_info.display_primaries[1].x,
+        display_info.display_primaries[1].y,
+        display_info.display_primaries[2].x,
+        display_info.display_primaries[2].y,
+        display_info.white_point.x,
+        display_info.white_point.y,
+        display_info.max_display_mastering_luminance,
+        display_info.min_display_mastering_luminance);
+
+    GST_DEBUG_OBJECT (dec, "SEI CLL %hu, %hu",
+        content_light_level.max_content_light_level,
+        content_light_level.max_frame_average_light_level);
+
+    GST_DEBUG_OBJECT (dec, "set HDR static info");
+    hdr_static_info =
+        make_hdr_static_info_param (display_info, content_light_level, FALSE);
+    g_ptr_array_add (config, &hdr_static_info);
+  }
 
   if (!c2componentInterface_initReflectedParamUpdater (dec->comp_store,
           dec->comp_intf)) {
@@ -1608,7 +1636,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           /* Should not negotiate with downstream, just release the buffer here.
            * case 1: in flushing state
            * case 2: state is being changed to ready */
-          if (dec->is_flushing || GST_STATE_TARGET(dec) < GST_STATE_PAUSED) {
+          if (dec->is_flushing || GST_STATE_TARGET (dec) < GST_STATE_PAUSED) {
             GstVideoCodecFrame *frame = NULL;
             frame = gst_video_decoder_get_frame (decoder, out_buf->index);
             if (frame) {
@@ -1616,7 +1644,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
             }
             if (c2component_freeOutBuffer (dec->comp, out_buf->index)) {
               GST_DEBUG_OBJECT (dec, "release the buffer %lu since of %s",
-                  out_buf->index, dec->is_flushing ? "flushing" : "state change");
+                  out_buf->index,
+                  dec->is_flushing ? "flushing" : "state change");
             }
             break;
           }
@@ -2236,15 +2265,13 @@ gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
 
   guint count = 0;
   for (guint i = 0; i < G_N_ELEMENTS (kDECODER_ELEMENTS); i++) {
-      if (gst_element_register (plugin, kDECODER_ELEMENTS[i].element,
-            kDECODER_ELEMENTS[i].rank,
-            kDECODER_ELEMENTS[i].register_type ())) {
-        count++;
-        GST_INFO ("register element %s", kDECODER_ELEMENTS[i].element);
-      } else {
-        GST_ERROR ("failed to register element %s",
-            kDECODER_ELEMENTS[i].element);
-      }
+    if (gst_element_register (plugin, kDECODER_ELEMENTS[i].element,
+            kDECODER_ELEMENTS[i].rank, kDECODER_ELEMENTS[i].register_type ())) {
+      count++;
+      GST_INFO ("register element %s", kDECODER_ELEMENTS[i].element);
+    } else {
+      GST_ERROR ("failed to register element %s", kDECODER_ELEMENTS[i].element);
+    }
   }
 
   return count > 0 ? TRUE : FALSE;
