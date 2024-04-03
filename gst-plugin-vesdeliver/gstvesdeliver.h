@@ -53,6 +53,10 @@ G_BEGIN_DECLS
     "application/x-cenc, " \
     "original-media-type=(string)video/x-h265, " \
     "protection-system = (string) " WIDEVINE_PROTECTION_SYSTEM_ID
+#define VIDEO_RAW_CAPS \
+    "video/x-raw"
+#define VIDEO_RAW_DMABUF_CAPS \
+    "video/x-raw(memory:DMABuf)"
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
@@ -86,6 +90,7 @@ typedef enum
   TRANSFORM_DISABLE,
   TRANSFORM_CENC_TO_CLEAR,
   TRANSFORM_CLEAR_TO_CENC,
+  TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO,
 } TRANSFORM_CAPS;
 
 struct _GstVesDeliver
