@@ -1468,4 +1468,4 @@ plugin_init (GstPlugin * plugin)
     return gst_element_register (plugin, "videoblend", GST_RANK_PRIMARY, GST_TYPE_VIDEO_BLEND);
 }
 
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR, videoblend, "Video blend", plugin_init, VERSION, GST_LICENSE, "Qualcomm Technologies Inc", "http://www.qualcomm.com")
+GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR, videoblend, "Video blend", plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), GST_LICENSE, "Qualcomm Technologies Inc", "http://www.qualcomm.com")

@@ -111,7 +111,7 @@ public:
     c2_status_t freeOutputBuffer(uint64_t bufferIdx);
     c2_status_t attachExternalFd(BUFFER_POOL_TYPE type, int fd);
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
-    void acquireExtBuf(uint32_t width, uint32_t height);
+    void acquireExtBuf(uint32_t width, uint32_t height, bool isC2D);
     void releaseExtBuf(int32_t extFd);
     void cancelPendingWork();
 
@@ -165,7 +165,8 @@ private:
     uint32_t mNumPendingWorks;
     std::mutex mLock;
     std::mutex mLockOut;
-    std::condition_variable mCondition;
+    bool mPendingSignaled;
+    std::condition_variable mPendingWorkCond;
     fnDataCopy mDataCopyFunc;
     void* mDataCopyFuncParam;
 };

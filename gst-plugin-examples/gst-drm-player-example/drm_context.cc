@@ -168,6 +168,11 @@ PlayreadyContext::InitSession ()
     createDrmFactoryFunc createDrmFactory =
       (createDrmFactoryFunc) dlsym (lib_handle_, "createDrmFactory");
 
+    if (createDrmFactory == NULL) {
+      g_printerr ("ERROR: Cannot find symbol, dlerror = %s\n", dlerror());
+      return result;
+    }
+
     if ((drm_factory = createDrmFactory()) == NULL &&
         (err = dlerror()) != NULL) {
       g_printerr ("ERROR: Cannot find symbol, dlerror = %s\n", err);
@@ -228,6 +233,10 @@ PlayreadyContext::CreateLicenseRequest ()
 
   // Decode base64 encoded PlayReady object.
   decoded_str = g_base64_decode (init_data_, &out_len);
+  if (decoded_str == NULL) {
+    g_printerr ("ERROR: Failed to decode base64 data \n");
+    return result;
+  }
   pro_header.appendArray (reinterpret_cast<const uint8_t*> (decoded_str),
       out_len);
   g_free (decoded_str);
