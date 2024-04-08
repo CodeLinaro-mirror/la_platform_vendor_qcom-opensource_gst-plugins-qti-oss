@@ -366,6 +366,9 @@ get_c2_comp_name (GstVideoDecoder * decoder, GstStructure * s,
         g_free (str);
       str = concat_str;
     } else {
+      GST_ERROR_OBJECT (dec,
+          "selected component %s is not supported, use %s instead!", concat_str, str);
+      g_warn_if_fail (FALSE && "selected component is not supported!");
       g_free (concat_str);
     }
   }
