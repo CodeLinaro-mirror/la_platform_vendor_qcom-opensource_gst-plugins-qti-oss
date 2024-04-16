@@ -77,7 +77,7 @@ struct _GstQcodec2BufferPool
   GstBufferPool bufferpool;
   GstAllocator *allocator;
   gboolean add_c2bufmeta;
-  GHashTable *buffer_table; /* only used in DMA/FD wrap mode */
+  GHashTable *buffer_table;     /* only used in DMA/FD wrap mode */
 
   GstBufferPoolInitParam param;
 };

@@ -142,6 +142,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_LTR_MARK_INDEX "ltr_mark_index"
 #define CONFIG_FUNCTION_KEY_LTR_USE_INDEX "ltr_use_index"
 #define CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER "external_buffer"
+#define CONFIG_FUNCTION_KEY_HDR_STATIC_INFO "hdr_static_info"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -517,6 +518,22 @@ typedef struct {
             guint mark_index;
             guint use_index;
         } ltr;
+
+        struct {
+            gfloat red_x;
+            gfloat red_y;
+            gfloat green_x;
+            gfloat green_y;
+            gfloat blue_x;
+            gfloat blue_y;
+            gfloat white_x;
+            gfloat white_y;
+            gfloat maxLuminance;
+            gfloat minLuminance;
+            gfloat maxCll;
+            gfloat maxFall;
+        } hdr_static_info;
+
     };
 } ConfigParams;
 
@@ -524,6 +541,11 @@ typedef struct {
     guint32 width;
     guint32 height;
 } BufferResolution;
+
+typedef struct {
+    BufferResolution resolution;
+    gboolean is_c2d;
+} AcquireExtBufInfo;
 
 typedef struct {
     const gchar* codec;

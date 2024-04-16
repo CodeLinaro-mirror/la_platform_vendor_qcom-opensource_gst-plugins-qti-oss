@@ -54,6 +54,8 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
  * If count of pending works are more than 6, it causes queue overflow issue.
  */
 #define MAX_PENDING_WORK 6
+/* max external buffer count extension */
+#define MAX_EXT_BUF_CNT_EXTENSION 3
 
 using namespace std::chrono_literals;
 
@@ -85,6 +87,7 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
     mDataCopyFuncParam = nullptr;
     mC2AllocatorGBM = nullptr;
     mC2LinearAllocator = nullptr;
+    mPendingSignaled = false;
 }
 
 C2ComponentAdapter::~C2ComponentAdapter()
@@ -315,7 +318,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                         gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                     } else if (buffer->heic_flag) {
                         LOG_MESSAGE("NV12: usage add NV12 512 QTI");
-                        gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
+                        gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
 
                         /* In HEIC encode, align width & height to multiples of 512
                          * because in codec2, VENUS_NV12_512 is deprecated. if this
@@ -379,7 +382,6 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
 
     LOG_MESSAGE("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
 
-    // check if it's spurious wakeup
     if (mNumPendingWorks >= maxPendingWorks) {
         do {
             if (timeoutMs > 0) {
@@ -392,7 +394,7 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
             } else if (timeoutMs == 0) {
                 mPendingWorkCond.wait(ul);
             }
-        } while (!mPendingSignaled);
+        } while (!mPendingSignaled); // check if it's spurious wakeup
 
         mPendingSignaled = false;
         LOG_MESSAGE("wake up");
@@ -556,7 +558,7 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                 gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                 LOG_MESSAGE("NV12: usage add UBWC ALIGNED QTI");
             } else if (buffer->heic_flag) {
-                gbmUsage = GBM_BO_USAGE_NV12_512_QTI;
+                gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
                 LOG_MESSAGE("NV12: usage add NV12 512 QTI");
 
                 /* In HEIC encode, align width & height to multiples of 512
@@ -873,7 +875,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         } else {
             mC2AllocatorGBM = std::dynamic_pointer_cast<android::C2AllocatorGBM>(allocator);
             auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
-                std::placeholders::_1, std::placeholders::_2);
+                std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
             if (mC2AllocatorGBM) {
                 mC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
@@ -1011,7 +1013,11 @@ void C2ComponentAdapter::handleWorkDone(
                                 outputDelay.value, mGraphicPool->getLocalId());
                             if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                                 /* Update the max acquirable buffer count for external buffer pool */
-                                mCallback->onUpdateMaxBufCount(outputDelay.value);
+                                uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
+                                if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
+                                    maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
+                                }
+                                mCallback->onUpdateMaxBufCount(maxBufCnt);
                             } else {
                                 mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
                             }
@@ -1025,7 +1031,7 @@ void C2ComponentAdapter::handleWorkDone(
         }
 
         // Expected only one output stream.
-        if (worklet->output.buffers.size() == 1u) {
+        if (worklet->output.buffers.size() == 1u && !(outputFrameFlag & C2FrameData::FLAG_DROP_FRAME)) {
             buffer = worklet->output.buffers[0];
             bufferIdx = worklet->output.ordinal.frameIndex.peeku();
             if (!buffer) {
@@ -1250,10 +1256,10 @@ do_exit:
     return result;
 }
 
-void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height)
+void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC2D)
 {
     if (mCallback) {
-        mCallback->onAcquireExtBuffer(width, height);
+        mCallback->onAcquireExtBuffer(width, height, isC2D);
     }
 }
 

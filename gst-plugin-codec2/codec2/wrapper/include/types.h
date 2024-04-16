@@ -105,7 +105,7 @@ public:
     virtual void onTripped(uint32_t errorCode) = 0;
     virtual void onError(uint32_t errorCode) = 0;
     virtual void onUpdateMaxBufCount(uint32_t outputDelay) = 0;
-    virtual void onAcquireExtBuffer(uint32_t width, uint32_t height) = 0;
+    virtual void onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC2D) = 0;
     virtual void onReleaseExtBuffer(int32_t extFd) = 0;
 
     virtual ~EventCallback() {}
