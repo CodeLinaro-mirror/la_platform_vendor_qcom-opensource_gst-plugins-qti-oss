@@ -22,6 +22,20 @@ if use_dmaheap
   codec2wrapper_args += ['-DUSE_DMAHEAP']
 endif
 
+qprange_op = get_option('qprange_option')
+if qprange_op == 'op0'
+  codec2wrapper_args += ['-DGST_QPRANGE_OPTION=0']
+elif qprange_op == 'op1'
+  codec2wrapper_args += ['-DGST_QPRANGE_OPTION=1']
+endif
+
+report_frame_qp_op = get_option('report_frame_qp_option')
+if report_frame_qp_op == 'op0'
+  codec2wrapper_args += ['-DGST_REPORT_FRAME_QP_OPTION=0']
+elif report_frame_qp_op == 'op1'
+  codec2wrapper_args += ['-DGST_REPORT_FRAME_QP_OPTION=1']
+endif
+
 codec2wrapper = library('codec2wrapper',
   codec2wrapper_sources,
   cpp_args : codec2wrapper_args,
