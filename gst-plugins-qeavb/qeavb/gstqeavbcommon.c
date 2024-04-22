@@ -29,6 +29,9 @@
  */
 #include <gst/gstinfo.h>
 #include "gstqeavbcommon.h"
+#ifdef KPI_USE_SYSLOG
+#include <syslog.h>
+#endif
 
 GST_DEBUG_CATEGORY_EXTERN (gst_debug_qeavbutility);
 #define GST_CAT_DEFAULT gst_debug_qeavbutility
@@ -90,6 +93,10 @@ int qeavb_receive_done(int eavb_fd, eavb_ioctl_hdr_t* hdr, eavb_ioctl_buf_data_t
 
 int kpi_place_marker(const char* str)
 {
+#ifdef KPI_USE_SYSLOG
+  syslog(LOG_INFO, "%s\n", str);
+  return 1;
+#else
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
@@ -100,6 +107,7 @@ int kpi_place_marker(const char* str)
   }
   GST_ERROR("open kpi marker node failed");
   return -1;
+#endif
 }
 
 int log_heartbeat_init(LOG_HEARTBEAT_CTX* ctx, int period_init, int period_min, int period_max)
