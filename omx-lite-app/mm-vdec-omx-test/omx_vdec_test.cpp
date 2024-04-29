@@ -1869,7 +1869,7 @@ int Play_Decoder(bool secure)
 
   if(0 != pthread_create(&ebd_thread_id, NULL, ebd_thread, NULL))
   {
-    DEBUG_PRINT_ERROR(" Error in Creating fbd_thread ");
+    DEBUG_PRINT_ERROR(" Error in Creating ebd_thread ");
     free_queue(ebd_queue);
     free_queue(fbd_queue);
     return -1;
