@@ -32,10 +32,6 @@ if get_option('c2dec-deinterlace').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_C2DEC_DEINTERLACE']
 endif
 
-if get_option('qprange').enabled()
-  gst_plugin_codec2_args += ['-DGST_SUPPORT_QPRANGE']
-endif
-
 if get_option('ir-cyclic').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_IR_CYCLIC']
 endif

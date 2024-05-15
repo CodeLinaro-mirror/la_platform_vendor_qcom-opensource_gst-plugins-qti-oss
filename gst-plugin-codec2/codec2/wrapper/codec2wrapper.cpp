@@ -132,15 +132,26 @@ std::unique_ptr<C2Param> setRoiRegion(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setInterlaceInfo(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setIntraRefreshType(gpointer param, void* const comp_intf);
-std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setVideoDynamicFramerate(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf);
+
+// Function for C2 parameter configuration or vendor parameter configuration
+#if GST_QPRANGE_OPTION == 0
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf);
+#elif GST_QPRANGE_OPTION == 1
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param);
+#endif
+
+#if GST_REPORT_FRAME_QP_OPTION == 0
+std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf);
+#elif GST_REPORT_FRAME_QP_OPTION == 1
+std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param);
+#endif
 
 // Function map for parameter configuration
 static configFunctionMap sConfigFunctionMap = {
@@ -158,6 +169,12 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_VIDEO_HEADER_MODE, setVideoHeaderMode },
     { CONFIG_FUNCTION_KEY_TEMPORAL_LAYER, setVideoTemporalLayer },
     { CONFIG_FUNCTION_KEY_HDR_STATIC_INFO, setHDRStaticInfo },
+#if GST_QPRANGE_OPTION == 1
+    { CONFIG_FUNCTION_KEY_IPB_QP_RANGE, setIPBQPRanges },
+#endif
+#if GST_REPORT_FRAME_QP_OPTION == 1
+    { CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP, enableGetAvgFrameQP },
+#endif
 };
 
 // Function map for vendor parameter configuration
@@ -174,10 +191,14 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_BITRATE_SAVING_MODE, setBitrateSavingMode },
     { CONFIG_FUNCTION_KEY_INTERLACE_INFO, setInterlaceInfo },
     { CONFIG_FUNCTION_KEY_DEINTERLACE, setDeInterlace },
+#if GST_QPRANGE_OPTION == 0
     { CONFIG_FUNCTION_KEY_IPB_QP_RANGE, setIPBQPRanges },
+#endif
     { CONFIG_FUNCTION_KEY_IPB_QP_INIT, setIPBQPInit },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH_TYPE, setIntraRefreshType },
+#if GST_REPORT_FRAME_QP_OPTION == 0
     { CONFIG_FUNCTION_KEY_REPORT_AVERAGE_FRAME_QP, enableGetAvgFrameQP },
+#endif
     { CONFIG_FUNCTION_KEY_LTR_COUNT, setLTRCount },
     { CONFIG_FUNCTION_KEY_LTR_MARK_INDEX, setLTRMarkIndex },
     { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
@@ -825,6 +846,7 @@ std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param)
     return C2Param::Copy(*pTemporalLayering);
 }
 
+#if GST_QPRANGE_OPTION == 0
 std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
@@ -855,6 +877,23 @@ std::unique_ptr<C2Param> setIPBQPRanges(gpointer param, void* const comp_intf)
 
     return qp_ranges;
 }
+#elif GST_QPRANGE_OPTION == 1
+std::unique_ptr<C2Param> setIPBQPRanges(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    auto qp_ranges = C2StreamPictureQuantizationTuning::output::AllocUnique(3, 0u);
+
+    qp_ranges->m.values[0] = { I_FRAME, (int32_t)config->qp_ranges.min_i_qp, (int32_t)config->qp_ranges.max_i_qp };
+    qp_ranges->m.values[1] = { P_FRAME, (int32_t)config->qp_ranges.min_p_qp, (int32_t)config->qp_ranges.max_p_qp };
+    qp_ranges->m.values[2] = { B_FRAME, (int32_t)config->qp_ranges.min_b_qp, (int32_t)config->qp_ranges.max_b_qp };
+
+    return C2Param::Copy(*qp_ranges);
+}
+#endif
 
 std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf)
 {
@@ -887,13 +926,13 @@ std::unique_ptr<C2Param> setIPBQPInit(gpointer param, void* const comp_intf)
     return qp_init;
 }
 
+#if GST_REPORT_FRAME_QP_OPTION == 0
 std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_intf)
 {
     if (param == NULL || comp_intf == NULL) {
         return nullptr;
     }
 
-    ConfigParams* config = (ConfigParams*)param;
     C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
     std::unique_ptr<C2Param> avg_qp;
     android::ReflectedParamUpdater::Dict kvpairs;
@@ -906,6 +945,20 @@ std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param, void* const comp_in
 
     return avg_qp;
 }
+#elif GST_REPORT_FRAME_QP_OPTION == 1
+std::unique_ptr<C2Param> enableGetAvgFrameQP(gpointer param)
+{
+    if (param == NULL) {
+        return nullptr;
+    }
+
+    C2AndroidStreamAverageBlockQuantizationInfo::output avg_frame_qp;
+
+    avg_frame_qp.value = 0;
+
+    return C2Param::Copy(avg_frame_qp);
+}
+#endif
 
 std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf)
 {
