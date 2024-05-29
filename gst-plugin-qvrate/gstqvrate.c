@@ -683,6 +683,7 @@ gst_qvrate_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
   memset(&vpp_in_buf, 0, sizeof (struct vpp_buffer));
   if (qvrate_fill_vppbuf_with_gstbuf (&vpp_in_buf, buf, false, qvrate->vpp_buf_size)) {
+    vpp_in_buf.cookie_in_to_out = (void*)(qvrate->frame_number++);
     if (qvratevpp_queue_buf(qvrate->vpp_ctx, in_port, &vpp_in_buf)) {
       GST_DEBUG_OBJECT (qvrate, "queue vpp input buf %p successfully", buf);
       ret = GST_FLOW_OK;
@@ -1114,6 +1115,7 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
   GstQvrate *qvrate = GST_QVRATE(parent);
   gboolean ret = TRUE;
   gint64 wait_until = 0;
+  gboolean forward = TRUE;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
@@ -1180,6 +1182,8 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
       ret = gst_qvrate_setcaps (qvrate, qvrate->sinkpad, caps);
       if (!ret)
         gst_pad_mark_reconfigure (qvrate->srcpad);
+
+      forward = FALSE;
       break;
     case GST_EVENT_SEGMENT:
       gst_event_copy_segment (event, &qvrate->segment);
@@ -1192,7 +1196,7 @@ gst_qvrate_sink_event (GstPad * pad, GstObject * parent,
       break;
   }
 
-  if (ret)
+  if (ret && forward)
     ret = gst_pad_push_event (qvrate->srcpad, event);
   else
     gst_event_unref (event);
@@ -1362,6 +1366,7 @@ gst_qvrate_init (GstQvrate * self)
   self->sink_caps = NULL;
   self->src_caps = NULL;
   self->eos = FALSE;
+  self->frame_number = 0;
 
   GST_INFO_OBJECT (self, "init qvrate done");
 }
