@@ -92,6 +92,7 @@ struct _GstQvrate {
   GMutex drain_lock;
   GstTask *outbuf_task;
   GRecMutex outbuf_lock;
+  guint64 frame_number;
 };
 
 struct _GstQvrateClass {
