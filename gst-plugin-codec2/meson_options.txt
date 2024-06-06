@@ -1,6 +1,12 @@
 option('mmmcolorfmt', type : 'boolean', value : 'false', yield : true, description: 'Use display mmm_color_fmts enum')
 option('c2dec-deinterlace', type : 'feature', value : 'enabled', yield : true, description: 'Enable deinterlace support using C2D or Vulkan APIs')
-option('qprange', type : 'feature', value : 'enabled', yield : true, description: 'Set QP range for I/P/B frames')
 option('ir-cyclic', type : 'feature', value : 'disabled', yield : true, description: 'Enable intra refresh cyclic mode')
 option('usedmaheap', type : 'boolean', value : 'false', description: 'Use DMA buffer heap.')
 option('av1-dec', type : 'feature', value : 'disabled', yield : true, description: 'Enable av1 decoder support')
+option('agl-c2service', type : 'boolean', value : 'false', yield : true, description: 'Use AGL C2 service')
+option('qprange_option', type : 'combo',
+    choices : ['op0', 'op1'], value : 'op0',
+    description : 'The I/P/B frames QP range setting options')
+option('report_frame_qp_option', type : 'combo',
+    choices : ['op0', 'op1'], value : 'op0',
+    description : 'Report average frame QP setting options')

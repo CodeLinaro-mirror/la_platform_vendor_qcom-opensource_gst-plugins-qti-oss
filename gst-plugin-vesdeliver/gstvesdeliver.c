@@ -51,14 +51,14 @@ static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
         AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_DMABUF_CAPS));
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
         AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_CAPS));
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
@@ -115,6 +115,8 @@ gst_vesdeliver_transform_caps_get_type (void)
           "cenc-to-clear"},
       {TRANSFORM_CLEAR_TO_CENC, "Transform caps from clear to CENC",
           "clear-to-cenc"},
+      {TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO, "Transform caps from dmabuf raw video to common raw video",
+          "dmav-to-rawv"},
       {0, NULL, NULL}
     };
 
@@ -268,6 +270,11 @@ gst_vesdeliver_start (GstBaseTransform * trans)
     }
 #endif
   } else if (SECURE_COPY == vesdeliver->secure) {
+#ifdef DISABLE_SECURE_COPY
+    GST_ERROR_OBJECT (vesdeliver, "secure copy mode is not supported!");
+    g_warn_if_fail (FALSE && "secure copy mode is not supported!");
+    return FALSE;
+#endif
     vesdeliver->crypto_handle = dlopen (crypto_lib_name, RTLD_NOW);
     if (NULL == vesdeliver->crypto_handle) {
       const char *dlerr = dlerror ();
@@ -578,6 +585,34 @@ gst_vesdeliver_transform_caps_from_clear_to_cenc (GstCaps * transformed_caps,
   }
 }
 
+static void
+gst_vesdeliver_transform_caps_from_dmav_to_rawv (GstVesDeliver * vesdeliver,
+    GstCaps * transformed_caps, GstStructure * in, GstCapsFeatures * f)
+{
+  if (f == NULL) {
+    GST_ERROR_OBJECT (vesdeliver, "video/x-raw has no feature, it's not expected!");
+  } else {
+    const char* str = gst_caps_features_to_string (f);
+    if (str && !strcmp (str, "memory:DMABuf")) {
+      GST_DEBUG_OBJECT (vesdeliver, "from dmav to rawv, remove feature memory:DMABuf");
+      gst_caps_append_structure (transformed_caps, gst_structure_copy(in));
+    } else {
+      GST_ERROR_OBJECT (vesdeliver, "Get string %s from feature %p, not expected, expect memory:DMABuf", str==NULL?"null":str, f);
+    }
+    g_free(str);
+  }
+  return;
+}
+
+static void
+gst_vesdeliver_transform_caps_from_rawv_to_dmav (GstVesDeliver * vesdeliver,
+    GstCaps * transformed_caps, GstStructure * in)
+{
+  GST_DEBUG_OBJECT (vesdeliver, "from rawv to dmav, add feature memory:DMABuf");
+  gst_caps_append_structure_full (transformed_caps, gst_structure_copy(in), gst_caps_features_from_string("memory:DMABuf"));
+  return;
+}
+
 static GstCaps *
 gst_vesdeliver_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter)
@@ -585,6 +620,7 @@ gst_vesdeliver_transform_caps (GstBaseTransform * trans,
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
   GstCaps *transformed_caps = NULL;
   guint caps_size;
+  const gchar *name = NULL;
 
   if (TRANSFORM_DISABLE == vesdeliver->transform_caps) {
     GST_DEBUG_OBJECT (vesdeliver,
@@ -607,6 +643,29 @@ gst_vesdeliver_transform_caps (GstBaseTransform * trans,
   caps_size = gst_caps_get_size (caps);
   for (guint index = 0; index < caps_size; ++index) {
     GstStructure *in = gst_caps_get_structure (caps, index);
+    name = gst_structure_get_name (in);
+
+    if (name && !strcmp(name, "video/x-raw")) {
+      if (TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO == vesdeliver->transform_caps) {
+        if (direction == GST_PAD_SINK) {
+          gst_vesdeliver_transform_caps_from_dmav_to_rawv (vesdeliver, transformed_caps, in, gst_caps_get_features(caps, index));
+        } else if (direction == GST_PAD_SRC) {
+          gst_vesdeliver_transform_caps_from_rawv_to_dmav (vesdeliver, transformed_caps, in);
+        } else {
+          GST_ERROR_OBJECT (vesdeliver, "error direction %d", direction);
+        }
+        //just handle video/x-raw, needn't handle other mime_types, ignore them
+        break;
+      } else {
+        //if TRANSFORM_CENC_TO_CLEAR or TRANSFORM_CLEAR_TO_CENC, ignore video/x-raw
+        continue;
+      }
+    } else {//mime_type is not video/x-raw
+      if (TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO == vesdeliver->transform_caps) {
+        //if TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO, ignore mime_types which are not video/x-raw
+        continue;
+      }
+    }
 
     if (direction == GST_PAD_SINK) {
       if (TRANSFORM_CENC_TO_CLEAR == vesdeliver->transform_caps) {

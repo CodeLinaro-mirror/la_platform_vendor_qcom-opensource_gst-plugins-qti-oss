@@ -1251,7 +1251,7 @@ gst_qcodec2_venc_finish (GstVideoEncoder * encoder)
   g_mutex_lock (&enc->pending_lock);
 
   end_time =
-    g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
+      g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
   while (!enc->eos_reached) {
     GST_DEBUG_OBJECT (enc, "wait until EOS signal is triggered");
 
@@ -1298,6 +1298,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   gint height = 0;
   GstVideoFormat input_format = GST_VIDEO_FORMAT_UNKNOWN;
   GstVideoInterlaceMode interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
+  GstVideoMasteringDisplayInfo display_info;
+  GstVideoContentLightLevel content_light_level;
   GPtrArray *config = NULL;
   ConfigParams resolution;
   ConfigParams pixelformat;
@@ -1323,6 +1325,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams report_frame_qp;
   ConfigParams temporal_layer;
   ConfigParams ltr_count;
+  ConfigParams hdr_static_info;
   gfloat fps = COMMON_FRAMERATE;
 
   GST_DEBUG_OBJECT (enc, "set_format");
@@ -1507,7 +1510,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
-#ifdef GST_SUPPORT_QPRANGE
+
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1516,7 +1519,6 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
       enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
-#endif
 
   if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
       (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
@@ -1543,6 +1545,32 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   if (enc->ltr_count > 0) {
     ltr_count = make_ltr_count_param (enc->ltr_count);
     g_ptr_array_add (config, &ltr_count);
+  }
+
+  if (gst_video_mastering_display_info_from_caps (&display_info, state->caps)
+      && gst_video_content_light_level_from_caps (&content_light_level,
+          state->caps)) {
+    GST_DEBUG_OBJECT (enc,
+        "SEI R(%hu,%hu)G(%hu,%hu)B(%hu,%hu)WP(%hu,%hu)L(max %u, min %u)",
+        display_info.display_primaries[0].x,
+        display_info.display_primaries[0].y,
+        display_info.display_primaries[1].x,
+        display_info.display_primaries[1].y,
+        display_info.display_primaries[2].x,
+        display_info.display_primaries[2].y,
+        display_info.white_point.x,
+        display_info.white_point.y,
+        display_info.max_display_mastering_luminance,
+        display_info.min_display_mastering_luminance);
+
+    GST_DEBUG_OBJECT (enc, "SEI CLL %hu, %hu",
+        content_light_level.max_content_light_level,
+        content_light_level.max_frame_average_light_level);
+
+    GST_DEBUG_OBJECT (enc, "set HDR static info");
+    hdr_static_info =
+        make_hdr_static_info_param (display_info, content_light_level, TRUE);
+    g_ptr_array_add (config, &hdr_static_info);
   }
 
   /* Create component */
@@ -1739,7 +1767,8 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
       }
       GST_DEBUG_OBJECT (enc,
           "Dynamically config target framerate to %0.2f from %0.2f", fps,
-          (float) enc->output_state->info.fps_n / enc->output_state->info.fps_d);
+          (float) enc->output_state->info.fps_n /
+          enc->output_state->info.fps_d);
       update_prop_mask |= DYNAMIC_PROP_FRAMERATE;
     }
   }
@@ -2429,7 +2458,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       enc->is_input_dmabuf = TRUE;
     } else if (!enc->is_input_dmabuf) {
       GST_ERROR_OBJECT (enc,
-        "Fatal error: input buf feature changed from need copy to zero copy");
+          "Fatal error: input buf feature changed from need copy to zero copy");
     }
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
@@ -2445,7 +2474,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       enc->is_input_dmabuf = FALSE;
     } else if (enc->is_input_dmabuf) {
       GST_ERROR_OBJECT (enc,
-        "Fatal error: input buf feature changed from zero copy to need copy");
+          "Fatal error: input buf feature changed from zero copy to need copy");
     }
     gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
     mem_mapped = TRUE;
@@ -3210,7 +3239,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
   klass->force_idr = GST_DEBUG_FUNCPTR (gst_qcodec2_venc_force_idr);
 
   gstelement_class->change_state =
-    GST_DEBUG_FUNCPTR (gst_qcodec2_venc_change_state);
+      GST_DEBUG_FUNCPTR (gst_qcodec2_venc_change_state);
 
   gst_element_class_set_static_metadata (gstelement_class,
       "Codec2 video encoder", "Encoder/Video",
@@ -3287,13 +3316,11 @@ gst_qcodec2_venc_plugin_init (GstPlugin * plugin)
   guint count = 0;
   for (guint i = 0; i < G_N_ELEMENTS (kENCODER_ELEMENTS); i++) {
     if (gst_element_register (plugin, kENCODER_ELEMENTS[i].element,
-          kENCODER_ELEMENTS[i].rank,
-          kENCODER_ELEMENTS[i].register_type ())) {
+            kENCODER_ELEMENTS[i].rank, kENCODER_ELEMENTS[i].register_type ())) {
       count++;
       GST_INFO ("register element %s", kENCODER_ELEMENTS[i].element);
     } else {
-      GST_ERROR ("failed to register element %s",
-          kENCODER_ELEMENTS[i].element);
+      GST_ERROR ("failed to register element %s", kENCODER_ELEMENTS[i].element);
     }
   }
 
