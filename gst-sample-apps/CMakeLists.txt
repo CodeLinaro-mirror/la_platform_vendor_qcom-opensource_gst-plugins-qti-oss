@@ -32,11 +32,15 @@ if (ENABLE_CAMERA AND ENABLE_DISPLAY AND ENABLE_VIDEO_ENCODE)
   add_subdirectory(gst-activate-deactivate-streams-runtime)
   add_subdirectory(gst-multi-camera-example)
   add_subdirectory(gst-multi-stream-example)
+  add_subdirectory(gst-add-streams-as-bundle-example)
+  add_subdirectory(gst-add-remove-streams-runtime)
+  add_subdirectory(gst-camera-burst-capture-example)
 endif () # ENABLE_CAMERA AND ENABLE_DISPLAY AND ENABLE_VIDEO_ENCODE
 
 if (ENABLE_CAMERA)
   add_subdirectory(gst-appsink-example)
   add_subdirectory(gst-camera-metadata-example)
+  add_subdirectory(gst-camera-switch-example)
 endif () # ENABLE_CAMERA
 
 if (ENABLE_ML AND ENABLE_CAMERA AND ENABLE_DISPLAY AND ENABLE_VIDEO_ENCODE)
@@ -46,6 +50,8 @@ if (ENABLE_ML AND ENABLE_CAMERA AND ENABLE_DISPLAY AND ENABLE_VIDEO_ENCODE)
   add_subdirectory(gst-ai-segmentation)
   add_subdirectory(gst-ai-parallel-inference)
   add_subdirectory(gst-ai-multi-input-output-object-detection)
+  add_subdirectory(gst-ai-monodepth)
+  add_subdirectory(gst-ai-daisychain-detection-classification)
 endif () # ENABLE_CAMERA AND ENABLE_DISPLAY AND ENABLE_VIDEO_ENCODE
 
 if (ENABLE_VIDEO_DECODE)
