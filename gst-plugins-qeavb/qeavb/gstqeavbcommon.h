@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <time.h>
+#include <unistd.h>
 #include "qavblib.h"
 
 #define DEFALUT_SLEEP_US 10000

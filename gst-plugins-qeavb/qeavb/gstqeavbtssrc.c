@@ -117,7 +117,7 @@ gst_qeavb_ts_src_init (GstQeavbTsSrc * qeavbtssrc)
   memset(&(qeavbtssrc->stream_info), 0, sizeof(eavb_ioctl_stream_info_t));
   g_mutex_init (&qeavbtssrc->lock);
   log_heartbeat_init(&qeavbtssrc->logbeat, LOG_HEARTBEAT_TS_PERIOD_INIT, LOG_HEARTBEAT_TS_PERIOD_MIN, LOG_HEARTBEAT_TS_PERIOD_MAX);
-  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %u, hdr addr %p off %u, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
+  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %ld, hdr addr %p off %ld, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
   kpi_place_marker("M - qeavbts init");
 }
 
@@ -217,7 +217,7 @@ gst_qeavb_ts_src_start (GstBaseSrc * basesrc)
   log_heartbeat_counter_reset(&qeavbtssrc->logbeat);
 
   qeavbtssrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
-  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %u val %d, hdr addr %p off %u, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
+  GST_LOG_OBJECT (qeavbtssrc, "eavb_fd addr %p off %ld val %d, hdr addr %p off %ld, qeavbtssrc addr %p", &(qeavbtssrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbTsSrc, eavb_fd), qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), G_STRUCT_OFFSET(GstQeavbTsSrc, hdr), qeavbtssrc);
   if (qeavbtssrc->eavb_fd < 0) {
     kpi_place_marker("M - qeavbts st:fd open fail!");
     GST_ERROR_OBJECT (qeavbtssrc,"open eavb fd error, exit!");
@@ -345,7 +345,6 @@ gst_qeavb_ts_src_stop (GstBaseSrc * basesrc)
 static GstFlowReturn
 gst_qeavb_ts_src_fill (GstPushSrc * pushsrc, GstBuffer * buffer)
 {
-  GstMapInfo map;
   gint32 retry_time = 0, retry_time_residual;
   gint32 sleep_us = DEFALUT_SLEEP_US;
   eavb_ioctl_buf_data_t qavb_buffer;
@@ -423,7 +422,7 @@ retry:
         GST_INFO_OBJECT(qeavbtssrc,"receive the first ts packet");
         qeavbtssrc->is_first_tspacket = FALSE;
       }
-      gst_buffer_fill (buffer, 0, qavb_buffer.pbuf, recv_len);
+      gst_buffer_fill (buffer, 0, (gconstpointer)(qavb_buffer.pbuf), recv_len);
       gst_buffer_set_size (buffer, recv_len);
       err = qeavb_receive_done(qeavbtssrc->eavb_fd, &(qeavbtssrc->hdr), &qavb_buffer);
       if (0 != err) {
