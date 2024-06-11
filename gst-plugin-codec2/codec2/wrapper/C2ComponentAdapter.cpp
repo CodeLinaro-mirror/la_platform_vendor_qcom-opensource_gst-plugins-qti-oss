@@ -374,7 +374,6 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
 c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
     uint32_t maxPendingWorks, uint32_t timeoutMs)
 {
-
     std::unique_lock<std::mutex> ul(mLock);
     std::chrono::milliseconds timeout(timeoutMs);
     std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now() + timeout;
@@ -383,18 +382,16 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
     LOG_MESSAGE("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
 
     if (mNumPendingWorks >= maxPendingWorks) {
-        do {
-            if (timeoutMs > 0) {
-                if (mPendingWorkCond.wait_until(ul, endTime) == std::cv_status::timeout) {
-                    LOG_ERROR("Timed-out waiting for work / state-transition (pending=%u)",
-                        mNumPendingWorks);
-                    ret = C2_TIMED_OUT;
-                    break;
-                }
-            } else if (timeoutMs == 0) {
-                mPendingWorkCond.wait(ul);
+        auto pendingSignaled = [this]{ return mPendingSignaled; };
+        if (timeoutMs > 0) {
+            if (!mPendingWorkCond.wait_until(ul, endTime, pendingSignaled)) {
+                LOG_ERROR("Timed-Out waiting for work / state-transition (pending=%u)",
+                    mNumPendingWorks);
+                ret = C2_TIMED_OUT;
             }
-        } while (!mPendingSignaled); // check if it's spurious wakeup
+        } else if (timeoutMs == 0) {
+            mPendingWorkCond.wait(ul, pendingSignaled);
+        }
 
         mPendingSignaled = false;
         LOG_MESSAGE("wake up");
