@@ -9,3 +9,4 @@ option('qprange_option', type : 'combo',
 option('report_frame_qp_option', type : 'combo',
     choices : ['op0', 'op1'], value : 'op0',
     description : 'Report average frame QP setting options')
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')

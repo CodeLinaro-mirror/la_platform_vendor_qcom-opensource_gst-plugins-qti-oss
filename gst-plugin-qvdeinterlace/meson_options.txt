@@ -1,1 +1,2 @@
 option('mmmcolorfmt', type : 'boolean', value : 'false', yield : true, description: 'Use display mmm_color_fmts enum')
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
