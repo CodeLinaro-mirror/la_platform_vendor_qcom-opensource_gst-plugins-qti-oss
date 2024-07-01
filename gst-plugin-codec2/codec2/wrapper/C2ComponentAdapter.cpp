@@ -944,6 +944,8 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
 uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> >& configUpdate)
 {
     uint32_t frameQP = 0;
+
+#if GST_REPORT_FRAME_QP_OPTION == 0
     android::ReflectedParamUpdater::Dict paramsMap;
     android::ReflectedParamUpdater::Value paramVal;
     C2Value c2Value;
@@ -957,6 +959,14 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
             }
         }
     }
+#elif GST_REPORT_FRAME_QP_OPTION == 1
+    for (auto& param : configUpdate) {
+        if (param->coreIndex().typeIndex() == kParamIndexAverageBlockQuantization) {
+            frameQP = ((C2AndroidStreamAverageBlockQuantizationInfo::output*)param.get())->value;
+            LOG_DEBUG("get average frame QP: %u", frameQP);
+        }
+    }
+#endif
 
     return frameQP;
 }

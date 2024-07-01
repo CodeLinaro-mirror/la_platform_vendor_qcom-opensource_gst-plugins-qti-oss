@@ -1510,7 +1510,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
-#ifdef GST_SUPPORT_QPRANGE
+
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1519,7 +1519,6 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
       enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
-#endif
 
   if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
       (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
