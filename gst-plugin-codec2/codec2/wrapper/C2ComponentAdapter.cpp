@@ -511,6 +511,7 @@ void C2ComponentAdapter::onBufferDestroyed(const C2Buffer* buf, void* arg)
         }
 
         mPendingSignaled = true;
+        ul.unlock();
         mPendingWorkCond.notify_one();
     }
 }
@@ -1324,9 +1325,14 @@ void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 
 void C2ComponentAdapter::cancelPendingWork()
 {
-    LOG_MESSAGE("Component(%p) cancelPendingWork", this);
+    LOG_MESSAGE("Component(%p) cancelPendingWork.", this);
 
-    mPendingSignaled = true;
+    {
+        std::unique_lock<std::mutex> ul(mLock);
+        LOG_MESSAGE("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
+        mPendingSignaled = true;
+    }
+
     mPendingWorkCond.notify_all();
 }
 
