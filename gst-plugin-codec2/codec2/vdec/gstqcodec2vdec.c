@@ -563,6 +563,7 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
     return FALSE;
   }
 
+#ifndef USE_AGL_C2SERVICE
   /* NOTICE: Config own graphic block pool should be called after c2 compoennt
    * started and before buffer queued. */
   ret = c2component_createBlockpool (dec->comp, BUFFER_POOL_BASIC_GRAPHIC);
@@ -578,6 +579,7 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
         "Failed to let component use graphic pool created by client");
     return FALSE;
   }
+#endif /* USE_AGL_C2SERVICE */
 
   /* Set to use external pool */
   if (dec->use_external_buf) {

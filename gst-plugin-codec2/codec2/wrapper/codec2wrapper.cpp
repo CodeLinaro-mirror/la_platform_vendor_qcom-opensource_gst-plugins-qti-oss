@@ -78,6 +78,10 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <C2AllocatorGBM.h>
 #include <ReflectedParamUpdater.h>
 
+#ifdef USE_AGL_C2SERVICE
+#include "QC2Client.h"
+#endif /* USE_AGL_C2SERVICE */
+
 GST_DEBUG_CATEGORY(gst_qcodec2_wrapper_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_wrapper_debug
 
@@ -1321,6 +1325,8 @@ void* c2componentStore_create()
         "qcodec2wrapper", 0, "GST QTI codec2.0 wrapper");
 
     LOG_MESSAGE("Creating component store");
+
+#ifndef USE_AGL_C2SERVICE
     void* lib = dlopen("libqcodec2_core.so", RTLD_NOW);
     if (lib == nullptr) {
         LOG_ERROR("failed to open %s: %s", "libqcodec2_core.so", dlerror());
@@ -1345,6 +1351,15 @@ void* c2componentStore_create()
     std::shared_ptr<C2ComponentStore> store = c2StoreFactory->getInstance();
 
     return new C2ComponentStoreAdapter(store, c2StoreFactory, lib);
+
+#else
+    // Enabled death notifier on client side. When server died, client can receive message.
+    auto client = aglqc2::QC2Client::create();
+    auto store = client->getC2ComponentStore();
+    LOG_MESSAGE("Created component store %p", store.get());
+
+    return new C2ComponentStoreAdapter(store, nullptr, nullptr);
+#endif /* USE_AGL_C2SERVICE */
 }
 
 const gchar* c2componentStore_getName(void* const comp_store)
