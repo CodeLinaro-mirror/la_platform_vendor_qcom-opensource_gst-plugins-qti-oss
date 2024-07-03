@@ -61,37 +61,11 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __GST_QTI_ML_VIDEO_SUPERRESOLUTION_MODULE_H__
-#define __GST_QTI_ML_VIDEO_SUPERRESOLUTION_MODULE_H__
+#include "ml-module-video-super-resolution.h"
 
-#include <gst/gst.h>
-#include <gst/ml/gstmlmodule.h>
-#include <gst/video/video.h>
-
-G_BEGIN_DECLS
-
-/**
- * gst_ml_video_superresolution_module_execute:
- * @module: Pointer to ML post-processing module.
- * @mlframe: Frame containing mapped tensor memory blocks that need processing.
- * @vframe: Frame containing image.
- *
- * Convenient wrapper function used on plugin level to call the module
- * 'gst_ml_module_process' API via 'gst_ml_module_execute' wrapper in order
- * to process input tensors.
- *
- * Post-processing module must define the 3rd argument of the implemented
- * 'gst_ml_module_process' API as 'GArray *'.
- *
- * return: TRUE on success or FALSE on failure
- */
 GST_API gboolean
-gst_ml_video_superresolution_module_execute (GstMLModule * module,
+gst_ml_module_video_super_resolution_execute (GstMLModule * module,
     GstMLFrame * mlframe, GstVideoFrame * vframe)
 {
   return gst_ml_module_execute (module, mlframe, (gpointer) vframe);
 }
-
-G_END_DECLS
-
-#endif // __GST_QTI_ML_VIDEO_SUPERRESOLUTION_MODULE_H__

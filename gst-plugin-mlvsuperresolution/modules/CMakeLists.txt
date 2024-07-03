@@ -1,4 +1,4 @@
-# GStreamer ML video superresolution plugin modules.
+# GStreamer ML video super_resolution plugin modules.
 set(GST_QTI_ML_MODULE  ml-vsuperresolution-srnet)
 
 add_library(${GST_QTI_ML_MODULE} SHARED
@@ -12,6 +12,7 @@ target_include_directories(${GST_QTI_ML_MODULE} PUBLIC
 target_link_libraries(${GST_QTI_ML_MODULE} PRIVATE
   ${GST_LIBRARIES}
   gstqtimlbase
+  gstqtiutilsbase
 )
 
 install(
