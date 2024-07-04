@@ -94,7 +94,7 @@ int qeavb_receive_done(int eavb_fd, eavb_ioctl_hdr_t* hdr, eavb_ioctl_buf_data_t
 int kpi_place_marker(const char* str)
 {
 #ifdef KPI_USE_SYSLOG
-  syslog(LOG_INFO, "%s\n", str);
+  syslog(LOG_NOTICE, "%s\n", str);
   return 1;
 #else
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
