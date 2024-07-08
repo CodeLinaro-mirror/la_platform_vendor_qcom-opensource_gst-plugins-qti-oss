@@ -1373,6 +1373,7 @@ void SendMessage(MsgId id, MsgData* data)
   if (m_sMsgQ.size >= MAX_MSG)
   {
     E("main msg m_sMsgQ is full");
+    pthread_mutex_unlock(&m_mutex);
     return;
   }
   m_sMsgQ.q[(m_sMsgQ.head + m_sMsgQ.size) % MAX_MSG].id = id;
