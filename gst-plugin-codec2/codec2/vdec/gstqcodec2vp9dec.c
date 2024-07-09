@@ -146,12 +146,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
     gst_buffer_unmap (buf, &mapinfo);
 
     if (vp9_parser->bit_depth == GST_VP9_BIT_DEPTH_10) {
-      if (base_dec->is_ubwc && (base_dec->secure
-            || base_dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
-        /* TODO: remove format/secure condition above
-         * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
-         * otherwise, prefer to P010.
-         */
+      if (base_dec->is_ubwc) {
         output_format = GST_VIDEO_FORMAT_NV12_10LE32;
       } else {
         output_format = GST_VIDEO_FORMAT_P010_10LE;
