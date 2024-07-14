@@ -436,9 +436,13 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    if (ret <= 0) {
+      printf("!!! kpi write error ret %d, str %s, fd %d\n", ret, str, fd);
+    }
     close(fd);
     return ret;
   }
+  printf("!!! open kpi marker node %s failed, ret %d\n", KPI_MARKER_NODE, fd);
   return -1;
 }
 
@@ -1865,7 +1869,7 @@ int Play_Decoder(bool secure)
 
   if(0 != pthread_create(&ebd_thread_id, NULL, ebd_thread, NULL))
   {
-    DEBUG_PRINT_ERROR(" Error in Creating fbd_thread ");
+    DEBUG_PRINT_ERROR(" Error in Creating ebd_thread ");
     free_queue(ebd_queue);
     free_queue(fbd_queue);
     return -1;
@@ -2190,6 +2194,7 @@ static int Read_Buffer_From_H264_Start_Code_File(uint8_t *data)
   unsigned int code = 0;
   int naluType = 0;
   int newFrame = 0;
+  static int is_3byte_startcode = -1;//-1 is init state, 0 Is Not 3bytes, 1 Is 3bytes
   char *dataptr = (char *)data;
   DEBUG_PRINT("Inside %s", __FUNCTION__);
   do
@@ -2204,13 +2209,22 @@ static int Read_Buffer_From_H264_Start_Code_File(uint8_t *data)
     code <<= 8;
     code |= (0x000000FF & dataptr[cnt]);
     cnt++;
-    if ((cnt == 4) && (code != H264_START_CODE))
+    if (is_3byte_startcode == -1 && cnt == 3) {
+      if (code == H264_START_CODE) {
+        is_3byte_startcode = 1;
+        printf("\nThe first 3 bytes is 0x000001, treat the whole stream as 3 bytes startcode h264 stream!\n");
+      }else{
+        is_3byte_startcode = 0;
+        printf("\nThe first 3 bytes is not 0x000001, treat it as 4 bytes startcode h264 stream!\n");
+      }
+    }
+    if ((cnt == (is_3byte_startcode != 1 ? 4 : 3)) && (code != H264_START_CODE))
     {
       DEBUG_PRINT_ERROR("ERROR: Invalid start code found 0x%x", code);
       cnt = 0;
       break;
     }
-    if ((cnt > 4) && (code == H264_START_CODE))
+    if ((cnt > (is_3byte_startcode != 1 ? 4 : 3)) && (code == H264_START_CODE))
     {
       DEBUG_PRINT("Found H264_START_CODE");
       bytes_read = read(inputBufferFileFd, &dataptr[cnt], 1);
@@ -2236,9 +2250,9 @@ static int Read_Buffer_From_H264_Start_Code_File(uint8_t *data)
         cnt++;
         if (newFrame)
         {
-          lseek64(inputBufferFileFd, -6, SEEK_CUR);
-          cnt -= 6;
-          DEBUG_PRINT("Found a NAL unit (type 0x%x) of size = %d", (dataptr[4] & 0x1F), cnt);
+          lseek64(inputBufferFileFd, -(is_3byte_startcode != 1 ? 6 : 5), SEEK_CUR);
+          cnt -= (is_3byte_startcode != 1 ? 6 : 5);
+          DEBUG_PRINT("Found a NAL unit (type 0x%x) of size = %d", (dataptr[(is_3byte_startcode != 1 ? 4 : 3)] & 0x1F), cnt);
           break;
         }
         else
@@ -2248,9 +2262,9 @@ static int Read_Buffer_From_H264_Start_Code_File(uint8_t *data)
       }
       else
       {
-        lseek64(inputBufferFileFd, -5, SEEK_CUR);
-        cnt -= 5;
-        DEBUG_PRINT("Found NAL unit (type 0x%x) of size = %d", (dataptr[4] & 0x1F), cnt);
+        lseek64(inputBufferFileFd, -(is_3byte_startcode != 1 ? 5 : 4), SEEK_CUR);
+        cnt -= (is_3byte_startcode != 1 ? 5 : 4);
+        DEBUG_PRINT("Found NAL unit (type 0x%x) of size = %d", (dataptr[(is_3byte_startcode != 1 ? 4 : 3)] & 0x1F), cnt);
         break;
       }
     }

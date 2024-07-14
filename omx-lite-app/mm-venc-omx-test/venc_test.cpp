@@ -124,9 +124,13 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    if (ret <= 0) {
+      printf("!!! kpi write error ret %d, str %s, fd %d\n", ret, str, fd);
+    }
     close(fd);
     return ret;
   }
+  printf("!!! open kpi marker node %s failed, ret %d\n", KPI_MARKER_NODE, fd);
   return -1;
 }
 
@@ -1369,6 +1373,7 @@ void SendMessage(MsgId id, MsgData* data)
   if (m_sMsgQ.size >= MAX_MSG)
   {
     E("main msg m_sMsgQ is full");
+    pthread_mutex_unlock(&m_mutex);
     return;
   }
   m_sMsgQ.q[(m_sMsgQ.head + m_sMsgQ.size) % MAX_MSG].id = id;
