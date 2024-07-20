@@ -1095,12 +1095,20 @@ void C2ComponentAdapter::handleWorkDone(
                     mOutPendingBuffer[bufferIdx] = buffer;
                 }
 
-                mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                if (mCallback) {
+                    mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                } else {
+                    LOG_ERROR("mCallback is null, not expected!");
+                }
             }
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
                 LOG_MESSAGE("Component(%p) reached EOS on output", this);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                if (mCallback) {
+                    mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                } else {
+                    LOG_ERROR("mCallback is null when EOS, not expected!");
+                }
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
@@ -1119,7 +1127,11 @@ void C2ComponentAdapter::handleWorkDone(
 
                 LOG_MESSAGE("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
                     this, bufferIdx, timestamp);
-                mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                if (mCallback) {
+                    mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
+                } else {
+                    LOG_ERROR("mCallback is null during drop frame, not expected!");
+                }
             } else {
                 LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
