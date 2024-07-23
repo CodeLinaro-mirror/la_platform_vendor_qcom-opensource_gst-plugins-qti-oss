@@ -55,7 +55,7 @@ GST_DEBUG_CATEGORY_EXTERN(gst_qcodec2_wrapper_debug);
  */
 #define MAX_PENDING_WORK 6
 /* max external buffer count extension */
-#define MAX_EXT_BUF_CNT_EXTENSION 3
+#define MAX_EXT_BUF_CNT_EXTENSION 5
 
 using namespace std::chrono_literals;
 
