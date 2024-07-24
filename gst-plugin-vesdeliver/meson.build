@@ -46,6 +46,10 @@ elif contiguous_mem_op == 'op1'
   gstvesdeliver_c_args += ['-DCONTIGUOUS_MEM_OPTION=1']
 endif
 
+if get_option('ASAN')
+  gstvesdeliver_c_args += ['-fsanitize=address']
+endif
+
 disable_secure_copy = get_option('disable_secure_copy')
 if disable_secure_copy
   gstvesdeliver_c_args += ['-DDISABLE_SECURE_COPY']

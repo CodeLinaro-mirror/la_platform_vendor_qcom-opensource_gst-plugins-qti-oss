@@ -124,7 +124,7 @@ gst_qeavb_pcm_src_init (GstQeavbPcmSrc * qeavbpcmsrc)
   memset(&(qeavbpcmsrc->stream_info), 0, sizeof(eavb_ioctl_stream_info_t));
   g_mutex_init (&qeavbpcmsrc->lock);
   log_heartbeat_init(&qeavbpcmsrc->logbeat, LOG_HEARTBEAT_PCM_PERIOD_INIT, LOG_HEARTBEAT_PCM_PERIOD_MIN, LOG_HEARTBEAT_PCM_PERIOD_MAX);
-  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %u, hdr addr %p off %u, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
+  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %ld, hdr addr %p off %ld, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
   kpi_place_marker("M - qeavbpcm init");
 }
 
@@ -292,7 +292,7 @@ gst_qeavb_pcm_src_start (GstBaseSrc * basesrc)
   log_heartbeat_counter_reset(&qeavbpcmsrc->logbeat);
 
   qeavbpcmsrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
-  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %u val %d, hdr addr %p off %u, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
+  GST_LOG_OBJECT (qeavbpcmsrc, "eavb_fd addr %p off %ld val %d, hdr addr %p off %ld, qeavbpcmsrc addr %p", &(qeavbpcmsrc->eavb_fd), G_STRUCT_OFFSET(GstQeavbPcmSrc, eavb_fd), qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), G_STRUCT_OFFSET(GstQeavbPcmSrc, hdr), qeavbpcmsrc);
   if (qeavbpcmsrc->eavb_fd < 0) {
     kpi_place_marker("M - qeavbpcm st:fd open fail!");
     GST_ERROR_OBJECT (qeavbpcmsrc,"open eavb fd error, exit!");
@@ -422,7 +422,6 @@ gst_qeavb_pcm_src_stop (GstBaseSrc * basesrc)
 static GstFlowReturn
 gst_qeavb_pcm_src_fill (GstPushSrc * pushsrc, GstBuffer * buffer)
 {
-  GstMapInfo map;
   gint32 retry_time = 0, retry_time_residual;
   gint32 sleep_us = DEFALUT_SLEEP_US;
   eavb_ioctl_buf_data_t qavb_buffer;
@@ -501,7 +500,7 @@ retry:
         GST_INFO_OBJECT(qeavbpcmsrc,"receive the first pcm packet");
         qeavbpcmsrc->is_first_pcmpacket = FALSE;
       }
-      gst_buffer_fill (buffer, 0, qavb_buffer.pbuf, recv_len);
+      gst_buffer_fill (buffer, 0, (gconstpointer)(qavb_buffer.pbuf), recv_len);
       gst_buffer_set_size (buffer, recv_len);
       err = qeavb_receive_done(qeavbpcmsrc->eavb_fd, &(qeavbpcmsrc->hdr), &qavb_buffer);
       if (0 != err) {

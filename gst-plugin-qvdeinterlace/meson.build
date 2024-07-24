@@ -32,6 +32,10 @@ gstqvdeinterlace_c_args += ['-DUSE_GBM']
 gstqvdeinterlace_c_args += ['-DUSE_GPU_DEINTERLACE']
 #gstqvdeinterlace_link_args += ['-L.', '-lgpudi']
 
+if get_option('ASAN')
+gstqvdeinterlace_c_args += ['-fsanitize=address']
+endif
+
 configinc = include_directories('.')
 core_conf = configuration_data()
 core_conf.set_quoted('PACKAGE', 'gst-plugin-qvdeinterlace')

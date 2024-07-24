@@ -436,9 +436,13 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    if (ret <= 0) {
+      printf("!!! kpi write error ret %d, str %s, fd %d\n", ret, str, fd);
+    }
     close(fd);
     return ret;
   }
+  printf("!!! open kpi marker node %s failed, ret %d\n", KPI_MARKER_NODE, fd);
   return -1;
 }
 
@@ -1865,7 +1869,7 @@ int Play_Decoder(bool secure)
 
   if(0 != pthread_create(&ebd_thread_id, NULL, ebd_thread, NULL))
   {
-    DEBUG_PRINT_ERROR(" Error in Creating fbd_thread ");
+    DEBUG_PRINT_ERROR(" Error in Creating ebd_thread ");
     free_queue(ebd_queue);
     free_queue(fbd_queue);
     return -1;

@@ -4,3 +4,4 @@ option('contiguous_mem_option', type : 'combo',
     description : 'The contiguous memory options, like different heap name')
 option('disable_secure_copy', type : 'boolean', value : 'false',
     description: 'Disable secure copy since it is not supported')
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')

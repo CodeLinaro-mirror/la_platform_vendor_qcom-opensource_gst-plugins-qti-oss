@@ -1460,14 +1460,10 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     GST_DEBUG_OBJECT (enc, "set intra refresh mode: %d, mbs:%d",
         enc->intra_refresh_mode, enc->intra_refresh_mbs);
 
-#ifdef GST_SUPPORT_IR_CYCLIC
-    /* cyclic mode is supported on lemans;
-     * setting intra refresh type qc2::IntraRefreshMode
-     */
+    //Setting intra refresh type qc2::IntraRefreshMode
     intra_refresh_type =
         make_intra_refresh_type_param (enc->intra_refresh_mode);
     g_ptr_array_add (config, &intra_refresh_type);
-#endif
 
     intra_refresh =
         make_intra_refresh_param (enc->intra_refresh_mode,
@@ -1510,7 +1506,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     inline_header = make_header_mode_param (enc->inline_sps_pps_headers);
     g_ptr_array_add (config, &inline_header);
   }
-#ifdef GST_SUPPORT_QPRANGE
+
   qp_ranges = make_qp_ranges_param (enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
@@ -1519,7 +1515,6 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
       enc->min_qp_i_frames, enc->max_qp_i_frames,
       enc->min_qp_p_frames, enc->max_qp_p_frames,
       enc->min_qp_b_frames, enc->max_qp_b_frames);
-#endif
 
   if ((enc->quant_i_frames != DEFAULT_INIT_QUANT_I_FRAMES) ||
       (enc->quant_p_frames != DEFAULT_INIT_QUANT_P_FRAMES) ||
@@ -3027,7 +3022,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_INTRA_REFRESH_MODE,
       g_param_spec_enum ("intra-refresh-mode", "Intra refresh mode",
-          "Intra refresh mode, only support random mode. Allow IR only for CBR(_CFR/VFR) RC modes",
+          "Intra refresh mode, support random and cyclic mode. Allow IR only for CBR(_CFR/VFR) RC modes",
           GST_TYPE_CODEC2_ENC_INTRA_REFRESH_MODE,
           IR_NONE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
@@ -3035,7 +3030,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (gobject_class, PROP_INTRA_REFRESH_MBS,
       g_param_spec_uint ("intra-refresh-mbs", "Intra refresh mbs/period",
-          "For random modes, it means period of intra refresh. Only support random mode.",
+          "Period of intra refresh, support random and cyclic mode.",
           0, G_MAXUINT, 0,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
