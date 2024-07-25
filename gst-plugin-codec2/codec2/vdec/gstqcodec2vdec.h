@@ -154,6 +154,7 @@ struct _GstQcodec2Vdec
   GMutex external_buf_lock;
   GCond external_buf_cond;
   gboolean is_flushing;
+  gboolean release_input_buf;
 };
 
 /* Param function */
