@@ -1088,7 +1088,8 @@ void C2ComponentAdapter::handleWorkDone(
                     bool isDecoder = name.find("decoder") != std::string::npos;
                     LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
                     if (isDecoder && outputDelay.updateFrom(*param)) {
-                        LOG_MESSAGE("onWorkDone: updating output delay:%u", outputDelay.value);
+#ifdef USE_AGL_C2SERVICE
+                        LOG_MESSAGE("onWorkDone: updating output delay:%u.", outputDelay.value);
 
                         if(mIC2AllocatorGBM) {
                             /* Update the max acquirable buffer count for external buffer pool */
@@ -1105,6 +1106,25 @@ void C2ComponentAdapter::handleWorkDone(
                         } else {
                             LOG_ERROR("C2AllocatorGBM is NULL");
                         }
+#else
+                        if (mC2AllocatorGBM) {
+                            LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu.",
+                                outputDelay.value, mGraphicPool->getLocalId());
+                            if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
+                                /* Update the max acquirable buffer count for external buffer pool */
+                                uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
+                                if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
+                                    maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
+                                }
+                                mCallback->onUpdateMaxBufCount(maxBufCnt);
+                            } else {
+                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
+                            }
+                        } else {
+                            /* mC2AllocatorGBM is not created in Codec2 service mode. */
+                            LOG_ERROR("mC2AllocatorGBM is NULL");
+                        }
+#endif
                     }
                 }
             } break;
