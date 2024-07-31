@@ -1,4 +1,4 @@
-project('gst-plugin-qvrate', 'c',
+project('gst-plugins-qeavb', 'c',
   version : '1.0',
   meson_version : '>= 0.47',
   default_options : [ 'warning_level=1',
@@ -15,6 +15,11 @@ gstqeavb_sources = [
 ]
 
 gstqeavb_c_args = ['-DHAVE_CONFIG_H']
+
+if get_option('ASAN')
+gstqeavb_c_args += ['-fsanitize=address']
+endif
+
 gstqeavb_link_args = [ ]
 
 gstqeavb_link_args += ['-leavbfe']
