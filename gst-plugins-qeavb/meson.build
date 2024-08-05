@@ -26,8 +26,8 @@ gstqeavb_link_args += ['-leavbfe']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
-core_conf.set_quoted('PACKAGE', 'gst-plugin-qeavb')
-core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qeavb')
+core_conf.set_quoted('PACKAGE', 'gst-plugins-qeavb')
+core_conf.set_quoted('PACKAGE_NAME', 'gst-plugins-qeavb')
 core_conf.set_quoted('PACKAGE_VERSION', '1.0')
 configure_file(output : 'config.h', configuration : core_conf)
 
