@@ -39,6 +39,8 @@ GST_DEBUG_CATEGORY (gst_qvrate_debug);
 #define QVRATE_DEFAULT_OP_FPS 60
 #define QVRATE_THRESHOLD_FOR_FALLBACK 40
 
+#define INVALID_COOKIE 0
+
 static GstElementClass *parent_class = NULL;
 
 G_DEFINE_TYPE (GstQvrate, gst_qvrate, GST_TYPE_ELEMENT);
@@ -683,7 +685,9 @@ gst_qvrate_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
   memset(&vpp_in_buf, 0, sizeof (struct vpp_buffer));
   if (qvrate_fill_vppbuf_with_gstbuf (&vpp_in_buf, buf, false, qvrate->vpp_buf_size)) {
-    vpp_in_buf.cookie_in_to_out = (void*)(qvrate->frame_number++);
+    qvrate->frame_number = (qvrate->frame_number + 1 == 0) ? 1 : qvrate->frame_number + 1;
+    vpp_in_buf.cookie_in_to_out = (void*)(qvrate->frame_number);
+
     if (qvratevpp_queue_buf(qvrate->vpp_ctx, in_port, &vpp_in_buf)) {
       GST_DEBUG_OBJECT (qvrate, "queue vpp input buf %p successfully", buf);
       ret = GST_FLOW_OK;
@@ -762,6 +766,13 @@ void qvrate_handle_output_buf_done (GstQvrate * self, struct vpp_buffer *buf)
       GST_ERROR_OBJECT (self, "error occurred, gst_buf is %p", gst_buf);
       return;
     }
+
+    if (buf->cookie_in_to_out == INVALID_COOKIE) {
+      GST_DEBUG_OBJECT (self, "Dropping unprocessed buffer");
+      gst_buffer_unref (gst_buf);
+      return;
+    }
+
     GST_BUFFER_PTS (gst_buf) = buf->timestamp * 1000;
     GST_DEBUG_OBJECT (self, "handle message: output buffer done, gst buf %p, buf->timestamp %ld, PTS %" GST_TIME_FORMAT,
       gst_buf, buf->timestamp, GST_TIME_ARGS(GST_BUFFER_PTS (gst_buf)));
