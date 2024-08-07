@@ -1221,19 +1221,6 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   /* Decode frame */
   ret = gst_qcodec2_vdec_decode (decoder, frame);
 
-  if (dec->release_input_buf) {
-    /* No need to keep input buffer for non-dmabuf */
-    GstMemory *mem = gst_buffer_peek_memory (frame->input_buffer, 0);
-    if (mem && !gst_is_dmabuf_memory (mem)) {
-      GstBuffer *tmp = frame->input_buffer;
-      frame->input_buffer = gst_buffer_new ();
-      gst_buffer_copy_into (frame->input_buffer, tmp,
-          GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
-          GST_BUFFER_COPY_META, 0, 0);
-      gst_buffer_unref (tmp);
-    }
-  }
-
 done:
   gst_video_codec_frame_unref (frame);
 
@@ -1441,6 +1428,27 @@ release_external_buf_callback (GstVideoDecoder * decoder, gint ext_fd)
     }
   }
   g_mutex_unlock (&dec->external_buf_lock);
+}
+
+static void
+release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
+{
+  GstVideoCodecFrame *frame;
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+
+  frame = gst_video_decoder_get_frame (decoder, index);
+  if (frame) {
+    GstBuffer *tmp = frame->input_buffer;
+    frame->input_buffer = gst_buffer_new ();
+    gst_buffer_copy_into (frame->input_buffer, tmp,
+        GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
+        GST_BUFFER_COPY_META, 0, 0);
+    gst_buffer_unref (tmp);
+    gst_video_codec_frame_unref (frame);
+    GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
+  } else {
+    GST_WARNING_OBJECT (dec, "Can not find video frame for index %lu", index);
+  }
 }
 
 static GstBuffer *
@@ -1896,6 +1904,13 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       release_external_buf_callback (decoder, ext_fd);
       break;
     }
+    case EVENT_RELEASE_INPUT_BUF:{
+      if (dec->release_input_buf) {
+        guint64 index = *(guint64 *) data;
+        release_input_buf_callback (decoder, index);
+      }
+      break;
+    }
     default:{
       GST_ERROR_OBJECT (dec, "Invalid Event(%d)", type);
       break;
@@ -2206,7 +2221,7 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
 
   g_object_class_install_property (G_OBJECT_CLASS (klass),
       PROP_RELEASE_INPUT, g_param_spec_boolean ("release-input-buf",
-          "whether to release the input buffer after copying",
+          "whether to release the input buffer after use",
           "If enabled, decoder will copy and release the input buffer, "
           "which can avoid holding too many input buffers",
           DEFAULT_RELEASE_INPUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));

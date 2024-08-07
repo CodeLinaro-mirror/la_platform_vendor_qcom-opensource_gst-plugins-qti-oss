@@ -505,6 +505,7 @@ void C2ComponentAdapter::onBufferDestroyed(const C2Buffer* buf, void* arg)
         auto buf = mTrackBuffers.find(trackbuf);
         if (buf != mTrackBuffers.end()) {
             LOG_MESSAGE("erase buf idx:%zu TrackBuffer %p", trackbuf->frameIndex, trackbuf);
+            releaseInputBuf(trackbuf->frameIndex);
             mTrackBuffers.erase(buf);
             delete trackbuf;
         }
@@ -1392,6 +1393,13 @@ void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 {
     if (mCallback) {
         mCallback->onReleaseExtBuffer(extFd);
+    }
+}
+
+void C2ComponentAdapter::releaseInputBuf(uint64_t index)
+{
+    if (mCallback) {
+        mCallback->onReleaseInputBuffer(index);
     }
 }
 
