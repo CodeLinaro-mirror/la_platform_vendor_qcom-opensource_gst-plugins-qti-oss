@@ -2130,6 +2130,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       GST_DEBUG_OBJECT (enc, "Ignore event:release_ext_buf:%d on enc", type);
       break;
     }
+    case EVENT_RELEASE_INPUT_BUF:{
+      GST_DEBUG_OBJECT (enc, "Ignore event:release_input_buf:%d on enc", type);
+      break;
+    }
     default:{
       GST_ERROR_OBJECT (enc, "Invalid Event(%d)", type);
     }

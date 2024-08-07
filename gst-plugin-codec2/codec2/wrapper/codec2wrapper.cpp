@@ -1082,6 +1082,7 @@ public:
     void onUpdateMaxBufCount(uint32_t outputDelay) override;
     void onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC2D) override;
     void onReleaseExtBuffer(int32_t extFd) override;
+    void onReleaseInputBuffer(uint64_t index) override;
 
 private:
     listener_cb mCallback;
@@ -1371,6 +1372,16 @@ void CodecCallback::onReleaseExtBuffer(int32_t extFd)
     }
 
     mCallback(mHandle, EVENT_RELEASE_EXT_BUF, &extFd);
+}
+
+void CodecCallback::onReleaseInputBuffer(uint64_t index)
+{
+    if (!mCallback) {
+        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        return;
+    }
+
+    mCallback(mHandle, EVENT_RELEASE_INPUT_BUF, &index);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
