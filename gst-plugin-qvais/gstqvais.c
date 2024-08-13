@@ -45,12 +45,14 @@ GST_DEBUG_CATEGORY (gst_qvais_debug);
 
 #define DEFAULT_SCALE_RATIO 0
 #define DEFAULT_CLASSIFICATION 10
+#define MAX_CLASSIFICATION 100
 #define INVALID_COOKIE 0
 
 enum
 {
   PROP_0,
   PROP_SCALE_RATIO,
+  PROP_CLASSIFICATION,
 };
 
 static GstElementClass *parent_class = NULL;
@@ -411,10 +413,10 @@ gst_qvais_set_info (GstQvais * qvais,
     out_param.scanlines = VENUS_Y_SCANLINES (out_color_fmt, out_param.height);
 
     GST_INFO_OBJECT (self, "in: ubwc=%u, w:h:%d:%d stride:scan:%d:%d"
-        " out: ubwc=%u, w:h:%d:%d stride:scan:%d:%d",
+        " out: ubwc=%u, w:h:%d:%d stride:scan:%d:%d, classification:%u",
         self->in_ubwc, in_param.width, in_param.height, in_param.stride,
         in_param.scanlines, self->out_ubwc, out_param.width, out_param.height,
-        out_param.stride, out_param.scanlines);
+        out_param.stride, out_param.scanlines, qvais->classification);
 
     if (qvaisvpp_set_parameter (self->vpp_ctx, in_port, in_param) &&
         qvaisvpp_set_parameter (self->vpp_ctx, out_port, out_param)) {
@@ -792,6 +794,9 @@ gst_qvais_set_property (GObject * object, guint prop_id,
     case PROP_SCALE_RATIO:
       qvais->scale_ratio = g_value_get_uint (value);
       break;
+    case PROP_CLASSIFICATION:
+      qvais->classification = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -809,6 +814,9 @@ gst_qvais_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case PROP_SCALE_RATIO:
       g_value_set_uint (value, qvais->scale_ratio);
+      break;
+    case PROP_CLASSIFICATION:
+      g_value_set_uint (value, qvais->classification);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -834,6 +842,16 @@ gst_qvais_class_init (GstQvaisClass * klass)
           "upscaling ratio",
           "upscaling ratio (0: default, only support 2X or 3X)",
           0, G_MAXUINT, DEFAULT_SCALE_RATIO,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_CLASSIFICATION, g_param_spec_uint ("classification",
+          "classification setting",
+          "Set the sharpness. Range is 0 to 100. Higher value increases sharpness."
+          " Gen4 only supports up to 20. It affects AI network selection/processing"
+          " filters for sharpness.",
+          0, MAX_CLASSIFICATION, DEFAULT_CLASSIFICATION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
