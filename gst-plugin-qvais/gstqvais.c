@@ -22,6 +22,7 @@
 #include "gstqvais.h"
 #include "gstqvaisvpp.h"
 #include "gstqvaispool.h"
+#include "gstqvaisdmabuf.h"
 
 #include <gst/gsttask.h>
 #include <gst/video/video.h>
@@ -1479,6 +1480,19 @@ quit:
   return;
 }
 
+static gboolean
+gst_qvais_load_libs (void)
+{
+  gboolean ret = TRUE;
+
+  if (!qvais_dmabuf_load_libs_once ()) {
+    GST_ERROR ("failed to load libs");
+    ret = FALSE;
+  }
+
+  return ret;
+}
+
 /* initialize the new element
  * initialize instance structure
  */
@@ -1486,6 +1500,9 @@ static void
 gst_qvais_init (GstQvais * self)
 {
   GST_INFO ("init qvais %p", self);
+
+  if (!gst_qvais_load_libs ())
+    return;
 
   self->sinkpad = gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_event_function (self->sinkpad,
