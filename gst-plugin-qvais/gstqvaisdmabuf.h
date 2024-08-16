@@ -10,6 +10,8 @@
 /* DmaBufDesc is opaque to client */
 typedef struct gbm_buf_desc DmaBufDesc;
 
+gboolean qvais_dmabuf_load_libs_once (void);
+
 gboolean qvais_dmabuf_alloc (DmaBufDesc ** desc,
     const GstVideoInfo * info, gboolean ubwc);
 
