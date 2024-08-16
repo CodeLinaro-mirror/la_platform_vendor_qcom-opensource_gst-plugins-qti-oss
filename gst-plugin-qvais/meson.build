@@ -19,7 +19,6 @@ gstqvais_link_args = [ ]
 code_coverage_args = [ ]
 code_coverage_link_args = [ ]
 
-gstqvais_link_args += ['-lgbm']
 gstqvais_link_args += ['-L.', '-lhyp_vpp_fe']
 
 configinc = include_directories('.')
