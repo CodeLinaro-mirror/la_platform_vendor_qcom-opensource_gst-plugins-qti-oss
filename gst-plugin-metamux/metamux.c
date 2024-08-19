@@ -343,7 +343,7 @@ gst_metamux_process_detection_metadata (GstMetaMux * muxer, GstBuffer * buffer,
     g_free (label);
 
     gst_structure_get_uint (entry, "id", &id);
-    roimeta->id = GST_BATCH_CHANNEL_ID (batch_idx, id);
+    roimeta->id = id;
 
     // Set the parent ID of the newly added ROI meta.
     roimeta->parent_id = (parent_roimeta != NULL) ? parent_roimeta->id : (-1);
@@ -460,7 +460,6 @@ gst_metamux_process_landmarks_metadata (GstMetaMux * muxer, GstBuffer * buffer,
     }
 
     gst_structure_get_uint (landmark, "id", &id);
-    id = GST_BATCH_CHANNEL_ID (batch_idx, id);
 
     if (roimeta == NULL) {
       // Result is not derived from ROI, attach a new meta item.
@@ -490,12 +489,16 @@ gst_metamux_process_classification_metadata (GstMetaMux * muxer,
   GArray *labels = NULL;
   const GValue *value = NULL, *entry = NULL;
   GstStructure *params = NULL;
-  guint idx = 0, size = 0, batch_idx = 0;
-
-  gst_structure_get_uint (structure, "batch-index", &batch_idx);
+  guint idx = 0, size = 0, batch_idx = 0, id = 0;
 
   value = gst_structure_get_value (structure, "labels");
   size = gst_value_array_get_size (value);
+
+  // No classification label results for this buffer, nothing to do.
+  if (size == 0)
+    return;
+
+  gst_structure_get_uint (structure, "batch-index", &batch_idx);
 
   // Allocate memory for the labels.
   labels = g_array_sized_new (FALSE, FALSE, sizeof (GstClassLabel), size);
@@ -516,14 +519,19 @@ gst_metamux_process_classification_metadata (GstMetaMux * muxer,
 
     gst_structure_get_double (params, "confidence", &(label->confidence));
     gst_structure_get_uint (params, "color", &(label->color));
+
+    // The meta ID will be the ID of the first entry in the list.
+    if (idx == 0)
+      gst_structure_get_uint (params, "id", &id);
   }
+
 
   if (!(value = gst_structure_get_value (structure, "source-region-id"))) {
     // Result is not derived from ROI, attach a new meta item.
     meta = gst_buffer_add_video_classification_meta (buffer, labels);
 
     // Use the batch index as meta ID.
-    meta->id = batch_idx;
+    meta->id = id;
 
     GST_TRACE_OBJECT (muxer, "Attached 'ImageClassification' meta with ID[0x%X]"
         " to buffer %p", meta->id, buffer);
@@ -539,7 +547,7 @@ gst_metamux_process_classification_metadata (GstMetaMux * muxer,
     gst_video_region_of_interest_meta_add_param (roimeta, params);
 
     GST_TRACE_OBJECT (muxer, "Attached 'ImageClassification' param with ID[0x%X]"
-        " to ROI meta with ID[0x%X] in buffer %p", batch_idx, roimeta->id, buffer);
+        " to ROI meta with ID[0x%X] in buffer %p", id, roimeta->id, buffer);
   }
 }
 
@@ -788,7 +796,7 @@ gst_metamux_parse_string_metadata (GstMetaMux * muxer,
   while (token != NULL) {
     GstMetaItem *item = NULL;
     GstClockTime timestamp = GST_CLOCK_TIME_NONE;
-    gint seqnum = 0, n_entries = 0;
+    guint seqnum = 0, n_entries = 0;
 
     // If deserialize fails it could be a partial string (e.g. reading from a file).
     // In that case, stash and combine it with the data in subsequent call.
@@ -810,12 +818,14 @@ gst_metamux_parse_string_metadata (GstMetaMux * muxer,
       GstStructure *entry = GST_STRUCTURE (g_value_get_boxed (value));
 
       // Extract the sequential index and the total number of entries.
-      gst_structure_get_fraction (entry, "sequence-id", &seqnum, &n_entries);
+      gst_structure_get_uint (entry, "sequence-index", &seqnum);
+      gst_structure_get_uint (entry, "sequence-num-entries", &n_entries);
       // Extract the timestamp for this metadata object.
       gst_structure_get_uint64 (entry, "timestamp", &timestamp);
 
       // Remove the timestamp and sequence fields, not needed anymore.
-      gst_structure_remove_fields (entry, "timestamp", "sequence-id", NULL);
+      gst_structure_remove_fields (entry, "timestamp", "sequence-index",
+          "sequence-num-entries", NULL);
 
       // Take the timestamp from the parsed GValue entry if not already set.
       if (!GST_CLOCK_TIME_IS_VALID (item->timestamp))
@@ -1180,6 +1190,12 @@ gst_metamux_main_sink_pad_setcaps (GstMetaMux * muxer, GstPad * pad,
   }
 
   GST_DEBUG_OBJECT (pad, "Negotiated caps %" GST_PTR_FORMAT, caps);
+
+  // Wait for pending buffers to be processed before sending new caps.
+  GST_METAMUX_PAD_WAIT_IDLE (GST_METAMUX_SINK_PAD (pad));
+  GST_METAMUX_PAD_WAIT_IDLE (muxer->srcpad);
+
+  GST_DEBUG_OBJECT (pad, "Pushing new caps %" GST_PTR_FORMAT, caps);
   return gst_pad_push_event (GST_PAD (muxer->srcpad), gst_event_new_caps (caps));
 }
 
@@ -1258,6 +1274,23 @@ gst_metamux_main_sink_pad_event (GstPad * pad, GstObject * parent, GstEvent * ev
 
       gst_metamux_flush_metadata_queues (muxer);
       return gst_pad_push_event (GST_PAD (muxer->srcpad), event);
+    case GST_EVENT_CUSTOM_DOWNSTREAM:
+    {
+      const GstStructure *structure = gst_event_get_structure (event);
+
+      // Not a supported custom event, pass it to the default handling function.
+      if ((structure == NULL) ||
+          !gst_structure_has_name (structure, "ml-detection-information"))
+        break;
+
+      GST_DEBUG_OBJECT (muxer, "Consuming %s event",
+          gst_structure_get_name (structure));
+
+      // Do not propagate ML detection info from previous, non-current stages.
+      // The current stage information will be propagated via the data pads.
+      gst_event_unref (event);
+      return TRUE;
+    }
     default:
       break;
   }
