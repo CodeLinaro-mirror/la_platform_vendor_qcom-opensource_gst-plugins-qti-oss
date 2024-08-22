@@ -159,7 +159,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
     uint32_t stride = buffer_info->stride[0];
 
     LOG_MESSAGE("format %d, %ux%u, stride %u, "
-                "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT,
+                "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT ".",
         buffer_info->format, width, height, stride,
         buffer_info->offset[0], buffer_info->offset[1]);
 
@@ -171,6 +171,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
             uint32_t y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12, width);
             uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_NV12, width);
             uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_NV12, height);
+            uint32_t offset = y_stride * y_scanlines;
 
             if (buffer_info->heic_flag) {
                 y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12_512, width);
@@ -179,46 +180,75 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
             }
 
             src += buffer_info->offset[0];
-            for (int i = 0; i < height; i++) {
-                memcpy(dst, src, width);
-                dst += y_stride;
-                src += stride;
-            }
+            if (stride == y_stride && stride == uv_stride) {
+                if (buffer_info->offset[1] - buffer_info->offset[0] == offset) {
+                    memcpy(dst, src, offset + stride * (height >> 1));
+                } else {
+                    memcpy(dst, src, stride * height);
+                    dst = dest + offset;
+                    if (buffer_info->offset[1] > 0) {
+                        src = buffer_info->data + buffer_info->offset[1];
+                    } else {
+                        src += stride * height;
+                    }
+                    memcpy(dst, src, stride * (height >> 1));
+                }
+            } else {
+                for (int i = 0; i < height; i++) {
+                    memcpy(dst, src, width);
+                    dst += y_stride;
+                    src += stride;
+                }
 
-            uint32_t offset = y_stride * y_scanlines;
-            dst = dest + offset;
-            if (buffer_info->offset[1] > 0) {
-                src = buffer_info->data + buffer_info->offset[1];
-            }
+                dst = dest + offset;
+                if (buffer_info->offset[1] > 0) {
+                    src = buffer_info->data + buffer_info->offset[1];
+                }
 
-            for (int i = 0; i < height / 2; i++) {
-                memcpy(dst, src, width);
-                dst += uv_stride;
-                src += stride;
+                for (int i = 0; i < height / 2; i++) {
+                    memcpy(dst, src, width);
+                    dst += uv_stride;
+                    src += stride;
+                }
             }
         }
     } else if (buffer_info->format == GST_VIDEO_FORMAT_P010_10LE) {
         uint32_t y_stride = VENUS_Y_STRIDE(COLOR_FMT_P010, width);
         uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_P010, width);
         uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_P010, height);
+        uint32_t offset = y_stride * y_scanlines;
 
         src += buffer_info->offset[0];
-        for (int i = 0; i < height; i++) {
-            memcpy(dst, src, stride);
-            dst += y_stride;
-            src += stride;
-        }
+        if (stride == y_stride && stride == uv_stride) {
+            if (buffer_info->offset[1] - buffer_info->offset[0] == offset) {
+                memcpy(dst, src, offset + stride * (height >> 1));
+            } else {
+                memcpy(dst, src, stride * height);
+                dst = dest + offset;
+                if (buffer_info->offset[1] > 0) {
+                    src = buffer_info->data + buffer_info->offset[1];
+                } else {
+                    src += stride * height;
+                }
+                memcpy(dst, src, stride * (height >> 1));
+            }
+        } else {
+            for (int i = 0; i < height; i++) {
+                memcpy(dst, src, width<<1);
+                dst += y_stride;
+                src += stride;
+            }
 
-        uint32_t offset = y_stride * y_scanlines;
-        dst = dest + offset;
-        if (buffer_info->offset[1] > 0) {
-            src = buffer_info->data + buffer_info->offset[1];
-        }
+            dst = dest + offset;
+            if (buffer_info->offset[1] > 0) {
+                src = buffer_info->data + buffer_info->offset[1];
+            }
 
-        for (int i = 0; i < height / 2; i++) {
-            memcpy(dst, src, stride);
-            dst += uv_stride;
-            src += stride;
+            for (int i = 0; i < height / 2; i++) {
+                memcpy(dst, src, width<<1);
+                dst += uv_stride;
+                src += stride;
+            }
         }
     } else if (buffer_info->format == GST_VIDEO_FORMAT_NV12_10LE32) {
         if (buffer_info->ubwc_flag) {
