@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <dlfcn.h>
 #include <drm/drm_fourcc.h>
 #include <gbm.h>
 #include <gbm_priv.h>
@@ -43,6 +44,104 @@ static int dev_fd = -1;
 
 #define GBM_RENDER_DEVICE_NAME "/dev/dri/renderD128"
 static struct gbm_device *gbm_dev = NULL;
+
+/* Dynamically load libgbm by dlopen. */
+#define GBM_LIB_NAME "libgbm.so"
+
+static const char *gbm_lib_name  = GBM_LIB_NAME;
+static void *handle_gbm;
+
+/* GBM API Pointers */
+static struct gbm_device *(*_gbm_create_device) (int fd);
+static void (*_gbm_device_destroy) (struct gbm_device *gbm_dev);
+static struct gbm_bo *(*_gbm_bo_create) (struct gbm_device *gbm_dev,
+        uint32_t width, uint32_t height, uint32_t format, uint32_t usage);
+static int (*_gbm_perform) (int operation, ...);
+static int (*_gbm_bo_get_fd) (struct gbm_bo *bo);
+static uint32_t (*_gbm_bo_get_width) (struct gbm_bo *bo);
+static uint32_t (*_gbm_bo_get_height) (struct gbm_bo *bo);
+static uint32_t (*_gbm_bo_get_stride) (struct gbm_bo *bo);
+static uint32_t (*_gbm_bo_get_offset) (struct gbm_bo *bo, int plane);
+static uint64_t (*_gbm_bo_get_modifier) (struct gbm_bo *bo);
+static void (*_gbm_bo_destroy) (struct gbm_bo *bo);
+
+#define LOAD_SYMBOL(lib, sym) do {                        \
+      dlerror (); /* clear any existing error */          \
+      *(void **) & (_ ## sym) = dlsym (lib, #sym);        \
+      const char *dlerr = dlerror ();                     \
+      if (NULL != dlerr) {                                \
+        GST_ERROR ("dlsym error: %s", dlerr);             \
+        goto error;                                       \
+      }                                                   \
+      GST_DEBUG ("loaded symbol %s", #sym);               \
+    } while (0)
+
+static void _do_dlclose_libs (void)
+{
+  if (handle_gbm) {
+    dlclose (handle_gbm);
+    handle_gbm = NULL;
+  }
+}
+
+static gpointer _do_load_lib_symbols (gpointer data)
+{
+  gpointer ret = NULL;
+
+  GST_INFO ("data %p", data);
+
+  handle_gbm = dlopen (gbm_lib_name, RTLD_NOW);
+  if (NULL == handle_gbm) {
+    const char *dlerr = dlerror();
+    if (NULL == dlerr)
+        dlerr = "NULL";
+    GST_ERROR ("dlopen %s error: %s", gbm_lib_name, dlerr);
+    goto error;
+  }
+
+  LOAD_SYMBOL (handle_gbm, gbm_create_device);
+  LOAD_SYMBOL (handle_gbm, gbm_device_destroy);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_create);
+  LOAD_SYMBOL (handle_gbm, gbm_perform);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_fd);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_width);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_height);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_stride);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_offset);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_get_modifier);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_destroy);
+
+  ret = (gpointer) -1; /* load all okay */
+
+error:
+  GST_INFO ("ret %p", ret);
+  atexit (_do_dlclose_libs);
+
+  return ret;
+}
+
+/* Load libs only once in multi-threaded usage. */
+gboolean qvrate_dmabuf_load_libs_once (void)
+{
+  static GOnce once = G_ONCE_INIT;
+
+  g_once (&once, _do_load_lib_symbols, NULL);
+  GST_INFO ("GOnce retval %p status %d", once.retval, once.status);
+
+  return once.retval != NULL ? TRUE : FALSE;
+}
+
+#define gbm_create_device _gbm_create_device
+#define gbm_device_destroy _gbm_device_destroy
+#define gbm_bo_create _gbm_bo_create
+#define gbm_perform _gbm_perform
+#define gbm_bo_get_fd _gbm_bo_get_fd
+#define gbm_bo_get_width _gbm_bo_get_width
+#define gbm_bo_get_height _gbm_bo_get_height
+#define gbm_bo_get_stride _gbm_bo_get_stride
+#define gbm_bo_get_offset _gbm_bo_get_offset
+#define gbm_bo_get_modifier _gbm_bo_get_modifier
+#define gbm_bo_destroy _gbm_bo_destroy
 
 static gboolean
 do_dmabuf_device_open (const char *dev_name)
