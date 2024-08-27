@@ -86,11 +86,11 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
     mDataCopyFunc = nullptr;
     mDataCopyFuncParam = nullptr;
     mC2AllocatorGBM = nullptr;
-    mIC2AllocatorGBM = nullptr;
     mC2LinearAllocator = nullptr;
     mPendingSignaled = false;
 
 #ifdef USE_AGL_C2SERVICE
+    mIC2AllocatorGBM = nullptr;
     mUseAglC2Service = true;
 #endif
 }
@@ -110,7 +110,9 @@ C2ComponentAdapter::~C2ComponentAdapter()
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
     mC2AllocatorGBM = nullptr;
+#ifdef USE_AGL_C2SERVICE
     mIC2AllocatorGBM = nullptr;
+#endif
     mC2LinearAllocator = nullptr;
 }
 
@@ -555,9 +557,12 @@ c2_status_t C2ComponentAdapter::setMaxAllocationCount(uint32_t max, BUFFER_POOL_
     c2_status_t status = C2_BAD_VALUE;
 
     if (BUFFER_POOL_BASIC_GRAPHIC == type) {
+#ifdef USE_AGL_C2SERVICE
         if(mIC2AllocatorGBM) {
             status = mIC2AllocatorGBM->setMaxAllocationCount(max);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             status = mC2AllocatorGBM->setMaxAllocationCount(max);
         }
     } else {
@@ -572,9 +577,12 @@ uint32_t C2ComponentAdapter::getMaxAllocationCount(BUFFER_POOL_TYPE type)
     uint32_t count = 0;
 
     if (BUFFER_POOL_BASIC_GRAPHIC == type) {
+#ifdef USE_AGL_C2SERVICE
         if(mIC2AllocatorGBM) {
             count = mIC2AllocatorGBM->getMaxAllocationCount();
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             count = mC2AllocatorGBM->getMaxAllocationCount();
         }
     } else {
@@ -833,20 +841,22 @@ c2_status_t C2ComponentAdapter::start()
 
     auto ret = mComp->start();
 #ifdef USE_AGL_C2SERVICE
-    C2String name = intf()->getName();
-    auto isDecoder = name.find("decoder") != std::string::npos;
-    if (isDecoder) {
-        LOG_MESSAGE("Component(%p) try to get GBM Allocator", this);
-        mIC2AllocatorGBM = aglqc2::QC2Client::GBMAllocator::get(mComp);
-        auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
-            std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-        auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
-        if (mIC2AllocatorGBM) {
-            LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
-            mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
-            mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
-        } else {
-            LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
+    if(!mIC2AllocatorGBM) {
+        C2String name = intf()->getName();
+        auto isDecoder = name.find("decoder") != std::string::npos;
+        if (isDecoder) {
+            LOG_MESSAGE("Component(%p) try to get GBM Allocator", this);
+            mIC2AllocatorGBM = aglqc2::QC2Client::GBMAllocator::get(mComp);
+            auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
+                std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+            auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
+            if (mIC2AllocatorGBM) {
+                LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
+                mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
+                mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
+            } else {
+                LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
+            }
         }
     }
 #endif
@@ -1119,43 +1129,17 @@ void C2ComponentAdapter::handleWorkDone(
                     bool isDecoder = name.find("decoder") != std::string::npos;
                     LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
                     if (isDecoder && outputDelay.updateFrom(*param)) {
-#ifdef USE_AGL_C2SERVICE
                         LOG_MESSAGE("onWorkDone: updating output delay:%u.", outputDelay.value);
-
-                        if(mIC2AllocatorGBM) {
+                        if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                             /* Update the max acquirable buffer count for external buffer pool */
                             uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
                             if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
                                 maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
                             }
-                            if (mCallback)
-                                mCallback->onUpdateMaxBufCount(maxBufCnt);
-                            if(mIC2AllocatorGBM)
-                                mIC2AllocatorGBM->setMaxAllocationCount(maxBufCnt);
-                        } else if(mC2AllocatorGBM) {
-                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
+                            mCallback->onUpdateMaxBufCount(maxBufCnt);
                         } else {
-                            LOG_ERROR("C2AllocatorGBM is NULL");
+                            setMaxAllocationCount(outputDelay.value, BUFFER_POOL_BASIC_GRAPHIC);
                         }
-#else
-                        if (mC2AllocatorGBM) {
-                            LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu.",
-                                outputDelay.value, mGraphicPool->getLocalId());
-                            if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
-                                /* Update the max acquirable buffer count for external buffer pool */
-                                uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
-                                if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
-                                    maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
-                                }
-                                mCallback->onUpdateMaxBufCount(maxBufCnt);
-                            } else {
-                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
-                            }
-                        } else {
-                            /* mC2AllocatorGBM is not created in Codec2 service mode. */
-                            LOG_ERROR("mC2AllocatorGBM is NULL");
-                        }
-#endif
                     }
                 }
             } break;
@@ -1293,9 +1277,12 @@ c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
     LOG_MESSAGE("Component(%p) attach external fd: %d for pool type %d", this, fd, type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             result = mIC2AllocatorGBM->attachExternalFd(fd);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->attachExternalFd(fd);
         } else {
             LOG_ERROR("mC2AllocatorGBM is NULL");
@@ -1319,9 +1306,12 @@ c2_status_t C2ComponentAdapter::setUseExternalBuffer(BUFFER_POOL_TYPE type, bool
         this, useExternal ? "TRUE" : "FALSE", type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             result = mIC2AllocatorGBM->setUseExternalBuffer(useExternal);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->setUseExternalBuffer(useExternal);
         } else {
             LOG_ERROR("mC2AllocatorGBM is NULL");
@@ -1339,9 +1329,12 @@ bool C2ComponentAdapter::isUseExternalBuffer(BUFFER_POOL_TYPE type)
     bool ret = false;
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             ret = mIC2AllocatorGBM->isUseExternalBuffer();
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             ret = mC2AllocatorGBM->isUseExternalBuffer();
         } else {
             /* mC2AllocatorGBM is not created in Codec2 service mode. */
