@@ -55,4 +55,4 @@ plugin_init (GstPlugin * plugin)
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     qeavb, "QTI Audio/Video Transport Protocol (AVTP) plugin",
-    plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), "BSD", "gstreamer qeavb plugin", "unknown package origin");
+    plugin_init, PACKAGE_VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), "BSD", "gstreamer qeavb plugin", "unknown package origin");

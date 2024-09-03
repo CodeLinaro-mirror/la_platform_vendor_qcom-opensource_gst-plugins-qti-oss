@@ -22,6 +22,7 @@
 #include "gstqvais.h"
 #include "gstqvaisvpp.h"
 #include "gstqvaispool.h"
+#include "gstqvaisdmabuf.h"
 
 #include <gst/gsttask.h>
 #include <gst/video/video.h>
@@ -44,6 +45,7 @@ GST_DEBUG_CATEGORY (gst_qvais_debug);
 
 #define DEFAULT_SCALE_RATIO 0
 #define DEFAULT_CLASSIFICATION 10
+#define INVALID_COOKIE 0
 
 enum
 {
@@ -757,7 +759,9 @@ gst_qvais_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
   memset (&vpp_in_buf, 0, sizeof (struct vpp_buffer));
   if (fill_vppbuf_with_gstbuf (&vpp_in_buf, buf, false, qvais->in_vpp_buf_size)) {
-    vpp_in_buf.cookie_in_to_out = (void*)(qvais->frame_number++);
+    qvais->frame_number = (qvais->frame_number + 1 == 0) ? 1 : qvais->frame_number + 1;
+    vpp_in_buf.cookie_in_to_out = (void*)(qvais->frame_number);
+
     if (qvaisvpp_queue_buf (qvais->vpp_ctx, in_port, &vpp_in_buf)) {
       GST_DEBUG_OBJECT (qvais, "queue vpp input buf %p successfully", buf);
       ret = GST_FLOW_OK;
@@ -884,6 +888,13 @@ qvais_handle_output_buf_done (GstQvais * self, struct vpp_buffer *buf)
       GST_ERROR_OBJECT (self, "error occurred, gst_buf is %p", gst_buf);
       return;
     }
+
+    if (buf->cookie_in_to_out == INVALID_COOKIE) {
+      GST_DEBUG_OBJECT (self, "Dropping unprocessed buffer");
+      gst_buffer_unref (gst_buf);
+      return;
+    }
+
     GST_BUFFER_PTS (gst_buf) = buf->timestamp * 1000;
     GST_DEBUG_OBJECT (self,
         "handle message: output buffer done, gst buf %p, buf->timestamp %ld, PTS %"
@@ -1469,6 +1480,19 @@ quit:
   return;
 }
 
+static gboolean
+gst_qvais_load_libs (void)
+{
+  gboolean ret = TRUE;
+
+  if (!qvais_dmabuf_load_libs_once ()) {
+    GST_ERROR ("failed to load libs");
+    ret = FALSE;
+  }
+
+  return ret;
+}
+
 /* initialize the new element
  * initialize instance structure
  */
@@ -1476,6 +1500,9 @@ static void
 gst_qvais_init (GstQvais * self)
 {
   GST_INFO ("init qvais %p", self);
+
+  if (!gst_qvais_load_libs ())
+    return;
 
   self->sinkpad = gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_event_function (self->sinkpad,

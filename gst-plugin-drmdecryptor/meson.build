@@ -48,6 +48,10 @@ if get_option('widevine').enabled()
   gstdrmdecryptor_cpp_args += ['-DENABLE_WIDEVINE']
 endif
 
+if get_option('ASAN')
+  gstdrmdecryptor_cpp_args += ['-fsanitize=address']
+endif
+
 gstdrmdecryptor = library('gstqtidrmdecryptor',
   gstdrmdecryptor_sources,
   cpp_args : [gstdrmdecryptor_cpp_args, '-Wall'],

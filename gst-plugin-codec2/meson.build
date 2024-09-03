@@ -32,6 +32,10 @@ if get_option('c2dec-deinterlace').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_C2DEC_DEINTERLACE']
 endif
 
+if get_option('ASAN')
+  gst_plugin_codec2_args += ['-fsanitize=address']
+endif
+
 configinc = include_directories('.')
 
 core_conf = configuration_data()

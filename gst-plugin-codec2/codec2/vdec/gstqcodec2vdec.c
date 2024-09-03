@@ -97,6 +97,8 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 #define DEFAULT_OUTPUT_PICTURE_ORDER_MODE    (0xffffffff)
 #define DEFAULT_LOW_LATENCY_MODE             (FALSE)
 #define DEFAULT_SECURE_MODE                  (FALSE)
+#define DEFAULT_USE_EXTERNAL_POOL            (FALSE)
+#define DEFAULT_RELEASE_INPUT                (TRUE)
 
 /* Function will be named gst_fbuf_modifier_qdata_quark() */
 static G_DEFINE_QUARK (FBufModifierQuark, gst_fbuf_modifier_qdata);
@@ -127,6 +129,7 @@ enum
   PROP_DATA_COPY_FUNTION,
   PROP_DATA_COPY_FUNTION_PARAM,
   PROP_USE_EXTERNAL_POOL,
+  PROP_RELEASE_INPUT,
 };
 
 /* GstVideoDecoder base class method */
@@ -440,15 +443,9 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
     if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
         gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
       if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
-        if (dec->is_ubwc && (dec->secure
-                || dec->output_format == GST_VIDEO_FORMAT_NV12_10LE32)) {
-          /* TODO: remove format/secure condition above
-           * Only use TP10_UBWC if it set in Caps explicitly or decoder works in secure mode,
-           * otherwise, prefer to P010.
-           */
+        if (dec->is_ubwc) {
           output_format = GST_VIDEO_FORMAT_NV12_10LE32;
         } else {
-          dec->is_ubwc = FALSE;
           output_format = GST_VIDEO_FORMAT_P010_10LE;
         }
 
@@ -646,8 +643,8 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 
   s = gst_caps_get_structure (intersection, 0);
   format_str = gst_structure_get_string (s, "format");
-  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d, "
-      "both of them will be updated for 10bit clip", format_str, dec->is_ubwc);
+  GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d", format_str,
+      dec->is_ubwc);
 
   if (!format_str || (output_format = gst_video_format_from_string (format_str))
       == GST_VIDEO_FORMAT_UNKNOWN) {
@@ -1433,6 +1430,27 @@ release_external_buf_callback (GstVideoDecoder * decoder, gint ext_fd)
   g_mutex_unlock (&dec->external_buf_lock);
 }
 
+static void
+release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
+{
+  GstVideoCodecFrame *frame;
+  GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
+
+  frame = gst_video_decoder_get_frame (decoder, index);
+  if (frame) {
+    GstBuffer *tmp = frame->input_buffer;
+    frame->input_buffer = gst_buffer_new ();
+    gst_buffer_copy_into (frame->input_buffer, tmp,
+        GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
+        GST_BUFFER_COPY_META, 0, 0);
+    gst_buffer_unref (tmp);
+    gst_video_codec_frame_unref (frame);
+    GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
+  } else {
+    GST_WARNING_OBJECT (dec, "Can not find video frame for index %lu", index);
+  }
+}
+
 static GstBuffer *
 gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
     BufferDescriptor * decode_buf)
@@ -1886,6 +1904,13 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       release_external_buf_callback (decoder, ext_fd);
       break;
     }
+    case EVENT_RELEASE_INPUT_BUF:{
+      if (dec->release_input_buf) {
+        guint64 index = *(guint64 *) data;
+        release_input_buf_callback (decoder, index);
+      }
+      break;
+    }
     default:{
       GST_ERROR_OBJECT (dec, "Invalid Event(%d)", type);
       break;
@@ -1981,6 +2006,9 @@ gst_qcodec2_vdec_set_property (GObject * object, guint prop_id,
     case PROP_USE_EXTERNAL_POOL:
       dec->use_external_buf = g_value_get_boolean (value);
       break;
+    case PROP_RELEASE_INPUT:
+      dec->release_input_buf = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2016,6 +2044,9 @@ gst_qcodec2_vdec_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_USE_EXTERNAL_POOL:
       g_value_set_boolean (value, dec->use_external_buf);
+      break;
+    case PROP_RELEASE_INPUT:
+      g_value_set_boolean (value, dec->release_input_buf);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2186,7 +2217,14 @@ gst_qcodec2_vdec_class_init (GstQcodec2VdecClass * klass)
       PROP_USE_EXTERNAL_POOL, g_param_spec_boolean ("use-external-pool",
           "if allow using external pool",
           "If enabled, decoder will use external buffer pool if supported by downstream.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          DEFAULT_USE_EXTERNAL_POOL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_RELEASE_INPUT, g_param_spec_boolean ("release-input-buf",
+          "whether to release the input buffer after use",
+          "If enabled, decoder will copy and release the input buffer, "
+          "which can avoid holding too many input buffers",
+          DEFAULT_RELEASE_INPUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   video_decoder_class->set_format =
       GST_DEBUG_FUNCPTR (gst_qcodec2_vdec_set_format);
@@ -2225,8 +2263,9 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->cb.data_copy_func_param = NULL;
   dec->deinterlace = DEFAULT_DEINTERLACE;
   dec->set_gstbuf_interlace_flag = DEFAULT_SET_GSTBUF_INTERLACE_FLAG;
-  dec->use_external_buf = FALSE;
+  dec->use_external_buf = DEFAULT_USE_EXTERNAL_POOL;
   dec->is_flushing = FALSE;
+  dec->release_input_buf = DEFAULT_RELEASE_INPUT;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);
