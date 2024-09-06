@@ -74,6 +74,7 @@ struct _GstQeavbTsSrc
   eavb_ioctl_stream_info_t stream_info;
   eavb_ioctl_stream_config_t cfg_data;
   unsigned int src_fill_idx;  //just for debug
+  unsigned long long recv_len_total;  //mainly for debug
   gboolean started;
   gboolean is_first_tspacket;
   GMutex lock;
