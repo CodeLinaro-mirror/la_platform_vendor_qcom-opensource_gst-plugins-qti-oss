@@ -217,6 +217,7 @@ typedef enum {
     EVENT_ACQUIRE_EXT_BUF,
     EVENT_RELEASE_EXT_BUF,
     EVENT_DROP_FRAME,
+    EVENT_RELEASE_INPUT_BUF,
 } EVENT_TYPE;
 
 typedef enum {

@@ -117,6 +117,7 @@ public:
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
     void acquireExtBuf(uint32_t width, uint32_t height, bool isC2D);
     void releaseExtBuf(int32_t extFd);
+    void releaseInputBuf(uint64_t index);
     void cancelPendingWork();
 
     c2_status_t setMaxAllocationCount(uint32_t max, BUFFER_POOL_TYPE type);
