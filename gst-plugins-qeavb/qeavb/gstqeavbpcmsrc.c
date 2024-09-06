@@ -118,6 +118,7 @@ gst_qeavb_pcm_src_init (GstQeavbPcmSrc * qeavbpcmsrc)
   qeavbpcmsrc->eavb_addr = NULL;
   qeavbpcmsrc->eavb_fd = -1;
   qeavbpcmsrc->src_fill_idx = 0;
+  qeavbpcmsrc->recv_len_total = 0;
   qeavbpcmsrc->started = FALSE;
   qeavbpcmsrc->is_first_pcmpacket = TRUE;
   memset(&(qeavbpcmsrc->hdr), 0, sizeof(eavb_ioctl_hdr_t));
@@ -289,6 +290,7 @@ gst_qeavb_pcm_src_start (GstBaseSrc * basesrc)
   GST_INFO_OBJECT(qeavbpcmsrc,"qeavb pcm src start");
   kpi_place_marker("M - qeavbpcm start");
 
+  qeavbpcmsrc->recv_len_total = 0;
   log_heartbeat_counter_reset(&qeavbpcmsrc->logbeat);
 
   qeavbpcmsrc->eavb_fd = open("/dev/virt-eavb", O_RDWR);
@@ -438,7 +440,8 @@ gst_qeavb_pcm_src_fill (GstPushSrc * pushsrc, GstBuffer * buffer)
     need_show_log = log_heartbeat_counter_click(&qeavbpcmsrc->logbeat);
   }
   if (need_show_log) {
-    kpi_place_marker("M - qeavbpcm fill() calling");
+    snprintf(tips, sizeof(tips), "M - qeavbpcm fill(%u,%llu)call", qeavbpcmsrc->src_fill_idx, qeavbpcmsrc->recv_len_total);
+    kpi_place_marker(tips);
   }
 
   if (qeavbpcmsrc->stream_info.wakeup_period_us != 0) {
@@ -494,6 +497,7 @@ retry:
     }
     GST_LOG_OBJECT (qeavbpcmsrc, "receive data len %d", recv_len);
     if (recv_len > 0) {
+      qeavbpcmsrc->recv_len_total += recv_len;
       if (qeavbpcmsrc->is_first_pcmpacket) {
         snprintf(tips, sizeof(tips), "M - qeavbpcm recv 1p<%d>", recv_len);
         kpi_place_marker(tips);
