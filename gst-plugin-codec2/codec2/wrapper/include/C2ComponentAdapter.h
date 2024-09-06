@@ -168,8 +168,6 @@ private:
     std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
 #ifdef USE_AGL_C2SERVICE
     std::shared_ptr<aglqc2::QC2Client::GBMAllocator> mIC2AllocatorGBM;
-#else
-    std::shared_ptr<android::C2AllocatorGBM> mIC2AllocatorGBM;
 #endif
     std::shared_ptr<C2Allocator> mC2LinearAllocator;
 
