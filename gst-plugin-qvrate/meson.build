@@ -17,7 +17,6 @@ gstqvrate_sources = [
 gstqvrate_c_args = ['-DHAVE_CONFIG_H']
 gstqvrate_link_args = [ ]
 
-gstqvrate_link_args += ['-lgbm']
 gstqvrate_link_args += ['-L.', '-lhyp_vpp_fe']
 
 configinc = include_directories('.')

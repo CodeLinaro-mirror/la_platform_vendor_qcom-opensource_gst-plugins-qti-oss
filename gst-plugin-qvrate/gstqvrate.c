@@ -21,6 +21,7 @@
 
 #include "gstqvrate.h"
 #include "gstqvratepool.h"
+#include "gstqvratedmabuf.h"
 
 #include <gst/gsttask.h>
 #include <gst/video/video.h>
@@ -1343,6 +1344,19 @@ quit:
   return;
 }
 
+static gboolean
+gst_qvrate_load_libs (void)
+{
+  gboolean ret = TRUE;
+
+  if (!qvrate_dmabuf_load_libs_once ()) {
+    GST_ERROR ("failed to load libs");
+    ret = FALSE;
+  }
+
+  return ret;
+}
+
 /* initialize the new element
  * initialize instance structure
  */
@@ -1350,6 +1364,9 @@ static void
 gst_qvrate_init (GstQvrate * self)
 {
   GST_INFO ("init qvrate %p", self);
+
+  if (!gst_qvrate_load_libs ())
+    return;
 
   self->sinkpad = gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_event_function (self->sinkpad,
