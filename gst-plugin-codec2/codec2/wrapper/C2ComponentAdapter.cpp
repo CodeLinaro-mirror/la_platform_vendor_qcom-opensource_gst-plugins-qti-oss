@@ -71,6 +71,11 @@ std::shared_ptr<C2Buffer> createGraphicBuffer(const std::shared_ptr<C2GraphicBlo
 
 namespace QTI {
 
+static void s_releaseExtBuf (void *comp, int32_t extFd)
+{
+    reinterpret_cast<C2ComponentAdapter*>(comp)->releaseExtBuf(extFd);
+}
+
 C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
 {
 
@@ -854,6 +859,7 @@ c2_status_t C2ComponentAdapter::start()
                 LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
                 mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
                 mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
+                mIC2AllocatorGBM->passReleaseExtBufCb((uintptr_t)s_releaseExtBuf, (uintptr_t)this);
             } else {
                 LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
             }
