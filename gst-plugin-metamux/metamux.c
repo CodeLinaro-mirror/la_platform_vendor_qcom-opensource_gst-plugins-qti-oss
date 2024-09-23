@@ -77,6 +77,7 @@ G_DEFINE_TYPE (GstMetaMux, gst_metamux, GST_TYPE_ELEMENT);
 
 #define DEFAULT_PROP_MODE           GST_METAMUX_MODE_ASYNC
 #define DEFAULT_PROP_LATENCY        0
+#define DEFAULT_PROP_QUEUE_SIZE     10
 
 #define GST_METAMUX_MEDIA_CAPS \
     "video/x-raw(ANY); "       \
@@ -91,6 +92,7 @@ enum
   PROP_0,
   PROP_MODE,
   PROP_LATENCY,
+  PROP_QUEUE_SIZE,
 };
 
 
@@ -272,6 +274,12 @@ gst_metamux_process_opticalflow_metadata (GstMetaMux * muxer,
   GstCvOptclFlowMeta *meta = NULL;
   GArray *mvectors = NULL, *mvstats = NULL;
 
+  if (!gst_buffer_is_writable (buffer)) {
+    GST_WARNING_OBJECT (muxer, "Unable to attach metadata to buffer %p, "
+        "not writable!", buffer);
+    return;
+  }
+
   gst_structure_get (structure,
       "mvectors", G_TYPE_ARRAY, &mvectors, "mvstats", G_TYPE_ARRAY, &mvstats,
       NULL);
@@ -292,9 +300,7 @@ gst_metamux_process_detection_metadata (GstMetaMux * muxer, GstBuffer * buffer,
   gchar *label = NULL;
   gfloat left = 0.0, right = 0.0, top = 0.0, bottom = 0.0;
   gint x = 0, y = 0, width = 0, height = 0;
-  guint batch_idx = 0, id = 0, idx = 0, size = 0;
-
-  gst_structure_get_uint (structure, "batch-index", &batch_idx);
+  guint id = 0, idx = 0, num = 0, size = 0, length = 0, color = 0;
 
   // If result is derived from a ROI, use it the recalculate dimensions.
   if ((value = gst_structure_get_value (structure, "source-region-id"))) {
@@ -304,6 +310,15 @@ gst_metamux_process_detection_metadata (GstMetaMux * muxer, GstBuffer * buffer,
 
   bboxes = gst_structure_get_value (structure, "bounding-boxes");
   size = gst_value_array_get_size (bboxes);
+
+  if (size == 0)
+    return;
+
+  if (!gst_buffer_is_writable (buffer)) {
+    GST_WARNING_OBJECT (muxer, "Unable to attach metadata to buffer %p, "
+        "not writable!", buffer);
+    return;
+  }
 
   for (idx = 0; idx < size; idx++) {
     value = gst_value_array_get_value (bboxes, idx);
@@ -327,6 +342,51 @@ gst_metamux_process_detection_metadata (GstMetaMux * muxer, GstBuffer * buffer,
       y = ABS (top) * GST_VIDEO_INFO_HEIGHT (muxer->vinfo);
       width = ABS (right - left) * GST_VIDEO_INFO_WIDTH (muxer->vinfo);
       height = ABS (bottom - top) * GST_VIDEO_INFO_HEIGHT (muxer->vinfo);
+    }
+
+    // Get the optional bbox landmarks in GValue format.
+    value = gst_structure_get_value (entry, "landmarks");
+    length = (value != NULL) ? gst_value_array_get_size (value) : 0;
+
+    if (length != 0) {
+      GArray *lndmrks = NULL;
+      GstVideoKeypoint *kp = NULL;
+      GstStructure *param = NULL;
+      gdouble lx = 0.0, ly = 0.0;
+
+      lndmrks = g_array_sized_new (FALSE, FALSE, sizeof (GstVideoKeypoint), length);
+      g_array_set_size (lndmrks, length);
+
+      gst_structure_get_uint (entry, "color", &color);
+
+      for (num = 0; num < lndmrks->len; num++) {
+        kp = &(g_array_index (lndmrks, GstVideoKeypoint, num));
+
+        kp->confidence = 100.0;
+        kp->color = color;
+
+        param = GST_STRUCTURE (
+            g_value_get_boxed (gst_value_array_get_value (value, num)));
+
+        label = g_strdup (gst_structure_get_name (param));
+        label = g_strdelimit (label, ".", ' ');
+
+        kp->name = g_quark_from_string (label);
+        g_free (label);
+
+        gst_structure_get_double (param, "x", &lx);
+        gst_structure_get_double (param, "y", &ly);
+
+        // Translate relative coordinates to absolute.
+        kp->x = lx * width;
+        kp->y = ly * height;
+      }
+
+      // Overwrite the landmarks field with the updated coordinates.
+      gst_structure_set (entry, "landmarks", G_TYPE_ARRAY, lndmrks, NULL);
+    } else {
+      // Make sure there are no landmarks if their size is 0.
+      gst_structure_remove_field (entry, "landmarks");
     }
 
     // Clip width and height if it outside the frame limits.
@@ -370,9 +430,7 @@ gst_metamux_process_landmarks_metadata (GstMetaMux * muxer, GstBuffer * buffer,
   const GValue *poses = NULL, *value = NULL, *entry = NULL;
   GstStructure *params = NULL, *landmark = NULL;
   gdouble confidence = 0.0, x = 0.0, y = 0.0;
-  guint batch_idx = 0, id = 0, idx = 0, num = 0, seqnum = 0, size = 0, length = 0;
-
-  gst_structure_get_uint (structure, "batch-index", &batch_idx);
+  guint id = 0, idx = 0, num = 0, seqnum = 0, size = 0, length = 0;
 
   // If result is derived from a ROI, attach this result to that ROI meta.
   if ((value = gst_structure_get_value (structure, "source-region-id"))) {
@@ -382,6 +440,15 @@ gst_metamux_process_landmarks_metadata (GstMetaMux * muxer, GstBuffer * buffer,
 
   poses = gst_structure_get_value (structure, "poses");
   size = gst_value_array_get_size (poses);
+
+  if (size == 0)
+    return;
+
+  if (!gst_buffer_is_writable (buffer)) {
+    GST_WARNING_OBJECT (muxer, "Unable to attach metadata to buffer %p, "
+        "not writable!", buffer);
+    return;
+  }
 
   for (seqnum = 0; seqnum < size; seqnum++) {
     value = gst_value_array_get_value (poses, seqnum);
@@ -489,7 +556,7 @@ gst_metamux_process_classification_metadata (GstMetaMux * muxer,
   GArray *labels = NULL;
   const GValue *value = NULL, *entry = NULL;
   GstStructure *params = NULL;
-  guint idx = 0, size = 0, batch_idx = 0, id = 0;
+  guint idx = 0, size = 0, id = 0;
 
   value = gst_structure_get_value (structure, "labels");
   size = gst_value_array_get_size (value);
@@ -498,7 +565,11 @@ gst_metamux_process_classification_metadata (GstMetaMux * muxer,
   if (size == 0)
     return;
 
-  gst_structure_get_uint (structure, "batch-index", &batch_idx);
+  if (!gst_buffer_is_writable (buffer)) {
+    GST_WARNING_OBJECT (muxer, "Unable to attach metadata to buffer %p, "
+        "not writable!", buffer);
+    return;
+  }
 
   // Allocate memory for the labels.
   labels = g_array_sized_new (FALSE, FALSE, sizeof (GstClassLabel), size);
@@ -560,12 +631,6 @@ gst_metamux_process_meta_entries (GstMetaMux * muxer, GstBuffer * buffer,
   // No metadata pads, nothing to process.
   if (muxer->metapads == NULL)
     return TRUE;
-
-  if (!gst_buffer_is_writable (buffer)) {
-    GST_WARNING_OBJECT (muxer, "Unable to attach metadata to buffer %p, "
-        "not writable!", buffer);
-    return FALSE;
-  }
 
   for (list = muxer->metapads; list != NULL; list = g_list_next (list)) {
     GstMetaMuxDataPad *dpad = GST_METAMUX_DATA_PAD (list->data);
@@ -1625,6 +1690,11 @@ gst_metamux_set_property (GObject * object, guint prop_id,
     case PROP_LATENCY:
       muxer->latency = g_value_get_uint64 (value);
       break;
+    case PROP_QUEUE_SIZE:
+      muxer->queue_size = g_value_get_uint (value);
+      muxer->sinkpad->buffers_limit = muxer->queue_size;
+      muxer->srcpad->buffers_limit = muxer->queue_size;
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1643,6 +1713,9 @@ gst_metamux_get_property (GObject * object, guint prop_id,
       break;
     case PROP_LATENCY:
       g_value_set_uint64 (value, muxer->latency);
+      break;
+    case PROP_QUEUE_SIZE:
+      g_value_set_uint (value, muxer->queue_size);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1698,6 +1771,12 @@ gst_metamux_class_init (GstMetaMuxClass *klass)
           0, G_MAXUINT64, DEFAULT_PROP_LATENCY,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
+  g_object_class_install_property (object, PROP_QUEUE_SIZE,
+      g_param_spec_uint ("queue-size", "Input and output queue size",
+          "Set the size of the input and output queues.",
+          3, G_MAXUINT, DEFAULT_PROP_QUEUE_SIZE,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
 
   gst_element_class_set_static_metadata (element,
       "Meta muxer", "Video/Audio/Text/Muxer",
@@ -1734,6 +1813,7 @@ gst_metamux_init (GstMetaMux * muxer)
 
   muxer->mode = DEFAULT_PROP_MODE;
   muxer->latency = DEFAULT_PROP_LATENCY;
+  muxer->queue_size = DEFAULT_PROP_QUEUE_SIZE;
 
   template = gst_static_pad_template_get (&gst_metamux_media_sink_template);
   muxer->sinkpad = g_object_new (GST_TYPE_METAMUX_SINK_PAD, "name", "sink",
@@ -1747,6 +1827,7 @@ gst_metamux_init (GstMetaMux * muxer)
   gst_pad_set_chain_function (GST_PAD (muxer->sinkpad),
       GST_DEBUG_FUNCPTR (gst_metamux_main_sink_pad_chain));
   gst_element_add_pad (GST_ELEMENT (muxer), GST_PAD (muxer->sinkpad));
+  muxer->sinkpad->buffers_limit = muxer->queue_size;
 
   template = gst_static_pad_template_get (&gst_metamux_src_template);
   muxer->srcpad = g_object_new (GST_TYPE_METAMUX_SRC_PAD, "name", "src",
@@ -1760,6 +1841,7 @@ gst_metamux_init (GstMetaMux * muxer)
   gst_pad_set_activatemode_function (GST_PAD (muxer->srcpad),
       GST_DEBUG_FUNCPTR (gst_metamux_src_pad_activate_mode));
   gst_element_add_pad (GST_ELEMENT (muxer), GST_PAD (muxer->srcpad));
+  muxer->srcpad->buffers_limit = muxer->queue_size;
 }
 
 static gboolean
