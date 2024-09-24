@@ -20,6 +20,10 @@ if get_option('ASAN')
 gstqeavb_c_args += ['-fsanitize=address']
 endif
 
+if get_option('kpi-use-syslog')
+gstqeavb_c_args += ['-DKPI_USE_SYSLOG']
+endif
+
 gstqeavb_link_args = [ ]
 
 gstqeavb_link_args += ['-leavbfe']
