@@ -86,11 +86,11 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
     mDataCopyFunc = nullptr;
     mDataCopyFuncParam = nullptr;
     mC2AllocatorGBM = nullptr;
-    mIC2AllocatorGBM = nullptr;
     mC2LinearAllocator = nullptr;
     mPendingSignaled = false;
 
 #ifdef USE_AGL_C2SERVICE
+    mIC2AllocatorGBM = nullptr;
     mUseAglC2Service = true;
 #endif
 }
@@ -110,7 +110,9 @@ C2ComponentAdapter::~C2ComponentAdapter()
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
     mC2AllocatorGBM = nullptr;
+#ifdef USE_AGL_C2SERVICE
     mIC2AllocatorGBM = nullptr;
+#endif
     mC2LinearAllocator = nullptr;
 }
 
@@ -159,7 +161,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
     uint32_t stride = buffer_info->stride[0];
 
     LOG_MESSAGE("format %d, %ux%u, stride %u, "
-                "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT,
+                "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT ".",
         buffer_info->format, width, height, stride,
         buffer_info->offset[0], buffer_info->offset[1]);
 
@@ -171,6 +173,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
             uint32_t y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12, width);
             uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_NV12, width);
             uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_NV12, height);
+            uint32_t offset = y_stride * y_scanlines;
 
             if (buffer_info->heic_flag) {
                 y_stride = VENUS_Y_STRIDE(COLOR_FMT_NV12_512, width);
@@ -179,46 +182,75 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
             }
 
             src += buffer_info->offset[0];
-            for (int i = 0; i < height; i++) {
-                memcpy(dst, src, width);
-                dst += y_stride;
-                src += stride;
-            }
+            if (stride == y_stride && stride == uv_stride) {
+                if (buffer_info->offset[1] - buffer_info->offset[0] == offset) {
+                    memcpy(dst, src, offset + stride * (height >> 1));
+                } else {
+                    memcpy(dst, src, stride * height);
+                    dst = dest + offset;
+                    if (buffer_info->offset[1] > 0) {
+                        src = buffer_info->data + buffer_info->offset[1];
+                    } else {
+                        src += stride * height;
+                    }
+                    memcpy(dst, src, stride * (height >> 1));
+                }
+            } else {
+                for (int i = 0; i < height; i++) {
+                    memcpy(dst, src, width);
+                    dst += y_stride;
+                    src += stride;
+                }
 
-            uint32_t offset = y_stride * y_scanlines;
-            dst = dest + offset;
-            if (buffer_info->offset[1] > 0) {
-                src = buffer_info->data + buffer_info->offset[1];
-            }
+                dst = dest + offset;
+                if (buffer_info->offset[1] > 0) {
+                    src = buffer_info->data + buffer_info->offset[1];
+                }
 
-            for (int i = 0; i < height / 2; i++) {
-                memcpy(dst, src, width);
-                dst += uv_stride;
-                src += stride;
+                for (int i = 0; i < height / 2; i++) {
+                    memcpy(dst, src, width);
+                    dst += uv_stride;
+                    src += stride;
+                }
             }
         }
     } else if (buffer_info->format == GST_VIDEO_FORMAT_P010_10LE) {
         uint32_t y_stride = VENUS_Y_STRIDE(COLOR_FMT_P010, width);
         uint32_t uv_stride = VENUS_UV_STRIDE(COLOR_FMT_P010, width);
         uint32_t y_scanlines = VENUS_Y_SCANLINES(COLOR_FMT_P010, height);
+        uint32_t offset = y_stride * y_scanlines;
 
         src += buffer_info->offset[0];
-        for (int i = 0; i < height; i++) {
-            memcpy(dst, src, stride);
-            dst += y_stride;
-            src += stride;
-        }
+        if (stride == y_stride && stride == uv_stride) {
+            if (buffer_info->offset[1] - buffer_info->offset[0] == offset) {
+                memcpy(dst, src, offset + stride * (height >> 1));
+            } else {
+                memcpy(dst, src, stride * height);
+                dst = dest + offset;
+                if (buffer_info->offset[1] > 0) {
+                    src = buffer_info->data + buffer_info->offset[1];
+                } else {
+                    src += stride * height;
+                }
+                memcpy(dst, src, stride * (height >> 1));
+            }
+        } else {
+            for (int i = 0; i < height; i++) {
+                memcpy(dst, src, width<<1);
+                dst += y_stride;
+                src += stride;
+            }
 
-        uint32_t offset = y_stride * y_scanlines;
-        dst = dest + offset;
-        if (buffer_info->offset[1] > 0) {
-            src = buffer_info->data + buffer_info->offset[1];
-        }
+            dst = dest + offset;
+            if (buffer_info->offset[1] > 0) {
+                src = buffer_info->data + buffer_info->offset[1];
+            }
 
-        for (int i = 0; i < height / 2; i++) {
-            memcpy(dst, src, stride);
-            dst += uv_stride;
-            src += stride;
+            for (int i = 0; i < height / 2; i++) {
+                memcpy(dst, src, width<<1);
+                dst += uv_stride;
+                src += stride;
+            }
         }
     } else if (buffer_info->format == GST_VIDEO_FORMAT_NV12_10LE32) {
         if (buffer_info->ubwc_flag) {
@@ -505,6 +537,7 @@ void C2ComponentAdapter::onBufferDestroyed(const C2Buffer* buf, void* arg)
         auto buf = mTrackBuffers.find(trackbuf);
         if (buf != mTrackBuffers.end()) {
             LOG_MESSAGE("erase buf idx:%zu TrackBuffer %p", trackbuf->frameIndex, trackbuf);
+            releaseInputBuf(trackbuf->frameIndex);
             mTrackBuffers.erase(buf);
             delete trackbuf;
         }
@@ -524,9 +557,12 @@ c2_status_t C2ComponentAdapter::setMaxAllocationCount(uint32_t max, BUFFER_POOL_
     c2_status_t status = C2_BAD_VALUE;
 
     if (BUFFER_POOL_BASIC_GRAPHIC == type) {
+#ifdef USE_AGL_C2SERVICE
         if(mIC2AllocatorGBM) {
             status = mIC2AllocatorGBM->setMaxAllocationCount(max);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             status = mC2AllocatorGBM->setMaxAllocationCount(max);
         }
     } else {
@@ -541,9 +577,12 @@ uint32_t C2ComponentAdapter::getMaxAllocationCount(BUFFER_POOL_TYPE type)
     uint32_t count = 0;
 
     if (BUFFER_POOL_BASIC_GRAPHIC == type) {
+#ifdef USE_AGL_C2SERVICE
         if(mIC2AllocatorGBM) {
             count = mIC2AllocatorGBM->getMaxAllocationCount();
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             count = mC2AllocatorGBM->getMaxAllocationCount();
         }
     } else {
@@ -802,20 +841,22 @@ c2_status_t C2ComponentAdapter::start()
 
     auto ret = mComp->start();
 #ifdef USE_AGL_C2SERVICE
-    C2String name = intf()->getName();
-    auto isDecoder = name.find("decoder") != std::string::npos;
-    if (isDecoder) {
-        LOG_MESSAGE("Component(%p) try to get GBM Allocator", this);
-        mIC2AllocatorGBM = aglqc2::QC2Client::GBMAllocator::get(mComp);
-        auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
-            std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-        auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
-        if (mIC2AllocatorGBM) {
-            LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
-            mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
-            mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
-        } else {
-            LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
+    if(!mIC2AllocatorGBM) {
+        C2String name = intf()->getName();
+        auto isDecoder = name.find("decoder") != std::string::npos;
+        if (isDecoder) {
+            LOG_MESSAGE("Component(%p) try to get GBM Allocator", this);
+            mIC2AllocatorGBM = aglqc2::QC2Client::GBMAllocator::get(mComp);
+            auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
+                std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+            auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
+            if (mIC2AllocatorGBM) {
+                LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
+                mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
+                mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
+            } else {
+                LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
+            }
         }
     }
 #endif
@@ -1088,43 +1129,17 @@ void C2ComponentAdapter::handleWorkDone(
                     bool isDecoder = name.find("decoder") != std::string::npos;
                     LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
                     if (isDecoder && outputDelay.updateFrom(*param)) {
-#ifdef USE_AGL_C2SERVICE
                         LOG_MESSAGE("onWorkDone: updating output delay:%u.", outputDelay.value);
-
-                        if(mIC2AllocatorGBM) {
+                        if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                             /* Update the max acquirable buffer count for external buffer pool */
                             uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
                             if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
                                 maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
                             }
-                            if (mCallback)
-                                mCallback->onUpdateMaxBufCount(maxBufCnt);
-                            if(mIC2AllocatorGBM)
-                                mIC2AllocatorGBM->setMaxAllocationCount(maxBufCnt);
-                        } else if(mC2AllocatorGBM) {
-                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
+                            mCallback->onUpdateMaxBufCount(maxBufCnt);
                         } else {
-                            LOG_ERROR("C2AllocatorGBM is NULL");
+                            setMaxAllocationCount(outputDelay.value, BUFFER_POOL_BASIC_GRAPHIC);
                         }
-#else
-                        if (mC2AllocatorGBM) {
-                            LOG_MESSAGE("onWorkDone: updating output delay:%u local_id:%lu.",
-                                outputDelay.value, mGraphicPool->getLocalId());
-                            if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
-                                /* Update the max acquirable buffer count for external buffer pool */
-                                uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
-                                if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
-                                    maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
-                                }
-                                mCallback->onUpdateMaxBufCount(maxBufCnt);
-                            } else {
-                                mC2AllocatorGBM->setMaxAllocationCount(outputDelay.value);
-                            }
-                        } else {
-                            /* mC2AllocatorGBM is not created in Codec2 service mode. */
-                            LOG_ERROR("mC2AllocatorGBM is NULL");
-                        }
-#endif
                     }
                 }
             } break;
@@ -1262,9 +1277,12 @@ c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
     LOG_MESSAGE("Component(%p) attach external fd: %d for pool type %d", this, fd, type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             result = mIC2AllocatorGBM->attachExternalFd(fd);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->attachExternalFd(fd);
         } else {
             LOG_ERROR("mC2AllocatorGBM is NULL");
@@ -1288,9 +1306,12 @@ c2_status_t C2ComponentAdapter::setUseExternalBuffer(BUFFER_POOL_TYPE type, bool
         this, useExternal ? "TRUE" : "FALSE", type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             result = mIC2AllocatorGBM->setUseExternalBuffer(useExternal);
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->setUseExternalBuffer(useExternal);
         } else {
             LOG_ERROR("mC2AllocatorGBM is NULL");
@@ -1308,9 +1329,12 @@ bool C2ComponentAdapter::isUseExternalBuffer(BUFFER_POOL_TYPE type)
     bool ret = false;
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
+#ifdef USE_AGL_C2SERVICE
         if (mIC2AllocatorGBM) {
             ret = mIC2AllocatorGBM->isUseExternalBuffer();
-        } else if (mC2AllocatorGBM) {
+        } else
+#endif
+        if (mC2AllocatorGBM) {
             ret = mC2AllocatorGBM->isUseExternalBuffer();
         } else {
             /* mC2AllocatorGBM is not created in Codec2 service mode. */
@@ -1392,6 +1416,13 @@ void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 {
     if (mCallback) {
         mCallback->onReleaseExtBuffer(extFd);
+    }
+}
+
+void C2ComponentAdapter::releaseInputBuf(uint64_t index)
+{
+    if (mCallback) {
+        mCallback->onReleaseInputBuffer(index);
     }
 }
 

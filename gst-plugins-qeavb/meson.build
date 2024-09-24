@@ -1,4 +1,4 @@
-project('gst-plugin-qvrate', 'c',
+project('gst-plugins-qeavb', 'c',
   version : '1.0',
   meson_version : '>= 0.47',
   default_options : [ 'warning_level=1',
@@ -15,14 +15,19 @@ gstqeavb_sources = [
 ]
 
 gstqeavb_c_args = ['-DHAVE_CONFIG_H']
+
+if get_option('ASAN')
+gstqeavb_c_args += ['-fsanitize=address']
+endif
+
 gstqeavb_link_args = [ ]
 
 gstqeavb_link_args += ['-leavbfe']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
-core_conf.set_quoted('PACKAGE', 'gst-plugin-qeavb')
-core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qeavb')
+core_conf.set_quoted('PACKAGE', 'gst-plugins-qeavb')
+core_conf.set_quoted('PACKAGE_NAME', 'gst-plugins-qeavb')
 core_conf.set_quoted('PACKAGE_VERSION', '1.0')
 configure_file(output : 'config.h', configuration : core_conf)
 

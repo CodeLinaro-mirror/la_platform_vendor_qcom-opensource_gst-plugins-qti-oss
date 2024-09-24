@@ -117,6 +117,7 @@ public:
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
     void acquireExtBuf(uint32_t width, uint32_t height, bool isC2D);
     void releaseExtBuf(int32_t extFd);
+    void releaseInputBuf(uint64_t index);
     void cancelPendingWork();
 
     c2_status_t setMaxAllocationCount(uint32_t max, BUFFER_POOL_TYPE type);
@@ -168,8 +169,6 @@ private:
     std::shared_ptr<android::C2AllocatorGBM> mC2AllocatorGBM;
 #ifdef USE_AGL_C2SERVICE
     std::shared_ptr<aglqc2::QC2Client::GBMAllocator> mIC2AllocatorGBM;
-#else
-    std::shared_ptr<android::C2AllocatorGBM> mIC2AllocatorGBM;
 #endif
     std::shared_ptr<C2Allocator> mC2LinearAllocator;
 
