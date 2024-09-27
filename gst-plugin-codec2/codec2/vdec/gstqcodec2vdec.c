@@ -1029,6 +1029,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
 
   memset (&dec->start_time, 0, sizeof (struct timeval));
   memset (&dec->first_frame_time, 0, sizeof (struct timeval));
+  memset (&dec->first_bitstream_receive_time, 0, sizeof (struct timeval));
   gettimeofday (&dec->start_time, NULL);
 
   GST_DEBUG_OBJECT (dec, "open");
@@ -1203,6 +1204,10 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   GST_DEBUG_OBJECT (dec, "handle_frame");
 
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
+
+  if (frame->system_frame_number == 0) {
+      gettimeofday (&dec->first_bitstream_receive_time, NULL);
+  }
 
   if (!dec->comp_started) {
     goto done;
@@ -1731,8 +1736,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
               (dec->first_frame_time.tv_sec -
               dec->start_time.tv_sec) * 1000000 +
               (dec->first_frame_time.tv_usec - dec->start_time.tv_usec);
-          GST_DEBUG_OBJECT (dec, "first frame latency:%d us", time_1st_cost_us);
+          GST_DEBUG_OBJECT (dec, "first frame latency from dec open:%d us", time_1st_cost_us);
+
+          time_1st_cost_us =
+              (dec->first_frame_time.tv_sec -
+              dec->first_bitstream_receive_time.tv_sec) * 1000000 +
+              (dec->first_frame_time.tv_usec - dec->first_bitstream_receive_time.tv_usec);
+          GST_DEBUG_OBJECT (dec, "first frame latency from dec 1st frame in:%d us", time_1st_cost_us);
         }
+
         dec->num_output_done++;
         GST_LOG_OBJECT (dec, "output done, count: %lu", dec->num_output_done);
 
