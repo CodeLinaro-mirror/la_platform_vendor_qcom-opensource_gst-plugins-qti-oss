@@ -136,6 +136,7 @@ struct _GstQcodec2Vdec
   GCond pending_cond;
   struct timeval start_time;
   struct timeval first_frame_time;
+  struct timeval first_bitstream_receive_time;
   GstBufferPool *out_port_pool;
   void *gbm_lib;
   f_get_modifier gbm_api_bo_get_modifier;
