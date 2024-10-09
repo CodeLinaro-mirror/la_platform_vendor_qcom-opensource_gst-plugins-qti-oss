@@ -66,6 +66,8 @@ G_BEGIN_DECLS
     "video/mpeg, " \
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
+    "systemstream = (boolean)false, " \
+    "profile = (string) {simple, main}, " \
     COMMON_VIDEO_CAPS(96, 1920)
 #define QCODEC2_VDEC_SRC_WH_CAPS    \
   "width  = (int) [ 96, 8192 ], "     \
