@@ -29,6 +29,7 @@
  */
 #include <gst/gstinfo.h>
 #include "gstqeavbcommon.h"
+//KPI_USE_SYSLOG controlled by meson
 #ifdef KPI_USE_SYSLOG
 #include <syslog.h>
 #endif

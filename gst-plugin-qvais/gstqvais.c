@@ -45,12 +45,16 @@ GST_DEBUG_CATEGORY (gst_qvais_debug);
 
 #define DEFAULT_SCALE_RATIO 0
 #define DEFAULT_CLASSIFICATION 10
+#define MAX_CLASSIFICATION 100
 #define INVALID_COOKIE 0
+#define WAIT_FLUSH_TIME 2 /* 2 second */
+#define WAIT_EOS_TIME 5 /* 5 second */
 
 enum
 {
   PROP_0,
   PROP_SCALE_RATIO,
+  PROP_CLASSIFICATION,
 };
 
 static GstElementClass *parent_class = NULL;
@@ -411,10 +415,10 @@ gst_qvais_set_info (GstQvais * qvais,
     out_param.scanlines = VENUS_Y_SCANLINES (out_color_fmt, out_param.height);
 
     GST_INFO_OBJECT (self, "in: ubwc=%u, w:h:%d:%d stride:scan:%d:%d"
-        " out: ubwc=%u, w:h:%d:%d stride:scan:%d:%d",
+        " out: ubwc=%u, w:h:%d:%d stride:scan:%d:%d, classification:%u",
         self->in_ubwc, in_param.width, in_param.height, in_param.stride,
         in_param.scanlines, self->out_ubwc, out_param.width, out_param.height,
-        out_param.stride, out_param.scanlines);
+        out_param.stride, out_param.scanlines, qvais->classification);
 
     if (qvaisvpp_set_parameter (self->vpp_ctx, in_port, in_param) &&
         qvaisvpp_set_parameter (self->vpp_ctx, out_port, out_param)) {
@@ -598,10 +602,8 @@ gst_qvais_open (GstQvais * self)
 }
 
 static void
-gst_qvais_close (GstQvais * self)
+stop_outbuf_task (GstQvais * self)
 {
-  GST_INFO_OBJECT (self, "qvais close");
-
   /* stop thread of queuing output buffer */
   if (self->pool)
     gst_buffer_pool_set_flushing (self->pool, TRUE);
@@ -612,7 +614,18 @@ gst_qvais_close (GstQvais * self)
     g_object_unref (self->outbuf_task);
     g_rec_mutex_clear (&self->outbuf_lock);
     self->outbuf_task = NULL;
+    GST_INFO_OBJECT (self, "stopped output buffer thread");
   }
+}
+
+static void
+gst_qvais_close (GstQvais * self)
+{
+  gint64 start_time = 0;
+
+  GST_INFO_OBJECT (self, "qvais close");
+
+  stop_outbuf_task (self);
 
   if (self->active) {
     self->input_flushing = TRUE;
@@ -621,9 +634,11 @@ gst_qvais_close (GstQvais * self)
     qvaisvpp_flush (self->vpp_ctx, VPP_PORT_OUTPUT);
 
     g_mutex_lock (&self->flush_lock);
+    start_time = g_get_real_time();
+
     while (self->input_flushing || self->output_flushing) {
       GST_DEBUG_OBJECT (self, "waiting for flush");
-      gint64 wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
+      gint64 wait_until = g_get_monotonic_time () + WAIT_FLUSH_TIME * G_TIME_SPAN_SECOND;
       if (!g_cond_wait_until (&self->flush_cond, &self->flush_lock, wait_until)) {
         GST_DEBUG_OBJECT (self, "waited for flush");
         if (self->input_flushing)
@@ -632,6 +647,9 @@ gst_qvais_close (GstQvais * self)
           self->output_flushing = FALSE;
       }
     }
+
+    GST_INFO_OBJECT (self, "flush costs %ld ms", (g_get_real_time() - start_time) / 1000);
+
     g_mutex_unlock (&self->flush_lock);
 
     if (self->vpp_ctx != NULL) {
@@ -792,6 +810,9 @@ gst_qvais_set_property (GObject * object, guint prop_id,
     case PROP_SCALE_RATIO:
       qvais->scale_ratio = g_value_get_uint (value);
       break;
+    case PROP_CLASSIFICATION:
+      qvais->classification = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -809,6 +830,9 @@ gst_qvais_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case PROP_SCALE_RATIO:
       g_value_set_uint (value, qvais->scale_ratio);
+      break;
+    case PROP_CLASSIFICATION:
+      g_value_set_uint (value, qvais->classification);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -834,6 +858,16 @@ gst_qvais_class_init (GstQvaisClass * klass)
           "upscaling ratio",
           "upscaling ratio (0: default, only support 2X or 3X)",
           0, G_MAXUINT, DEFAULT_SCALE_RATIO,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_CLASSIFICATION, g_param_spec_uint ("classification",
+          "classification setting",
+          "Set the sharpness. Range is 0 to 100. Higher value increases sharpness."
+          " Gen4 only supports up to 20. It affects AI network selection/processing"
+          " filters for sharpness.",
+          0, MAX_CLASSIFICATION, DEFAULT_CLASSIFICATION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
@@ -938,17 +972,21 @@ vpp_event (void *pv, struct vpp_event e)
       GST_ERROR ("receive VPP_EVENT_ERROR");
       GST_ELEMENT_ERROR (self, STREAM, FAILED, ("VPP driver posts an error"),
           (NULL));
+
+      stop_outbuf_task (self);
+
+      /* Set vpp to inactive, so that flush operation can be avoided
+       * during gst_qvais_close. */
+      if (self->vpp_ctx != NULL) {
+        qvaisvpp_close (self->vpp_ctx);
+      }
+      self->active = FALSE;
       break;
     case VPP_EVENT_DRAIN_DONE:
-      GST_DEBUG ("receive drain done");
+      GST_INFO_OBJECT (self, "receive drain done");
+      stop_outbuf_task (self);
+
       msg->type = GST_QVAIS_MESSAGE_DRAIN_DONE;
-      gst_buffer_pool_set_flushing (self->pool, TRUE);
-      if (self->outbuf_task) {
-        gst_task_stop (self->outbuf_task);
-        gst_task_join (self->outbuf_task);
-        g_object_unref (self->outbuf_task);
-        self->outbuf_task = NULL;
-      }
       gst_qvais_send_message (self, msg);
       break;
     default:
@@ -1252,6 +1290,7 @@ gst_qvais_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   gint64 wait_until = 0;
   gboolean forward = TRUE;
   GstCaps *caps = NULL;
+  gint64 start_time = 0;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
@@ -1273,8 +1312,9 @@ gst_qvais_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       qvaisvpp_flush (qvais->vpp_ctx, VPP_PORT_OUTPUT);
       GST_DEBUG_OBJECT (qvais, "waiting for vpp flush done");
       g_mutex_lock (&qvais->flush_lock);
+      start_time = g_get_real_time();
       while (qvais->input_flushing || qvais->output_flushing) {
-        wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
+        wait_until = g_get_monotonic_time () + WAIT_FLUSH_TIME * G_TIME_SPAN_SECOND;
         if (!g_cond_wait_until (&qvais->flush_cond, &qvais->flush_lock,
                 wait_until)) {
           if (qvais->input_flushing)
@@ -1283,6 +1323,7 @@ gst_qvais_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
             qvais->output_flushing = FALSE;
         }
       }
+      GST_INFO_OBJECT (qvais, "flush costs %ld ms", (g_get_real_time() - start_time) / 1000);
       g_mutex_unlock (&qvais->flush_lock);
       GST_DEBUG_OBJECT (qvais, "waited for vpp flush done");
 
@@ -1299,14 +1340,16 @@ gst_qvais_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       GST_DEBUG_OBJECT (qvais, "waiting for vpp drain done");
       g_mutex_lock (&qvais->drain_lock);
+      start_time = g_get_real_time();
       while (!qvais->eos) {
-        wait_until = g_get_monotonic_time () + 5 * G_TIME_SPAN_SECOND;
+        wait_until = g_get_monotonic_time () + WAIT_EOS_TIME * G_TIME_SPAN_SECOND;
         if (!g_cond_wait_until (&qvais->drain_cond, &qvais->drain_lock,
                 wait_until)) {
           if (!qvais->eos)
             qvais->eos = TRUE;
         }
       }
+      GST_INFO_OBJECT (qvais, "EOS costs %ld ms", (g_get_real_time() - start_time) / 1000);
       g_mutex_unlock (&qvais->drain_lock);
       GST_DEBUG_OBJECT (qvais, "waited for vpp drain done");
       break;

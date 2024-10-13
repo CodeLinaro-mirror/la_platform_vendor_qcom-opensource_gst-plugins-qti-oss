@@ -66,6 +66,8 @@ G_BEGIN_DECLS
     "video/mpeg, " \
     "mpegversion = (int)2, " \
     "parsed = (boolean)true, " \
+    "systemstream = (boolean)false, " \
+    "profile = (string) {simple, main}, " \
     COMMON_VIDEO_CAPS(96, 1920)
 #define QCODEC2_VDEC_SRC_WH_CAPS    \
   "width  = (int) [ 96, 8192 ], "     \
@@ -136,6 +138,7 @@ struct _GstQcodec2Vdec
   GCond pending_cond;
   struct timeval start_time;
   struct timeval first_frame_time;
+  struct timeval first_bitstream_receive_time;
   GstBufferPool *out_port_pool;
   void *gbm_lib;
   f_get_modifier gbm_api_bo_get_modifier;
