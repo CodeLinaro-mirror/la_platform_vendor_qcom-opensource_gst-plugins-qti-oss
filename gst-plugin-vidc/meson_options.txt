@@ -1,0 +1,3 @@
+option('usedmaheap', type : 'boolean', value : 'false', description: 'Use DMA buffer heap.')
+option('av1-dec', type : 'feature', value : 'disabled', yield : true, description: 'Enable av1 decoder support')
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
