@@ -48,6 +48,8 @@ gst_dep = dependency('gstreamer-1.0',
   fallback : ['gstreamer', 'gst_dep'])
 gstbase_dep = dependency('gstreamer-base-1.0',
   fallback : ['gstreamer', 'gst_base_dep'])
+gstgl_dep = dependency('gstreamer-gl-1.0',
+  fallback : ['gst-plugins-base', 'gstgl_dep'], required: false)
 gstvideo_dep = dependency('gstreamer-video-1.0',
   fallback : ['gst-plugins-base', 'video_dep'])
 gstallocators_dep = dependency('gstreamer-allocators-1.0',
