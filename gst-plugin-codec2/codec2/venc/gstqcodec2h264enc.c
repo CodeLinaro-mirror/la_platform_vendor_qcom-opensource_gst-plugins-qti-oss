@@ -37,6 +37,8 @@
 #endif
 
 #include <gst/gst.h>
+#include <gst/gl/gl.h>
+
 #include "gstqcodec2h264enc.h"
 
 GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_venc_debug);
@@ -52,6 +54,7 @@ static gboolean gst_qcodec2_h264_enc_set_format (GstQcodec2Venc * encoder,
 
 #define GST_QC2_H264_ENC_SINK_TEMPLATE_CAP \
     GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_DMABUF,"NV12",128,8192)";" \
+    GST_QC2VENC_CAPS_MAKE_WITH_FEATURES(GST_CAPS_FEATURE_MEMORY_GL_MEMORY,"NV12",128,8192)";" \
     GST_QC2VENC_CAPS_MAKE("NV12",128,8192)
 
 static GstStaticPadTemplate gst_qcodec2_h264_enc_sink_template =
