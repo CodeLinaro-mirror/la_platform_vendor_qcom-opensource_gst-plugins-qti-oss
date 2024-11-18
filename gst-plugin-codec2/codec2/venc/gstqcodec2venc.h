@@ -162,6 +162,7 @@ struct _GstQcodec2Venc
   GValue ltr_mark;
   GValue ltr_use;
   gboolean is_input_dmabuf;
+  gboolean input_glmem_feature;
 
   guint max_input_buffers;
 };
