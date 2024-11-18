@@ -234,7 +234,7 @@ _gst_qcodec2_alloc_buf (GstBufferPool * bpool)
     GST_DEBUG_OBJECT (bpool, "Allocated buffer fd: %d, size: %d format: %u",
         buffer.fd, buffer.capacity, format);
 
-    /* use GstDmaBufAllocator to allocate GBM based fd memory */
+    /* use GstDmaBufAllocator to allocate dma based fd memory */
     if (mode == DMABUF_MODE) {
       mem =
           gst_dmabuf_allocator_alloc_with_flags (alloc, buffer.fd,

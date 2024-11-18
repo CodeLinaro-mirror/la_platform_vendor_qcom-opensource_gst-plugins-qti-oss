@@ -1,1 +1,2 @@
 option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
+option('kpi-use-syslog', type: 'boolean', value: true, description: 'Enable KPI_USE_SYSLOG macro')

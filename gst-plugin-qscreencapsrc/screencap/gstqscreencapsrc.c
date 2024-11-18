@@ -363,7 +363,17 @@ dump_tga(char *name, uint32_t w, uint32_t h, uint32_t stride, void *data)
   if (f)
   {
     fwrite(&tga, sizeof(TGA_HEADER), 1, f); /* write header */
-    fwrite(data, 1, stride*h, f);              /* write data  */
+    if (stride == (w<<2))
+      fwrite(data, 1, stride*h, f);              /* write data  */
+    else
+    {
+      char* p = (char*)data;
+      for(uint32_t i=0; i<h; i++)
+      {
+        fwrite(p, 1, w<<2, f); /* write data, skip padding bytes */
+        p += stride;
+      }
+    }
     fclose(f);
   }
 }
