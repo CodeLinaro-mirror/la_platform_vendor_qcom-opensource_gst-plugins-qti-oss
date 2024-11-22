@@ -716,6 +716,7 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
   inBuf.flag = FLAG_TYPE_END_OF_STREAM;
   inBuf.pool_type = BUFFER_POOL_BASIC_LINEAR;
 
+  GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
   /* Setup EOS work */
   if (dec->comp) {
     /* Queue buffer to Codec2 */
@@ -723,7 +724,6 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
   }
 
   /* wait for all the pending buffers to return */
-  GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
   g_mutex_lock (&dec->pending_lock);
 
   end_time =
