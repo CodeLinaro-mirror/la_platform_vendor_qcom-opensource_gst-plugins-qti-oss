@@ -21,14 +21,13 @@
 #include <gbm.h>
 #include <gbm_priv.h>
 
-
-
 GST_DEBUG_CATEGORY_EXTERN (gst_qcarcam_src_debug);
 #define GST_CAT_DEFAULT gst_qcarcam_src_debug
 
 static int dev_fd = -1;
 
 #define GBM_RENDER_DEVICE_NAME "/dev/dri/renderD128"
+
 static struct gbm_device *gbm_dev = NULL;
 
 /* Dynamically load libgbm by dlopen. */
@@ -130,24 +129,24 @@ gboolean qcarcam_dmabuf_load_libs_once (void)
 #define gbm_bo_destroy _gbm_bo_destroy
 
 static gboolean
-do_dmabuf_device_open (const char *dev_name)
+do_dmabuf_device_open (void)
 {
-  int fd;
-
-  GST_DEBUG ("dev_name %s", dev_name);
+  int fd = -1;
 
   if (dev_fd != -1) {
     GST_DEBUG ("already opened dev_fd %d", dev_fd);
     return TRUE;
   }
-
-  if ((fd = open (dev_name, O_RDONLY | O_CLOEXEC)) < 0) {
-    GST_ERROR ("open %s error %s", dev_name, strerror (errno));
+#ifndef _ENABLE_UMD_
+  if ((fd = open (GBM_RENDER_DEVICE_NAME, O_RDONLY | O_CLOEXEC)) < 0) {
+    int e = errno;
+    GST_ERROR ("open renderD128 error %s", strerror (e));
     return FALSE;
   } else {
     dev_fd = fd;
     GST_DEBUG ("dev_fd %d", dev_fd);
   }
+#endif
 
   return TRUE;
 }
@@ -197,9 +196,7 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
 static inline gboolean
 gbm_dmabuf_open (void)
 {
-  const char *render_name = GBM_RENDER_DEVICE_NAME;
-
-  if (!do_dmabuf_device_open (render_name)) {
+  if (!do_dmabuf_device_open ()) {
     GST_ERROR ("open device error");
     return FALSE;
   }
