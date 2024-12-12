@@ -15,6 +15,11 @@ gstqvrate_sources = [
 ]
 
 gstqvrate_c_args = ['-DHAVE_CONFIG_H']
+
+if get_option('ASAN')
+gstqvrate_c_args += ['-fsanitize=address']
+endif
+
 gstqvrate_link_args = [ ]
 
 gstqvrate_link_args += ['-L.', '-lhyp_vpp_fe']

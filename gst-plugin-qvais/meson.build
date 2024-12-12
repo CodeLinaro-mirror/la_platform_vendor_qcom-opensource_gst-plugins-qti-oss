@@ -15,6 +15,11 @@ gstqvais_sources = [
 ]
 
 gstqvais_c_args = ['-DHAVE_CONFIG_H']
+
+if get_option('ASAN')
+  gstqvais_c_args += ['-fsanitize=address']
+endif
+
 gstqvais_link_args = [ ]
 code_coverage_args = [ ]
 code_coverage_link_args = [ ]
