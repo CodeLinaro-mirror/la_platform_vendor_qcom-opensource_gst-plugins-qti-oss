@@ -212,18 +212,22 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
 static inline gboolean
 gbm_dmabuf_open (void)
 {
+#ifdef _ENABLE_UMD_
+  GST_INFO ("No need to open GBM device node");
+#else
   const char *render_name = GBM_RENDER_DEVICE_NAME;
-
   if (!do_dmabuf_device_open (render_name)) {
     GST_ERROR ("open device error");
     return FALSE;
   }
-
+#endif
   gbm_dev = gbm_create_device (dev_fd);
   GST_DEBUG ("gbm_dev %p", gbm_dev);
   if (NULL == gbm_dev) {
     GST_ERROR ("create gbm device error");
+#ifndef _ENABLE_UMD_
     do_dmabuf_device_close ();
+#endif
     return FALSE;
   }
 
@@ -239,8 +243,9 @@ gbm_dmabuf_close (void)
     gbm_device_destroy (gbm_dev);
     gbm_dev = NULL;
   }
-
+#ifndef _ENABLE_UMD_
   do_dmabuf_device_close ();
+#endif
 }
 
 static gboolean
@@ -342,7 +347,9 @@ linux_dmabuf_heap_open (void)
 static inline void
 linux_dmabuf_heap_close (void)
 {
+#ifndef _ENABLE_UMD_
   do_dmabuf_device_close ();
+#endif
 }
 
 /* Linux dmabuf heaps is available from kernel 5.10 */

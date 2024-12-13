@@ -21,7 +21,14 @@ else
   color_fmt_args = []
 endif
 
-gstqvdeinterlace_c_args = ['-DHAVE_CONFIG_H'] + color_fmt_args
+use_umd = get_option('useumd')
+if use_umd
+  use_umd_args = ['-D_ENABLE_UMD_']
+else
+  use_umd_args = []
+endif
+
+gstqvdeinterlace_c_args = ['-DHAVE_CONFIG_H'] + color_fmt_args + use_umd_args
 gstqvdeinterlace_link_args = [ ]
 
 # comment out below 5 lines for testing on Ubuntu
