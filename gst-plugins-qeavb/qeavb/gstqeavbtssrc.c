@@ -29,6 +29,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include "gstqeavbtssrc.h"
 
 GST_DEBUG_CATEGORY_STATIC (qeavbtssrc_debug);
@@ -291,7 +292,13 @@ error_destroy:
     }
 error_close:
   if (qeavbtssrc->eavb_fd >= 0) {
-    close(qeavbtssrc->eavb_fd);
+    int r = close(qeavbtssrc->eavb_fd);
+    if (r != 0) {
+      int e = errno;
+      snprintf(tips, sizeof(tips), "M - qeavbts st:cl err<%d,%d,%d>", qeavbtssrc->eavb_fd, r, e);
+      kpi_place_marker(tips);
+      GST_ERROR_OBJECT (qeavbtssrc, "close eavb_fd %d fail, ret %d, error tips(%d) %s", qeavbtssrc->eavb_fd, r, e, strerror(e));
+    }
     qeavbtssrc->eavb_fd = -1;
   }
   kpi_place_marker("M - qeavbts started fail!");
@@ -333,7 +340,13 @@ gst_qeavb_ts_src_stop (GstBaseSrc * basesrc)
 
     snprintf(tips, sizeof(tips), "M - qeavbts sp:close fd<%d>", qeavbtssrc->eavb_fd);
     kpi_place_marker(tips);
-    close(qeavbtssrc->eavb_fd);
+    err = close(qeavbtssrc->eavb_fd);
+    if (err != 0) {
+      int e = errno;
+      snprintf(tips, sizeof(tips), "M - qeavbts sp:cl err<%d,%d,%d>", qeavbtssrc->eavb_fd, err, e);
+      kpi_place_marker(tips);
+      GST_ERROR_OBJECT (qeavbtssrc, "close eavb_fd %d fail, ret %d, error tips(%d) %s", qeavbtssrc->eavb_fd, err, e, strerror(e));
+    }
     qeavbtssrc->eavb_fd = -1;
     GST_DEBUG_OBJECT (qeavbtssrc, "QEAVB ts source stopped");
   }
