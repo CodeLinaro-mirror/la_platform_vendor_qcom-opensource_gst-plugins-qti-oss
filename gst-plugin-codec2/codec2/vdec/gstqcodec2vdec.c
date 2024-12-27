@@ -920,7 +920,11 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     GST_DEBUG_OBJECT (dec, "got fps %0.2f from caps", fps);
   }
 
+#ifdef SET_DEC_INPUT_FRAMERATE
   frame_rate = make_framerate_param (fps, TRUE);
+#else
+  frame_rate = make_framerate_param (fps, FALSE);
+#endif
   g_ptr_array_add (config, &frame_rate);
   GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
 
