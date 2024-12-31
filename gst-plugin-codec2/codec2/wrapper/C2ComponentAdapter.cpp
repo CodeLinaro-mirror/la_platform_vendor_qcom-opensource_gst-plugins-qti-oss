@@ -1378,7 +1378,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     if (nullptr == mC2LinearAllocator || nullptr == linearHandle) {
         LOG_ERROR("Invalid mC2LinearAllocator or linearHandle");
         need_release = true;
-        close(dup_fd);
+        qcodec2_close_fd(dup_fd);
         result = C2_NO_MEMORY;
         goto do_exit;
     }

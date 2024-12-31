@@ -34,7 +34,22 @@
 #include "gbm_priv.h"
 #include "codec2wrapper.h"
 #include <gst/video/video.h>
+#include <gst/gstinfo.h>
 #include <C2Config.h>
+
+#include <unistd.h>
+#include <string.h>
+
+// to catch the issue of fd already closed
+#define qcodec2_close_fd(fd) do {                                        \
+  if (fd >= 0) {                                                         \
+    int r = close(fd);                                                   \
+    if (r != 0) {                                                        \
+      int e = errno;                                                     \
+      GST_ERROR("close(fd %d), ret %d, error: %s", fd, r, strerror(e));  \
+    }                                                                    \
+  }                                                                      \
+} while (0)
 
 namespace QTI {
 
