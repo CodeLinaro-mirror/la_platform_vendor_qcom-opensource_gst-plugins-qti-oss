@@ -65,6 +65,19 @@ static uint32_t (*_gbm_bo_get_offset) (struct gbm_bo *bo, int plane);
 static uint64_t (*_gbm_bo_get_modifier) (struct gbm_bo *bo);
 static void (*_gbm_bo_destroy) (struct gbm_bo *bo);
 
+#define QVAIS_CLOSE_FD(fd) do {                                                  \
+      int ret = 0;                                                               \
+      if (fd >= 0) {                                                             \
+        ret = close (fd);                                                        \
+        if (ret != 0) {                                                          \
+            int e = errno;                                                       \
+            GST_ERROR ("close(fd %d), ret %d, error: %s", fd, ret, strerror(e)); \
+        }                                                                        \
+      } else {                                                                   \
+        GST_ERROR ("fd %d is invalid", fd);                                      \
+      }                                                                          \
+    } while (0)
+
 #define LOAD_SYMBOL(lib, sym) do {                        \
       dlerror (); /* clear any existing error */          \
       *(void **) & (_ ## sym) = dlsym (lib, #sym);        \
@@ -173,8 +186,7 @@ do_dmabuf_device_close (void)
   if (dev_fd < 0)
     return;
 
-  if (close (dev_fd))
-    GST_ERROR ("close error %s", strerror (errno));
+  QVAIS_CLOSE_FD (dev_fd);
 
   dev_fd = -1;
 }
@@ -303,7 +315,7 @@ gbm_dmabuf_free (DmaBufDesc * desc)
       desc->bo, desc->fd, desc->meta_fd);
 
   if (desc->bo) {
-    close (desc->fd);
+    QVAIS_CLOSE_FD (desc->fd);
     gbm_bo_destroy (desc->bo);
     desc->bo = NULL;
     desc->fd = -1;
