@@ -88,6 +88,18 @@ GST_DEBUG_CATEGORY_STATIC (gst_mem_pool_debug);
 
 #define DEFAULT_PAGE_ALIGNMENT 4096
 
+#define MEM_POOL_CLOSE_FD(fd) do {                                         \
+  if (fd >= 0) {                                                           \
+    int ret = close (fd);                                                  \
+    if (ret != 0) {                                                        \
+      int e = errno;                                                       \
+      GST_ERROR ("close(fd %d), ret %d, error: %s", fd, ret, strerror(e)); \
+    }                                                                      \
+  } else {                                                                 \
+    GST_ERROR ("fd %d is invalid", fd);                                    \
+  }                                                                        \
+} while (0)
+
 struct _GstMemBufferPoolPrivate
 {
   GList               *memsizes;
@@ -147,7 +159,7 @@ close_ion_device (GstMemBufferPool * mempool)
 
   if (priv->devfd >= 0) {
     GST_INFO_OBJECT (mempool, "Closing ION device FD %d", priv->devfd);
-    close (priv->devfd);
+    MEM_POOL_CLOSE_FD (priv->devfd);
   }
 
 #if !defined(HAVE_LINUX_DMA_HEAP_H) && !defined(TARGET_ION_ABI_VERSION)
@@ -238,7 +250,7 @@ ion_device_free (GstMemBufferPool * mempool, gint fd)
   g_hash_table_remove (mempool->priv->datamap, GINT_TO_POINTER (fd));
 #endif // TARGET_ION_ABI_VERSION
 
-  close (fd);
+  MEM_POOL_CLOSE_FD (fd);
 }
 
 static const gchar **
