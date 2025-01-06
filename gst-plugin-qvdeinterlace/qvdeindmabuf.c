@@ -174,11 +174,8 @@ static void
 do_dmabuf_device_close (void)
 {
   GST_DEBUG ("dev_fd %d", dev_fd);
-  if (dev_fd < 0)
-    return;
 
-  if (close (dev_fd))
-    GST_ERROR ("close error %s", strerror (errno));
+  qvdein_close_fd (dev_fd);
 
   dev_fd = -1;
 }
@@ -313,8 +310,7 @@ gbm_dmabuf_free (DmaBufDesc * desc)
   /* TODO: desc->data not mapped yet */
 
   if (desc->bo) {
-    if (desc->fd >= 0)
-      close (desc->fd);
+    qvdein_close_fd (desc->fd);
     gbm_bo_destroy (desc->bo);
     desc->bo = NULL;
     desc->fd = -1;
@@ -381,8 +377,7 @@ linux_dmabuf_heap_free (DmaBufDesc * desc)
   if (!desc || desc->fd < 0)
     return;
 
-  if (close (desc->fd))
-    GST_ERROR ("close error %s", strerror (errno));
+  qvdein_close_fd (desc->fd);
 
   desc->fd = -1;
 }
