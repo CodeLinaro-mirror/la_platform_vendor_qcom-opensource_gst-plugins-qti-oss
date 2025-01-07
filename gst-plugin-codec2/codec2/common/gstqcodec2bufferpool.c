@@ -316,21 +316,25 @@ gst_qcodec2_buffer_pool_acquire_buffer (GstBufferPool * bpool,
 {
   GstQcodec2BufferPool *pool = GST_QCODEC2_BUFFER_POOL_CAST (bpool);
   GstBufferPoolClass *pclass = GST_BUFFER_POOL_CLASS (parent_class);
-
+  GstFlowReturn ret = GST_FLOW_ERROR;
   PoolMode mode = pool->param.mode;
 
   switch (mode) {
     case DMABUF_MODE:
     case FDBUF_MODE:
-      pclass->acquire_buffer (bpool, buffer, NULL);
-      GST_DEBUG_OBJECT (bpool, "call default acquire buffer function");
+      ret = pclass->acquire_buffer (bpool, buffer, NULL);
+      if (ret == GST_FLOW_OK) {
+        GST_DEBUG_OBJECT (bpool, "call default acquire buffer function succeed");
+      } else {
+        GST_ERROR_OBJECT (bpool, "call default acquire buffer function failed");
+      }
       break;
     case DMABUF_WRAP_MODE:
     case FDBUF_WRAP_MODE:
-      _buffer_pool_acquire_buffer_wrap (bpool, buffer, params);
+      ret = _buffer_pool_acquire_buffer_wrap (bpool, buffer, params);
       break;
   }
-  return GST_FLOW_OK;
+  return ret;
 }
 
 static void
