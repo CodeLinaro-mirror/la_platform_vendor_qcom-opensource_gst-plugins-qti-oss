@@ -1,0 +1,2 @@
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
+
