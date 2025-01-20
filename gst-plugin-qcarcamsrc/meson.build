@@ -16,8 +16,15 @@ gstqcarcamsrc_sources = [
 
 gstqcarcamsrc_c_args = ['-DHAVE_CONFIG_H']
 gstqcarcamsrc_link_args = [ ]
+use_umd = get_option('useumd')
+if use_umd
+  gstqcarcamsrc_link_args += ['-L.', '-lqcx','-lqcxclient', '-lqcxosal', '-lqcxplatform']
+  gstqcarcamsrc_c_args += ['-D_ENABLE_UMD_']
+else
+  gstqcarcamsrc_link_args += ['-L.', '-lqcxclient', '-lqcxosal']
+endif
 
-gstqcarcamsrc_link_args += ['-L.', '-lqcxclient', '-lqcxosal']
+
 
 configinc = include_directories('.')
 core_conf = configuration_data()
