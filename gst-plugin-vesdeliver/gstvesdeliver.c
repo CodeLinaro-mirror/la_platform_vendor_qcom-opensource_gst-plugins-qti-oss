@@ -424,7 +424,6 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
   GstMemory *out_mem = NULL;
   int buf_fd = -1;
-  gsize fd_memory_size = 0;
 
   if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
     return GST_FLOW_OK;
@@ -442,7 +441,6 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   out_mem = gst_buffer_peek_memory (outbuf, 0);
   if (gst_is_dmabuf_memory (out_mem)) {
     buf_fd = gst_dmabuf_memory_get_fd (out_mem);
-    fd_memory_size = gst_memory_get_sizes (out_mem, NULL, NULL);
   } else {
     GST_ERROR_OBJECT (vesdeliver, "Invalide gst buffer type");
     status = GST_FLOW_ERROR;
@@ -469,14 +467,15 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   } else {
     void *ptr = NULL;
     ptr =
-        mmap (NULL, fd_memory_size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_fd,
+        mmap (NULL, input_map.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_fd,
         0);
     if (ptr != MAP_FAILED) {
       memcpy (ptr, input_map.data, input_map.size);
       GST_DEBUG_OBJECT (vesdeliver,
-          "memcpy %" G_GSIZE_FORMAT " bytes to %p with buf_fd: %d, size: %"
-          G_GSIZE_FORMAT, input_map.size, ptr, buf_fd, fd_memory_size);
-      munmap (ptr, fd_memory_size);
+          "memcpy %" G_GSIZE_FORMAT " bytes to %p with buf_fd: %d",
+          input_map.size, ptr, buf_fd);
+      munmap (ptr, input_map.size);
+      gst_memory_resize (out_mem, 0, input_map.size);
     } else {
       GST_ERROR_OBJECT (vesdeliver, "mmap failed(%s) for buf_fd:%d",
           strerror (errno), buf_fd);
