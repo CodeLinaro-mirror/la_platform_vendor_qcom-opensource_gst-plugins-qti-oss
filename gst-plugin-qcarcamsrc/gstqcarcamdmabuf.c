@@ -1,11 +1,11 @@
-// Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include "gstqvratedmabuf.h"
+#include "gstqcarcamdmabuf.h"
 
 #include <gst/gstinfo.h>
 #include <stdint.h>
@@ -21,28 +21,13 @@
 #include <gbm.h>
 #include <gbm_priv.h>
 
-struct gbm_buf_desc
-{
-  gint fd;
-  gint meta_fd;                 /* GBM meta fd */
-  struct gbm_bo *bo;
-  void *data;
-  guint64 modifier;
-  gsize size;
-  gint stride;
-
-  gint format;                  /* GBM format */
-  gint width;
-  gint height;
-  gboolean ubwc;
-};
-
-GST_DEBUG_CATEGORY_EXTERN (gst_qvrate_debug);
-#define GST_CAT_DEFAULT gst_qvrate_debug
+GST_DEBUG_CATEGORY_EXTERN (gst_qcarcam_src_debug);
+#define GST_CAT_DEFAULT gst_qcarcam_src_debug
 
 static int dev_fd = -1;
 
 #define GBM_RENDER_DEVICE_NAME "/dev/dri/renderD128"
+
 static struct gbm_device *gbm_dev = NULL;
 
 /* Dynamically load libgbm by dlopen. */
@@ -64,19 +49,6 @@ static uint32_t (*_gbm_bo_get_stride) (struct gbm_bo *bo);
 static uint32_t (*_gbm_bo_get_offset) (struct gbm_bo *bo, int plane);
 static uint64_t (*_gbm_bo_get_modifier) (struct gbm_bo *bo);
 static void (*_gbm_bo_destroy) (struct gbm_bo *bo);
-
-#define QVRATE_CLOSE_FD(fd) do {                                                 \
-      int ret = 0;                                                               \
-      if (fd >= 0) {                                                             \
-        ret = close (fd);                                                        \
-        if (ret != 0) {                                                          \
-            int e = errno;                                                       \
-            GST_ERROR ("close(fd %d), ret %d, error: %s", fd, ret, strerror(e)); \
-        }                                                                        \
-      } else {                                                                   \
-        GST_ERROR ("fd %d is invalid", fd);                                      \
-      }                                                                          \
-    } while (0)
 
 #define LOAD_SYMBOL(lib, sym) do {                        \
       dlerror (); /* clear any existing error */          \
@@ -134,7 +106,7 @@ error:
 }
 
 /* Load libs only once in multi-threaded usage. */
-gboolean qvrate_dmabuf_load_libs_once (void)
+gboolean qcarcam_dmabuf_load_libs_once (void)
 {
   static GOnce once = G_ONCE_INIT;
 
@@ -157,24 +129,24 @@ gboolean qvrate_dmabuf_load_libs_once (void)
 #define gbm_bo_destroy _gbm_bo_destroy
 
 static gboolean
-do_dmabuf_device_open (const char *dev_name)
+do_dmabuf_device_open (void)
 {
-  int fd;
-
-  GST_DEBUG ("dev_name %s", dev_name);
+  int fd = -1;
 
   if (dev_fd != -1) {
     GST_DEBUG ("already opened dev_fd %d", dev_fd);
     return TRUE;
   }
-
-  if ((fd = open (dev_name, O_RDONLY | O_CLOEXEC)) < 0) {
-    GST_ERROR ("open %s error %s", dev_name, strerror (errno));
+#ifndef _ENABLE_UMD_
+  if ((fd = open (GBM_RENDER_DEVICE_NAME, O_RDONLY | O_CLOEXEC)) < 0) {
+    int e = errno;
+    GST_ERROR ("open renderD128 error %s", strerror (e));
     return FALSE;
   } else {
     dev_fd = fd;
     GST_DEBUG ("dev_fd %d", dev_fd);
   }
+#endif
 
   return TRUE;
 }
@@ -186,7 +158,8 @@ do_dmabuf_device_close (void)
   if (dev_fd < 0)
     return;
 
-  QVRATE_CLOSE_FD (dev_fd);
+  if (close (dev_fd))
+    GST_ERROR ("close error %s", strerror (errno));
 
   dev_fd = -1;
 }
@@ -223,9 +196,7 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
 static inline gboolean
 gbm_dmabuf_open (void)
 {
-  const char *render_name = GBM_RENDER_DEVICE_NAME;
-
-  if (!do_dmabuf_device_open (render_name)) {
+  if (!do_dmabuf_device_open ()) {
     GST_ERROR ("open device error");
     return FALSE;
   }
@@ -259,7 +230,9 @@ gbm_dmabuf_alloc (DmaBufDesc * desc)
 {
   uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
   struct gbm_bo *bo;
-  uint32_t width, height;
+  uint32_t width, height, align_w, align_h;
+  generic_buf_layout_t layout = {};
+  struct gbm_buf_info buf_info;
 
   GST_DEBUG ("create gbm bo for format 0x%x, width %d, height %d",
       desc->format, desc->width, desc->height);
@@ -297,7 +270,14 @@ gbm_dmabuf_alloc (DmaBufDesc * desc)
 
     desc->size = (gsize) size;
 
-    GST_DEBUG ("created gbm bo meta_fd %d, size %lu", desc->meta_fd, size);
+    gbm_perform(GBM_PERFORM_GET_YUV_PLANE_INFO, bo, &layout);
+    memcpy(&(desc->layout), &layout, sizeof(layout));
+    //desc->layout = layout;
+    buf_info.width = width;
+    buf_info.height = height;
+    buf_info.format = desc->format;
+    gbm_perform(GBM_PERFORM_GET_BUFFER_SIZE_DIMENSIONS, &buf_info, 0, &align_w, &align_h, &desc->buffer_size_dimensions);
+    GST_DEBUG ("created gbm bo meta_fd %d, size %lu, buffer_size_dimensions %d", desc->meta_fd, size, desc->buffer_size_dimensions);
   }
 
   return TRUE;
@@ -315,7 +295,7 @@ gbm_dmabuf_free (DmaBufDesc * desc)
       desc->bo, desc->fd, desc->meta_fd);
 
   if (desc->bo) {
-    QVRATE_CLOSE_FD (desc->fd);
+    close (desc->fd);
     gbm_bo_destroy (desc->bo);
     desc->bo = NULL;
     desc->fd = -1;
@@ -328,7 +308,7 @@ static gint dmabuf_ref_count;
 static GMutex dmabuf_ref_mutex;
 
 static gboolean
-_qvrate_dmabuf_open (void)
+_qcarcam_dmabuf_open (void)
 /* open dmabuf only when ref count is zero. */
 {
   gboolean ret = TRUE;
@@ -350,7 +330,7 @@ _qvrate_dmabuf_open (void)
 
 /* close dmabuf only when ref count gets to zero. */
 static void
-_qvrate_dmabuf_close (void)
+_qcarcam_dmabuf_close (void)
 {
   g_mutex_lock (&dmabuf_ref_mutex);
 
@@ -368,7 +348,7 @@ _qvrate_dmabuf_close (void)
 /* Below are external interfaces. */
 
 gboolean
-qvrate_dmabuf_alloc (DmaBufDesc ** desc,
+qcarcam_dmabuf_alloc (DmaBufDesc ** desc,
     const GstVideoInfo * info, gboolean ubwc)
 {
   GST_INFO ("ubwc %u, size %" G_GSIZE_FORMAT,
@@ -383,7 +363,7 @@ qvrate_dmabuf_alloc (DmaBufDesc ** desc,
   if (!gbm_dmabuf_fill_desc (*desc, info, ubwc))
     goto desc_free;
 
-  if (!_qvrate_dmabuf_open ()) {
+  if (!_qcarcam_dmabuf_open ()) {
     GST_ERROR ("open error");
     goto desc_free;
   }
@@ -394,12 +374,12 @@ qvrate_dmabuf_alloc (DmaBufDesc ** desc,
   }
 
   GST_DEBUG ("desc %p, size %" G_GSIZE_FORMAT,
-      *desc, qvrate_dmabuf_get_size (*desc));
+      *desc, qcarcam_dmabuf_get_size (*desc));
 
   return TRUE;
 
 dmabuf_close:
-  _qvrate_dmabuf_close ();
+  _qcarcam_dmabuf_close ();
 
 desc_free:
   g_free (*desc);
@@ -409,7 +389,7 @@ desc_free:
 }
 
 gint
-qvrate_dmabuf_get_fd (const DmaBufDesc * desc)
+qcarcam_dmabuf_get_fd (const DmaBufDesc * desc)
 {
   gint fd = -1;
 
@@ -422,7 +402,7 @@ qvrate_dmabuf_get_fd (const DmaBufDesc * desc)
 }
 
 gsize
-qvrate_dmabuf_get_size (const DmaBufDesc * desc)
+qcarcam_dmabuf_get_size (const DmaBufDesc * desc)
 {
   gsize size = 0;
 
@@ -435,7 +415,7 @@ qvrate_dmabuf_get_size (const DmaBufDesc * desc)
 }
 
 guint64
-qvrate_dmabuf_get_modifier (const DmaBufDesc * desc)
+qcarcam_dmabuf_get_modifier (const DmaBufDesc * desc)
 {
   uint64_t modifier = DRM_FORMAT_MOD_INVALID;
 
@@ -451,7 +431,7 @@ qvrate_dmabuf_get_modifier (const DmaBufDesc * desc)
 
 /* align info by allocated desc */
 void
-qvrate_dmabuf_align_info (const DmaBufDesc * desc, GstVideoInfo * info)
+qcarcam_dmabuf_align_info (const DmaBufDesc * desc, GstVideoInfo * info)
 {
   GST_DEBUG ("desc %p, info=%p", desc, info);
   if (!desc || !info)
@@ -468,12 +448,12 @@ qvrate_dmabuf_align_info (const DmaBufDesc * desc, GstVideoInfo * info)
 }
 
 void
-qvrate_dmabuf_free (DmaBufDesc * desc)
+qcarcam_dmabuf_free (DmaBufDesc * desc)
 {
   GST_DEBUG ("desc %p", desc);
 
   gbm_dmabuf_free (desc);
   g_free (desc);
 
-  _qvrate_dmabuf_close ();
+  _qcarcam_dmabuf_close ();
 }

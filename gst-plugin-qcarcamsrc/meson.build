@@ -1,4 +1,4 @@
-project('gst-plugin-qvais', 'c',
+project('gst-plugin-qcarcamsrc', 'c',
   version : '1.0',
   meson_version : '>= 0.47',
   default_options : [ 'warning_level=1',
@@ -7,39 +7,31 @@ project('gst-plugin-qvais', 'c',
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 plugins_pkgconfig_install_dir = join_paths(plugins_install_dir, 'pkgconfig')
 
-gstqvais_sources = [
-  'gstqvais.c',
-  'gstqvaispool.c',
-  'gstqvaisvpp.c',
-  'gstqvaisdmabuf.c',
+gstqcarcamsrc_sources = [
+  'gstqcarcamsrc.c',
+  'gstqcarcamutils.c',
+  'gstqcarcamqcx.c',
+  'gstqcarcamdmabuf.c',
 ]
 
-gstqvais_c_args = ['-DHAVE_CONFIG_H', '-Wall']
-
-if get_option('ASAN')
-  gstqvais_c_args += ['-fsanitize=address']
+gstqcarcamsrc_c_args = ['-DHAVE_CONFIG_H']
+gstqcarcamsrc_link_args = [ ]
+use_umd = get_option('useumd')
+if use_umd
+  gstqcarcamsrc_link_args += ['-L.', '-lqcx','-lqcxclient', '-lqcxosal', '-lqcxplatform']
+  gstqcarcamsrc_c_args += ['-D_ENABLE_UMD_']
+else
+  gstqcarcamsrc_link_args += ['-L.', '-lqcxclient', '-lqcxosal']
 endif
 
-if get_option('mmmcolorfmt')
-  gstqvais_c_args += ['-DGST_USE_MMM_COLOR_FMT']
-endif
 
-gstqvais_link_args = ['-L.', '-lhyp_vpp_fe', '-ldl']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
-core_conf.set_quoted('PACKAGE', 'gst-plugin-qvais')
-core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvais')
+core_conf.set_quoted('PACKAGE', 'gst-plugin-qcarcamsrc')
+core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qcarcamsrc')
 core_conf.set_quoted('PACKAGE_VERSION', '1.0')
 configure_file(output : 'config.h', configuration : core_conf)
-
-code_coverage_args = [ ]
-code_coverage_link_args = [ ]
-code_coverage = get_option('code-coverage')
-if code_coverage
-  code_coverage_args = ['-O0', '--coverage', '-fprofile-arcs', '-ftest-coverage']
-  code_coverage_link_args = ['--coverage', '-lgcov', '-fprofile-arcs', '-ftest-coverage']
-endif
 
 gst_dep = dependency('gstreamer-1.0',
   fallback : ['gstreamer', 'gst_dep'])
@@ -51,10 +43,10 @@ gstallocators_dep = dependency('gstreamer-allocators-1.0',
   fallback : ['gst-plugins-base', 'allocators_dep'])
 glib_dep = dependency('glib-2.0', version: '>= 2.44', required: false)
 
-gstqvais = library('gstqvais',
-  gstqvais_sources,
-  c_args : [gstqvais_c_args, code_coverage_args],
-  link_args : [gstqvais_link_args, code_coverage_link_args],
+gstqcarcamsrc = library('gstqcarcamsrc',
+  gstqcarcamsrc_sources,
+  c_args : [gstqcarcamsrc_c_args, '-Wall', '-DGST_USE_MMM_COLOR_FMT'],
+  link_args : [gstqcarcamsrc_link_args, '-ldl'],
   include_directories : [configinc],
   dependencies : [glib_dep, gst_dep, gstbase_dep, gstvideo_dep, gstallocators_dep],
   install : true,
