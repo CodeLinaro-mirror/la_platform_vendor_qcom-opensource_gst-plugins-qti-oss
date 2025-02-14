@@ -23,6 +23,10 @@ if get_option('av1-dec').enabled()
   gst_plugin_codec2_args += ['-DGST_SUPPORT_AV1_DEC']
 endif
 
+if get_option('set_dec_input_framerate')
+  gst_plugin_codec2_args += ['-DSET_DEC_INPUT_FRAMERATE']
+endif
+
 gstqcodec2 = library('gstqcodec2',
   gstqcodec2_sources,
   c_args : gst_plugin_codec2_args,

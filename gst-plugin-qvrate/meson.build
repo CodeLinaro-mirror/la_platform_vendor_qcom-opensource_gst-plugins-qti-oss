@@ -14,10 +14,17 @@ gstqvrate_sources = [
   'gstqvratedmabuf.c',
 ]
 
-gstqvrate_c_args = ['-DHAVE_CONFIG_H']
-gstqvrate_link_args = [ ]
+gstqvrate_c_args = ['-DHAVE_CONFIG_H', '-Wall']
 
-gstqvrate_link_args += ['-L.', '-lhyp_vpp_fe']
+if get_option('ASAN')
+  gstqvrate_c_args += ['-fsanitize=address']
+endif
+
+if get_option('mmmcolorfmt')
+  gstqvrate_c_args += ['-DGST_USE_MMM_COLOR_FMT']
+endif
+
+gstqvrate_link_args = ['-L.', '-lhyp_vpp_fe', '-ldl']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
@@ -38,8 +45,8 @@ glib_dep = dependency('glib-2.0', version: '>= 2.44', required: false)
 
 gstqvrate = library('gstqvrate',
   gstqvrate_sources,
-  c_args : [gstqvrate_c_args, '-Wall'],
-  link_args : [gstqvrate_link_args, '-ldl'],
+  c_args : [gstqvrate_c_args],
+  link_args : [gstqvrate_link_args],
   include_directories : [configinc],
   dependencies : [glib_dep, gst_dep, gstbase_dep, gstvideo_dep, gstallocators_dep],
   install : true,

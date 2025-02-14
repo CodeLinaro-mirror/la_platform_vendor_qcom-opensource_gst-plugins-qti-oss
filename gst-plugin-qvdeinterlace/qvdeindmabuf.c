@@ -174,11 +174,8 @@ static void
 do_dmabuf_device_close (void)
 {
   GST_DEBUG ("dev_fd %d", dev_fd);
-  if (dev_fd < 0)
-    return;
 
-  if (close (dev_fd))
-    GST_ERROR ("close error %s", strerror (errno));
+  qvdein_close_fd (dev_fd);
 
   dev_fd = -1;
 }
@@ -215,18 +212,22 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
 static inline gboolean
 gbm_dmabuf_open (void)
 {
+#ifdef _ENABLE_UMD_
+  GST_INFO ("No need to open GBM device node");
+#else
   const char *render_name = GBM_RENDER_DEVICE_NAME;
-
   if (!do_dmabuf_device_open (render_name)) {
     GST_ERROR ("open device error");
     return FALSE;
   }
-
+#endif
   gbm_dev = gbm_create_device (dev_fd);
   GST_DEBUG ("gbm_dev %p", gbm_dev);
   if (NULL == gbm_dev) {
     GST_ERROR ("create gbm device error");
+#ifndef _ENABLE_UMD_
     do_dmabuf_device_close ();
+#endif
     return FALSE;
   }
 
@@ -242,8 +243,9 @@ gbm_dmabuf_close (void)
     gbm_device_destroy (gbm_dev);
     gbm_dev = NULL;
   }
-
+#ifndef _ENABLE_UMD_
   do_dmabuf_device_close ();
+#endif
 }
 
 static gboolean
@@ -313,8 +315,7 @@ gbm_dmabuf_free (DmaBufDesc * desc)
   /* TODO: desc->data not mapped yet */
 
   if (desc->bo) {
-    if (desc->fd >= 0)
-      close (desc->fd);
+    qvdein_close_fd (desc->fd);
     gbm_bo_destroy (desc->bo);
     desc->bo = NULL;
     desc->fd = -1;
@@ -346,7 +347,9 @@ linux_dmabuf_heap_open (void)
 static inline void
 linux_dmabuf_heap_close (void)
 {
+#ifndef _ENABLE_UMD_
   do_dmabuf_device_close ();
+#endif
 }
 
 /* Linux dmabuf heaps is available from kernel 5.10 */
@@ -381,8 +384,7 @@ linux_dmabuf_heap_free (DmaBufDesc * desc)
   if (!desc || desc->fd < 0)
     return;
 
-  if (close (desc->fd))
-    GST_ERROR ("close error %s", strerror (errno));
+  qvdein_close_fd (desc->fd);
 
   desc->fd = -1;
 }
