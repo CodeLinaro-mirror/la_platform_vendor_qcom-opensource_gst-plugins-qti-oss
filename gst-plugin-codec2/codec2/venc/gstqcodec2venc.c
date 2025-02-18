@@ -3096,7 +3096,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_ROI,
       g_param_spec_string ("roi", "ROI config",
-          "roi xml config file path", NULL,
+          "roi xml config file path, roi qp is absolute num. for gen4(always > 0), is relative num. for gen4.5(could > or < 0)", NULL,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_BITRATE_SAVING_MODE,
