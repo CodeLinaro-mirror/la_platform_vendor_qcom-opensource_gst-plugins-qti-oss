@@ -95,7 +95,7 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 #define DEFAULT_INPUTCOPY                         (FALSE)
-
+#define DEFAULT_VUI_TIMINGINFO_ENABLE             (FALSE)
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
@@ -183,6 +183,7 @@ enum
   PROP_LTR_MARK,
   PROP_LTR_USE,
   PROP_INPUTCOPY,
+  PROP_VUI_TIMINGINFO_ENABLE,
 };
 
 FULL_RANGE toQCodec2VideoFullRange(GstVideoColorRange range)
@@ -686,6 +687,19 @@ make_force_idr_param (gboolean force_idr)
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST;
   param.force_idr = force_idr;
+
+  return param;
+}
+
+static ConfigParams
+make_vui_timing_info_param (gboolean enable)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_VUI_TIMING_INFO;
+  param.vui_timing_info.enable = enable;
 
   return param;
 }
@@ -1439,6 +1453,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams temporal_layer;
   ConfigParams ltr_count;
   ConfigParams hdr_static_info;
+  ConfigParams vui_timing_info;
   gfloat fps = COMMON_FRAMERATE;
   GstCapsFeatures *features = NULL;
 
@@ -1731,6 +1746,17 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     hdr_static_info =
         make_hdr_static_info_param (display_info, content_light_level, TRUE);
     g_ptr_array_add (config, &hdr_static_info);
+  }
+
+  if (GST_IS_QCODEC2_H264_ENC(enc) || GST_IS_QCODEC2_H265_ENC(enc)) {
+    if (enc->vui_timinginfo_enable && enc->input_info.fps_n != 0 && enc->input_info.fps_d != 0) {
+      vui_timing_info = make_vui_timing_info_param (TRUE);
+    } else {
+      vui_timing_info = make_vui_timing_info_param (FALSE);
+    }
+    GST_DEBUG_OBJECT (enc, "set vui timing info enable prop: %d, input fps_n %d, fps_d %d",
+        enc->vui_timinginfo_enable, enc->input_info.fps_n, enc->input_info.fps_d);
+    g_ptr_array_add (config, &vui_timing_info);
   }
 
   /* Create component */
@@ -2939,6 +2965,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_INPUTCOPY:
       enc->force_inputcopy = g_value_get_boolean (value);
       break;
+    case PROP_VUI_TIMINGINFO_ENABLE:
+      enc->vui_timinginfo_enable = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3069,6 +3098,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INPUTCOPY:
       g_value_set_boolean (value, enc->force_inputcopy);
+      break;
+    case PROP_VUI_TIMINGINFO_ENABLE:
+      g_value_set_boolean (value, enc->vui_timinginfo_enable);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -3461,6 +3493,14 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_VUI_TIMINGINFO_ENABLE,
+      g_param_spec_boolean ("vui-timinginfo",
+          "vui timinginfo enable setting",
+          "set vui timinginfo enable when fps in caps isn't 0 for 264 and 265",
+          DEFAULT_VUI_TIMINGINFO_ENABLE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -3534,6 +3574,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->input_glmem_feature = FALSE;
 
   enc->max_input_buffers = 0;
+  enc->vui_timinginfo_enable = DEFAULT_VUI_TIMINGINFO_ENABLE;
 
   g_value_init (&enc->ltr_mark, GST_TYPE_ARRAY);
   g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);
