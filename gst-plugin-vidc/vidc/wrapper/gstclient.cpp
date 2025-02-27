@@ -321,9 +321,6 @@ bool GstClient::configureDecoder(ConfigType& config)
         }
     }
 
-    MM_DBG_MSG("out GstClient::configureDecoder set output frame size %dx%d, rc %d",
-        frameSize.width, frameSize.height, rc);
-
     if (true == rc) {
         memset(&frameRate, 0, sizeof(vidc_frame_rate_type));
         if (mPort[VIDC_BUFFER_INPUT].data.frameRate > 0) {
