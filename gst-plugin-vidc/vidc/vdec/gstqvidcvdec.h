@@ -98,6 +98,8 @@ ConfigParams make_pixel_format_param (guint32 fmt, gboolean is_input);
 guint32 gst_to_vidc_pixelformat (GstQvidcVdec * decoder, GstVideoFormat format);
 gboolean gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
     BUFFER_PORT_TYPE port);
+gboolean
+dec_set_vidc_pixel_format (GstQvidcVdec * decoder, GstVideoCodecState * state);
 
 #define DEFAULT_SET_GSTBUF_INTERLACE_FLAG TRUE
 
