@@ -145,7 +145,7 @@ gst_qvidc_dmabuf_allocator_class_init (GstQvidcDmaBufAllocatorClass * klass)
   GObjectClass *obj_class = G_OBJECT_CLASS (klass);
   GstAllocatorClass *allocator_class = GST_ALLOCATOR_CLASS (klass);
 
-  GST_DEBUG_OBJECT (allocator_class, "enter");
+  GST_DEBUG ("enter");
   obj_class->finalize = GST_DEBUG_FUNCPTR (gst_qvidc_dmabuf_allocator_finalize);
   allocator_class->alloc = GST_DEBUG_FUNCPTR (gst_qvidc_dmabuf_allocator_alloc);
   allocator_class->free = GST_DEBUG_FUNCPTR (gst_qvidc_dmabuf_allocator_free);
@@ -296,7 +296,7 @@ gst_qvidc_fd_allocator_class_init (GstQvidcFdAllocatorClass * klass)
   GObjectClass *obj_class = G_OBJECT_CLASS (klass);
   GstAllocatorClass *allocator_class = GST_ALLOCATOR_CLASS (klass);
 
-  GST_DEBUG_OBJECT (allocator_class, "enter");
+  GST_DEBUG ("enter");
   obj_class->finalize = GST_DEBUG_FUNCPTR (gst_qvidc_fd_allocator_finalize);
   allocator_class->alloc = GST_DEBUG_FUNCPTR (gst_qvidc_fd_allocator_alloc);
   allocator_class->free = GST_DEBUG_FUNCPTR (gst_qvidc_fd_allocator_free);
@@ -347,7 +347,7 @@ gst_qvidc_fd_allocator_new (GstQvidcAllocMode mode)
 GstAllocator *
 gst_qvidc_allocator_new (GstQvidcAllocMode mode)
 {
-  GST_INFO_OBJECT (NULL, "Create vidc allocator with mode %d", mode);
+  GST_INFO ("Create vidc allocator with mode %d", mode);
 
   if (mode == GST_QVIDC_DMABUF_HEAP_MODE || mode == GST_QVIDC_DMABUF_GBM_MODE) {
     return gst_qvidc_dmabuf_allocator_new (mode);
