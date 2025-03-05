@@ -515,7 +515,11 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   }
   qcarcamsrc->isp_config.id = 0;
   qcarcamsrc->isp_config.cameraId = 0;
+#ifndef _ENABLE_UMD_
   qcarcamsrc->isp_config.usecaseId = 3;
+#else
+  qcarcamsrc->isp_config.usecaseId = 64;
+#endif
   ret = qcarcamqcx_setparam(qcarcamsrc->hndl,
                   QCARCAM_STREAM_CONFIG_PARAM_ISP_USECASE,
                   &qcarcamsrc->isp_config,
@@ -613,7 +617,11 @@ gst_qcarcam_src_buffer_dispose (GstBuffer * qcarcamsrcbuf)
   if (G_LIKELY (idx != -1) && src->started) {
     request.requestId = src->request_id++;
     request.numStreamRequests = 1;
+#ifndef _ENABLE_UMD_
     pStreamRequest->bufferlistId = 0;
+#else
+    pStreamRequest->bufferlistId = 1;
+#endif
     pStreamRequest->bufferIdx = idx;
     qcarcamqcx_submit_request(src->hndl, &request);
   }
@@ -712,6 +720,9 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
   min = QCARCAMSRC_BUFFERS;
   self->desc = (DmaBufDesc *)calloc(min, sizeof(DmaBufDesc));
   self->buffer_list.pBuffers = (QCarCamBuffer_t *)calloc(min, sizeof(QCarCamBuffer_t));
+#ifdef _ENABLE_UMD_
+  self->buffer_list.id = 1;
+#endif
   for (int i = 0; i < min; i++)
   {
      self->buffer_list.nBuffers = min;
@@ -795,7 +806,11 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
     request.requestId = self->request_id++;
     request.numStreamRequests = 1;
     QCarCamStreamRequest_t* pStreamRequest = &request.streamRequests[0];
+#ifndef _ENABLE_UMD_
     pStreamRequest->bufferlistId = 0;
+#else
+    pStreamRequest->bufferlistId = 1;
+#endif
     pStreamRequest->bufferIdx = i;
     qcarcamqcx_submit_request(self->hndl, &request);
   }
