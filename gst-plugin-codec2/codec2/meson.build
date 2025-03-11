@@ -4,7 +4,6 @@ gstqcodec2_sources = [
   'common/gstqcodec2utils.c',
   'vdec/gstqcodec2h264dec.c',
   'vdec/gstqcodec2h265dec.c',
-  'vdec/gstqcodec2mpeg2dec.c',
   'vdec/gstqcodec2vp9dec.c',
   'vdec/gstqcodec2vdec.c',
   'venc/gstqcodec2h264enc.c',
@@ -21,6 +20,11 @@ subdir('wrapper')
 if get_option('av1-dec').enabled()
   gstqcodec2_sources += ['vdec/gstqcodec2av1dec.c']
   gst_plugin_codec2_args += ['-DGST_SUPPORT_AV1_DEC']
+endif
+
+if get_option('mpeg2-dec').enabled()
+  gstqcodec2_sources += ['vdec/gstqcodec2mpeg2dec.c']
+  gst_plugin_codec2_args += ['-DGST_SUPPORT_MPEG2_DEC']
 endif
 
 if get_option('set_dec_input_framerate')
