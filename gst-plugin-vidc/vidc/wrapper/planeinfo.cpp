@@ -269,18 +269,21 @@ void PlaneInfo::setPlaneAttributes(
     for (int plane = 0; plane < mPlaneCount; plane++) {
         bytes = 0;
         for (unsigned long index : planeIndex[plane]) {
+            memset(&planeDef, 0, sizeof(plane_def_type));
             planeDef.plane_index = index;
             rc = query_plane_def(planedefColorFormat, planedefUsage, &resolution, &planeDef, 0);
             if (rc != PLANEDEF_ERR_NONE) {
                 MM_ERROR_MSG("PlaneInfo::setPlaneAttributes Error %d querying plane def", rc);
+            } else {
+                bytes += planeDef.plane_buf_size;
+
+                // If the format was compressed then the meta plane was first
+                // and we are getting the stride from the payload plane.
+                mPlane[plane].stride = planeDef.actual_stride;
+                mPlane[plane].stride_multiples = planeDef.stride_multiples;
+                mPlane[plane].height_multiples = planeDef.height_multiples;
             }
-            bytes += planeDef.plane_buf_size;
         }
-        // If the format was compressed then the meta plane was first
-        // and we are getting the stride from the payload plane.
-        mPlane[plane].stride = planeDef.actual_stride;
-        mPlane[plane].stride_multiples = planeDef.stride_multiples;
-        mPlane[plane].height_multiples = planeDef.height_multiples;
         if ((VIDC_CODEC_HEIC == codec_type) && (true == is_encoder)) {
             mPlane[plane].stride_multiples = HEIC_GRID_DIMENSION;
             mPlane[plane].height_multiples = HEIC_GRID_DIMENSION;

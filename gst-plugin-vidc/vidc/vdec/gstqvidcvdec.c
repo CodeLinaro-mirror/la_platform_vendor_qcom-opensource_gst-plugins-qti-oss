@@ -1791,7 +1791,9 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
       GST_DEBUG_OBJECT (dec, "mem data %p, size %d, maxsize %d", info.data,
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
-      memcpy (info.data, inBuf.data, inBuf.size);
+      if (inBuf.data) {
+          memcpy (info.data, inBuf.data, inBuf.size);
+      }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;
       vidcbuf.size = inBuf.size;
