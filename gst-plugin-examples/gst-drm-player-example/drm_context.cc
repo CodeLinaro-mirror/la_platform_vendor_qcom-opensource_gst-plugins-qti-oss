@@ -25,8 +25,6 @@ const std::string kProductName = "DRMPlayer";
 const std::string kCompanyName = "QTI";
 const std::string kModelName   = "QRB5165";
 
-widevine::StderrLogger g_stderr_logger;
-
 // To store license request and response data
 struct soapbuf {
   gchar   *pdata;
@@ -373,7 +371,7 @@ WidevineContext::InitSession ()
 
   // Initialize the CDM Library.
   if ((status = widevine::Cdm::initialize (widevine::Cdm::kOpaqueHandle,
-      storage_impl, clock_impl, timer_impl, &g_stderr_logger, widevine::Cdm::kErrors))
+      storage_impl, clock_impl, timer_impl, &stderr_logger, widevine::Cdm::kErrors))
       != widevine::Cdm::kSuccess) {
     g_printerr ("ERROR: Couldn't initialize the CDM Library! \n");
     return status;
