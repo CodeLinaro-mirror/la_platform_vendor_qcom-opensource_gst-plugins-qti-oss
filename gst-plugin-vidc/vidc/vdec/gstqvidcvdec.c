@@ -1609,7 +1609,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
       GST_DEBUG_OBJECT (dec, "start reconfig pool");
 
-      output_state = gst_video_decoder_get_output_state (decoder);
+      output_state = gst_video_decoder_set_output_state (decoder,
+          dec->output_format, dec->width, dec->height, dec->input_state);
       if (!output_state) {
         GST_ERROR_OBJECT (dec, "Failed to get output state");
         g_mutex_unlock (&(dec->pending_lock));
