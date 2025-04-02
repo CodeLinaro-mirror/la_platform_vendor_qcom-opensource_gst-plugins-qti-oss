@@ -7,6 +7,20 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
+#include <unistd.h>
+#include <string.h>
+
+// to catch the issue of fd already closed
+#define qvdein_close_fd(fd) do {                                         \
+  if (fd >= 0) {                                                         \
+    int r = close (fd);                                                   \
+    if (r != 0) {                                                        \
+      int e = errno;                                                     \
+      GST_ERROR ("close(fd %d), ret %d, error: %s", fd, r, strerror(e));  \
+    }                                                                    \
+  }                                                                      \
+} while (0)
+
 /* DmaBufDesc is opaque to user. */
 #ifdef USE_GBM
 typedef struct gbm_buf_desc DmaBufDesc;

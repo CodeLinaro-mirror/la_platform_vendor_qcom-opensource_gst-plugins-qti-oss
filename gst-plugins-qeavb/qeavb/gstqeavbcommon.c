@@ -27,6 +27,7 @@
  * (IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+#include <string.h>
 #include <gst/gstinfo.h>
 #include "gstqeavbcommon.h"
 //KPI_USE_SYSLOG controlled by meson
@@ -101,9 +102,14 @@ int kpi_place_marker(const char* str)
   int fd = open(KPI_MARKER_NODE, O_WRONLY);
   if(fd >= 0) {
     int ret = write(fd, str, strlen(str));
+    int r;
     if (ret <= 0)
       GST_ERROR("kpi write error ret %d, str %s, fd %d", ret, str, fd);
-    close(fd);
+    r = close(fd);
+    if (r != 0) {
+      int e = errno;
+      GST_ERROR("kpi close(fd %d) fail, ret %d, error tips() %s", fd, r, e, strerror(e));
+    }
     return ret;
   }
   GST_ERROR("open kpi marker node failed");

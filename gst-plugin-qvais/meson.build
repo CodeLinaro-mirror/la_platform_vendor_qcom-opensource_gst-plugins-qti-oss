@@ -14,12 +14,17 @@ gstqvais_sources = [
   'gstqvaisdmabuf.c',
 ]
 
-gstqvais_c_args = ['-DHAVE_CONFIG_H']
-gstqvais_link_args = [ ]
-code_coverage_args = [ ]
-code_coverage_link_args = [ ]
+gstqvais_c_args = ['-DHAVE_CONFIG_H', '-Wall']
 
-gstqvais_link_args += ['-L.', '-lhyp_vpp_fe']
+if get_option('ASAN')
+  gstqvais_c_args += ['-fsanitize=address']
+endif
+
+if get_option('mmmcolorfmt')
+  gstqvais_c_args += ['-DGST_USE_MMM_COLOR_FMT']
+endif
+
+gstqvais_link_args = ['-L.', '-lhyp_vpp_fe', '-ldl']
 
 configinc = include_directories('.')
 core_conf = configuration_data()
@@ -28,6 +33,8 @@ core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvais')
 core_conf.set_quoted('PACKAGE_VERSION', '1.0')
 configure_file(output : 'config.h', configuration : core_conf)
 
+code_coverage_args = [ ]
+code_coverage_link_args = [ ]
 code_coverage = get_option('code-coverage')
 if code_coverage
   code_coverage_args = ['-O0', '--coverage', '-fprofile-arcs', '-ftest-coverage']
@@ -46,8 +53,8 @@ glib_dep = dependency('glib-2.0', version: '>= 2.44', required: false)
 
 gstqvais = library('gstqvais',
   gstqvais_sources,
-  c_args : [gstqvais_c_args, '-Wall', code_coverage_args],
-  link_args : [gstqvais_link_args, '-ldl', code_coverage_link_args],
+  c_args : [gstqvais_c_args, code_coverage_args],
+  link_args : [gstqvais_link_args, code_coverage_link_args],
   include_directories : [configinc],
   dependencies : [glib_dep, gst_dep, gstbase_dep, gstvideo_dep, gstallocators_dep],
   install : true,

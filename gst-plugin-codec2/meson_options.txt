@@ -2,6 +2,7 @@ option('mmmcolorfmt', type : 'boolean', value : 'false', yield : true, descripti
 option('c2dec-deinterlace', type : 'feature', value : 'enabled', yield : true, description: 'Enable deinterlace support using C2D or Vulkan APIs')
 option('usedmaheap', type : 'boolean', value : 'false', description: 'Use DMA buffer heap.')
 option('av1-dec', type : 'feature', value : 'disabled', yield : true, description: 'Enable av1 decoder support')
+option('mpeg2-dec', type : 'feature', value : 'enabled', yield : true, description: 'Enable mpeg2 decoder support')
 option('agl-c2service', type : 'boolean', value : 'false', yield : true, description: 'Use AGL C2 service')
 option('qprange_option', type : 'combo',
     choices : ['op0', 'op1'], value : 'op0',
@@ -10,3 +11,4 @@ option('report_frame_qp_option', type : 'combo',
     choices : ['op0', 'op1'], value : 'op0',
     description : 'Report average frame QP setting options')
 option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
+option('set_dec_input_framerate', type: 'boolean', value: false, description: 'Set the input framerate for decoder')

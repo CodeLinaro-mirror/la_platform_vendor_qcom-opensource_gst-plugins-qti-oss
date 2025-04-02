@@ -68,6 +68,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #include <gst/gst.h>
+#include <gst/gl/gl.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -1327,6 +1328,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams ltr_count;
   ConfigParams hdr_static_info;
   gfloat fps = COMMON_FRAMERATE;
+  GstCapsFeatures *features = NULL;
 
   GST_DEBUG_OBJECT (enc, "set_format");
 
@@ -1335,6 +1337,12 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   retval &= gst_structure_get_int (structure, "height", &height);
   if (!retval) {
     goto error_res;
+  }
+
+  features = gst_caps_get_features (state->caps, 0);
+  if (gst_caps_features_contains (features, GST_CAPS_FEATURE_MEMORY_GL_MEMORY)) {
+    enc->input_glmem_feature = TRUE;
+    GST_INFO_OBJECT (enc, "Input has GLMemory feature");
   }
 
   fmt = gst_structure_get_string (structure, "format");
@@ -2430,6 +2438,27 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
   return TRUE;
 }
 
+static void gst_qcodec2_venc_check_gl_memory (GstBuffer *buf) {
+  g_return_if_fail (buf != NULL);
+
+  gint n = gst_buffer_n_memory (buf);
+
+  for (gint i = 0; i < n; i++) {
+    GstMemory *mem = gst_buffer_peek_memory (buf, i);
+
+    if (gst_is_gl_memory_pbo (mem)) {
+      GST_DEBUG ("mem %p is GLMemory", mem);
+      // gst_buffer_map is enough to map out GLMemory for CPU to copy to
+      // GBM/dmabuf as encoder input, and download GLMemory cost about 3.5ms,
+      // so can remove gldownload (glcolorconvert ! gldownload ! qcodec2enc)
+      // for better performance.
+      //gst_gl_memory_pbo_download_transfer ((GstGLMemoryPBO *) mem); // used in gldownload
+    } else {
+      GST_ERROR ("Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
+    }
+  }
+}
+
 /* Push frame to Codec2 */
 static GstFlowReturn
 gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
@@ -2475,6 +2504,9 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     } else if (enc->is_input_dmabuf) {
       GST_ERROR_OBJECT (enc,
           "Fatal error: input buf feature changed from zero copy to need copy");
+    }
+    if (enc->input_glmem_feature) {
+      gst_qcodec2_venc_check_gl_memory (buf);
     }
     gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
     mem_mapped = TRUE;
@@ -3064,7 +3096,7 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
 
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_ROI,
       g_param_spec_string ("roi", "ROI config",
-          "roi xml config file path", NULL,
+          "roi xml config file path, roi qp is absolute num. for gen4(always > 0), is relative num. for gen4.5(could > or < 0)", NULL,
           G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY));
 
   g_object_class_install_property (gobject_class, PROP_BITRATE_SAVING_MODE,
@@ -3290,6 +3322,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
   enc->is_input_dmabuf = FALSE;
+  enc->input_glmem_feature = FALSE;
 
   enc->max_input_buffers = 0;
 
