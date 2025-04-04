@@ -362,7 +362,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
           "acquire_buffer failed from pending_buffers, try lookup from table");
       ret = GST_FLOW_ERROR;
     } else {
-      GST_WARNING_OBJECT (pool, "acquire_buffer %p from pending_buffers",
+      GST_DEBUG_OBJECT (pool, "acquire_buffer %p from pending_buffers",
           gst_buf);
       mem = gst_buffer_peek_memory (gst_buf, 0);
       if (G_UNLIKELY (!mem)) {
@@ -371,7 +371,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
         gst_buf = NULL;
         ret = GST_FLOW_ERROR;
       } else {
-        gint fd;
+        gint fd = -1;
         if (gst_is_dmabuf_memory (mem)) {
           fd = gst_dmabuf_memory_get_fd (mem);
           GST_DEBUG_OBJECT (pool, "pending_buffers dma fd %d", fd);
@@ -379,9 +379,17 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
           fd = gst_fd_memory_get_fd (mem);
           GST_DEBUG_OBJECT (pool, "pending_buffers fd %d", fd);
         }
-        key = ((gint64) fd << 32);
-        GST_DEBUG_OBJECT (pool, "pending_buffers entry key 0x%lx, fd %d", key,
-            (key >> 32) & 0xFFFFFFFF);
+
+        if (fd > 0) {
+          key = ((gint64) fd << 32);
+          GST_DEBUG_OBJECT (pool, "pending_buffers entry key 0x%lx, fd %d", key,
+              (key >> 32) & 0xFFFFFFFF);
+        } else {
+          GST_ERROR_OBJECT (pool, "failed to get buffer fd %d", fd);
+          gst_buffer_unref (gst_buf);
+          gst_buf = NULL;
+          ret = GST_FLOW_ERROR;
+        }
       }
     }
   }

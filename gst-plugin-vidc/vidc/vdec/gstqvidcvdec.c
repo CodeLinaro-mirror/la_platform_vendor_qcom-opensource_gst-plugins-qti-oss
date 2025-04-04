@@ -1609,7 +1609,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
       GST_DEBUG_OBJECT (dec, "start reconfig pool");
 
-      output_state = gst_video_decoder_get_output_state (decoder);
+      output_state = gst_video_decoder_set_output_state (decoder,
+          dec->output_format, dec->width, dec->height, dec->input_state);
       if (!output_state) {
         GST_ERROR_OBJECT (dec, "Failed to get output state");
         g_mutex_unlock (&(dec->pending_lock));
@@ -1791,7 +1792,9 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
       GST_DEBUG_OBJECT (dec, "mem data %p, size %d, maxsize %d", info.data,
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
-      memcpy (info.data, inBuf.data, inBuf.size);
+      if (inBuf.data) {
+          memcpy (info.data, inBuf.data, inBuf.size);
+      }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;
       vidcbuf.size = inBuf.size;

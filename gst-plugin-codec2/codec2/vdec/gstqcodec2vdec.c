@@ -1460,7 +1460,8 @@ release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
     gst_video_codec_frame_unref (frame);
     GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
   } else {
-    GST_WARNING_OBJECT (dec, "Can not find video frame for index %lu", index);
+    GST_DEBUG_OBJECT (dec, "Not find frame %lu,"
+        " maybe released during work done.", index);
   }
 }
 
