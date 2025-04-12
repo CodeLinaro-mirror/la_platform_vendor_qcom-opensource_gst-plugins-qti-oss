@@ -70,9 +70,6 @@ protected:
 
     ThreadEntryType mThreadEntryFcn;
 
-    // If deriving from this class, override this method
-    virtual void run() {} // Thread processing function
-
 private:
     static int threadEntry(void* arg);
 };

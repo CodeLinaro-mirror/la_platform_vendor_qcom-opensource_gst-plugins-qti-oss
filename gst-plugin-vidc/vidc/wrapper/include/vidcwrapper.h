@@ -520,9 +520,7 @@ typedef void (*listener_cb)(const void* handle, EVENT_TYPE type, void* data);
 // Component Store API
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void* vidcStore_create(void);
-const gchar* vidcStore_getName(void* const comp_store);
 gboolean vidcStore_createComponent(void* const comp_store, const gchar* name, void** const component, comp_cb* cb);
-gboolean vidcStore_listComponents(void* const comp_store, GPtrArray* array);
 gboolean vidcStore_isComponentSupported(void* const comp_store, gchar* name);
 gboolean vidcStore_delete(void* comp_store);
 

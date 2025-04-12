@@ -43,18 +43,6 @@ gst_vidc_comp_free (GstVIDCComp * gst_vidc_comp)
   GST_DEBUG ("gst vidc comp freed");
 }
 
-void *
-get_vidc_comp (GstVIDCComp * gst_vidc_comp)
-{
-  void *vidc_comp = NULL;
-
-  if (gst_vidc_comp) {
-    vidc_comp = gst_vidc_comp->comp;
-  }
-
-  return vidc_comp;
-}
-
 GstVIDCComp *
 gst_vidc_comp_ref (GstVIDCComp * comp)
 {
@@ -93,35 +81,6 @@ make_framerate_param (gfloat framerate, gboolean is_input)
   param.isInput = is_input;
   param.config_name = CONFIG_FUNCTION_KEY_FRAMERATE;
   param.framerate = framerate;
-
-  return param;
-}
-
-ConfigParams
-make_hdr_static_info_param (GstVideoMasteringDisplayInfo display_info,
-    GstVideoContentLightLevel content_light_level, gboolean is_input)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.isInput = is_input;
-  param.config_name = CONFIG_FUNCTION_KEY_HDR_STATIC_INFO;
-  param.hdr_static_info.red_x = display_info.display_primaries[0].x * 0.00002;
-  param.hdr_static_info.red_y = display_info.display_primaries[0].y * 0.00002;
-  param.hdr_static_info.green_x = display_info.display_primaries[1].x * 0.00002;
-  param.hdr_static_info.green_y = display_info.display_primaries[1].y * 0.00002;
-  param.hdr_static_info.blue_x = display_info.display_primaries[2].x * 0.00002;
-  param.hdr_static_info.blue_y = display_info.display_primaries[2].y * 0.00002;
-  param.hdr_static_info.white_x = display_info.white_point.x * 0.00002;
-  param.hdr_static_info.white_y = display_info.white_point.y * 0.00002;
-  param.hdr_static_info.maxLuminance =
-      display_info.max_display_mastering_luminance * 0.0001;
-  param.hdr_static_info.minLuminance =
-      display_info.min_display_mastering_luminance * 0.0001;
-  param.hdr_static_info.maxCll = content_light_level.max_content_light_level;
-  param.hdr_static_info.maxFall =
-      content_light_level.max_frame_average_light_level;
 
   return param;
 }

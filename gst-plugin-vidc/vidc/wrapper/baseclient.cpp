@@ -282,24 +282,6 @@ bool BaseClient::outputPortReconfig()
     return true;
 }
 
-void BaseClient::seekPosition(uint32 pos)
-{
-    MM_DBG_MSG("BaseClient::seekPosition-%s %d", mNamePtr, pos);
-}
-
-void BaseClient::eosProcessingDone()
-{
-    if (mEosDoneCallback) {
-        MM_DBG_MSG("BaseClient::eosProcessingDone-%s", mNamePtr);
-        mEosDoneCallback(this);
-    }
-}
-
-bool BaseClient::configureDynProp(vidc_frame_data_type& frameData)
-{
-    return true;
-}
-
 // Derived class overrides this if special processing is
 // needed prior to invoking client callback
 void BaseClient::emptyDone(
@@ -387,57 +369,6 @@ void BaseClient::fillDone(
     }
 }
 
-bool BaseClient::freeBuffer(
-    vidc_buffer_type buffer)
-{
-    MM_DBG_MSG("BaseClient::freeBuffer-%s", mNamePtr);
-    mPort[buffer].buffers.clear();
-
-    return true;
-}
-
-int BaseClient::getBufferCount(vidc_buffer_type buffer)
-{
-    MM_DBG_MSG("BaseClient::getBufferCount-%s %s port", mNamePtr, mPort[buffer].namePtr);
-
-    return mPort[buffer].requirements.actual_count;
-}
-
-int BaseClient::getBufferSize(vidc_buffer_type buffer)
-{
-    MM_DBG_MSG("BaseClient::getBufferSize-%s %s port", mNamePtr, mPort[buffer].namePtr);
-
-    return mPort[buffer].requirements.size;
-}
-
-const BaseClient::PortDataType& BaseClient::getPortInfo(vidc_buffer_type buffer)
-{
-    MM_DBG_MSG("BaseClient::getPort-%s %s port", mNamePtr, mPort[buffer].namePtr);
-
-    return mPort[buffer].data;
-}
-
-vidc_frame_data_type* BaseClient::getFrame(
-    vidc_frame_data_type& frameData,
-    vidc_buffer_type buffer)
-{
-    vidc_frame_data_type* frameDataPtr = NULL;
-
-    /* The frameData may be from a different component.  Use
-    * the buffer's pmem handle to look up the corresponding
-    * frame data info.
-    */
-    auto it = mPort[buffer].buffers.find(frameData.frame_handle);
-    if (it != mPort[buffer].buffers.end()) {
-        frameDataPtr = &(it->second);
-    } else {
-        MM_ERROR_MSG("BaseClient::getFrame-%s buffer not found %s port",
-            mNamePtr, mPort[buffer].namePtr);
-    }
-
-    return frameDataPtr;
-}
-
 void BaseClient::registerCallback(
     BufferCallbackType emptyCallback,
     BufferCallbackType filledCallback,
@@ -463,14 +394,6 @@ void BaseClient::resetPort(vidc_buffer_type buffer, const char* namePtr)
     mPort[buffer].data.isAvsync = true;
     mPort[buffer].data.frameRate = 30.0;
     mPort[buffer].namePtr = namePtr;
-}
-
-void BaseClient::setPortInfo(
-    vidc_buffer_type buffer,
-    PortDataType& dataInfo)
-{
-    MM_DBG_MSG("BaseClient::setPort-%s %s port", mNamePtr, mPort[buffer].namePtr);
-    mPort[buffer].data = dataInfo;
 }
 
 bool BaseClient::setParameter(

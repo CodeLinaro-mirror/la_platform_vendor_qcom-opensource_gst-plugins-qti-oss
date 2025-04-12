@@ -194,13 +194,6 @@ void* vidcStore_create()
     return new VidcFactory();
 }
 
-const gchar* vidcStore_getName(void* const comp_store)
-{
-    gchar* name = NULL;
-
-    return name;
-}
-
 gboolean vidcStore_createComponent(void* const comp_store,
     const gchar* name, void** const component, comp_cb* cb)
 {
@@ -231,14 +224,6 @@ gboolean vidcStore_createComponent(void* const comp_store,
             }
         }
     }
-
-    return ret;
-}
-
-gboolean vidcStore_listComponents(void* const comp_store, GPtrArray* array)
-{
-    gboolean ret = FALSE;
-    LOG_MESSAGE("%s", __func__);
 
     return ret;
 }

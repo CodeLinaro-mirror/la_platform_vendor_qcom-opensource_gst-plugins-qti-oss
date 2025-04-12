@@ -36,9 +36,6 @@
 #define VIDCFACTORY_H
 #include "gstclient.h"
 
-/* Returns the next aligned size */
-#define ALIGN_NEXT(size, align) ((((unsigned int)(size)) + ((align)-1)) & (~((align)-1)))
-
 class VidcFactory {
 public:
     VidcFactory() {}
