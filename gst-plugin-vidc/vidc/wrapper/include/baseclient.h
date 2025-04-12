@@ -125,21 +125,11 @@ public:
 
     virtual bool fillBuffer(vidc_frame_data_type frameData) = 0; // Fill the output buffer
 
-    virtual bool freeBuffer // Stop tracking buffers
-        (
-            vidc_buffer_type buffer);
-
     bool getEncPerfMode() { return mconfig.encPerfMode; };
 
     void setEncPerfMode(bool encModeType) { mconfig.encPerfMode = encModeType; };
 
-    int getBufferCount(vidc_buffer_type buffer); // Get number of I/O buffers required for the port
-
-    int getBufferSize(vidc_buffer_type buffer); // Get bytes required for the port buffer
-
     const char* getname() { return mNamePtr; }
-
-    const PortDataType& getPortInfo(vidc_buffer_type buffer); // Get info describing the port data
 
     // You must set the configuration and the input
     // port information before attempting to
@@ -168,21 +158,12 @@ public:
 
     virtual bool outputPortReconfig();
 
-    virtual bool configureDynProp(vidc_frame_data_type& frameData);
-
     void registerCallback // Register empty/filled & output reconfigure callbacks
         (
             BufferCallbackType emptyCallback,
             BufferCallbackType filledCallback,
             ReconfigureCallbackType reconfigureCallback,
             EOSDoneCallbackType eosDoneCallback);
-
-    virtual void seekPosition(uint32 pos);
-
-    void setPortInfo // Set info describing the data buffer
-        (
-            vidc_buffer_type buffer,
-            PortDataType& dataInfo);
 
     virtual bool stateExecuting() = 0; // Put component into executing state, blocking call
 
@@ -205,16 +186,6 @@ public:
     bool getBufferInUse(vidc_buffer_type buffer, pmem_handle_t handle)
     {
         return mPort[buffer].bufferInUse.at(handle);
-    }
-
-    virtual void setEndOfStream(bool val)
-    {
-        mEndOfStream = val;
-    }
-
-    virtual bool endOfStream()
-    {
-        return mEndOfStream;
     }
 
 protected:
@@ -299,14 +270,6 @@ protected:
     virtual void fillDone // Invoked when output buffer is filled
         (
             vidc_frame_data_type& frameData);
-
-    virtual void eosProcessingDone(); // Invoked when EOS processing is done
-
-    vidc_frame_data_type* getFrame // Convenience method to retrieve the frame data info
-        (
-            vidc_frame_data_type& frameData, // Use the frame_addr to look up the info
-            vidc_buffer_type buffer // Specify input or output buffer
-        );
 
     virtual int event // Common event handling for all components
         (

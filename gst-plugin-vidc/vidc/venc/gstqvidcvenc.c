@@ -140,7 +140,6 @@ enum
 enum
 {
   PROP_0,
-  PROP_SILENT,
   PROP_RATE_CONTROL,
   PROP_DOWNSCALE_WIDTH,
   PROP_DOWNSCALE_HEIGHT,
@@ -2574,7 +2573,6 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   gboolean mem_mapped = FALSE;
   gboolean status = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
-  GstVideoVIDCBufMeta *video_vidcbuf_meta = NULL;
 
   GST_DEBUG_OBJECT (enc, "enter");
 
@@ -2590,12 +2588,8 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
     inBuf.capacity = inBuf.size;
-    video_vidcbuf_meta = gst_buffer_get_video_vidcbuf_meta (buf);
-    if (video_vidcbuf_meta) {
-      inBuf.vidcBuffer = video_vidcbuf_meta->vidc_buf;
-    }
-    GST_DEBUG_OBJECT (enc, "input vidc buffer:%p fd:%d", inBuf.vidcBuffer,
-        inBuf.fd);
+    GST_DEBUG_OBJECT (enc, "input vidc buffer fd:%d, size %u",
+        inBuf.fd, inBuf.size);
   } else if (gst_is_fd_memory (mem)) {
     GST_DEBUG_OBJECT (enc, "fd emory %d", gst_fd_memory_get_fd (mem));
     inBuf.fd = gst_fd_memory_get_fd (mem);
@@ -2747,9 +2741,6 @@ gst_qvidc_venc_set_property (GObject * object, guint prop_id,
   GST_DEBUG_OBJECT (enc, "qvidc_venc_set_property");
 
   switch (prop_id) {
-    case PROP_SILENT:
-      enc->silent = g_value_get_boolean (value);
-      break;
     case PROP_MIRROR:
       enc->mirror = g_value_get_enum (value);
       break;
@@ -2912,9 +2903,6 @@ gst_qvidc_venc_get_property (GObject * object, guint prop_id,
   GST_DEBUG_OBJECT (enc, "qvidc_venc_get_property");
 
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean (value, enc->silent);
-      break;
     case PROP_MIRROR:
       g_value_set_enum (value, enc->mirror);
       break;
@@ -3102,10 +3090,6 @@ gst_qvidc_venc_class_init (GstQvidcVencClass * klass)
   gobject_class->finalize = gst_qvidc_venc_finalize;
 
   /* Add property to this class */
-  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SILENT,
-      g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
-          FALSE, G_PARAM_READWRITE));
-
   g_object_class_install_property (gobject_class, PROP_RATE_CONTROL,
       g_param_spec_enum ("rate-control", "Rate Control",
           "Bitrate control method",

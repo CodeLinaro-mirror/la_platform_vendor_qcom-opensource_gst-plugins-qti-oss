@@ -84,8 +84,6 @@ public:
 
     vidc_color_format_type convertToVidcFromInt(color_format_type col_fmt);
 
-    color_format_type convertToIntFromVidc(vidc_color_format_type vidc_color_fmt);
-
     void initialize();
 
 protected:

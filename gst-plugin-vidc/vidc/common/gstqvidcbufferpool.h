@@ -98,32 +98,8 @@ typedef struct GstBufferPoolAcquireParamsExt
 GType gst_qvidc_buffer_pool_get_type (void);
 GstBufferPool *gst_qvidc_buffer_pool_new (GstBufferPoolInitParam * param);
 
-#define GST_VIDEO_VIDCBUF_META_API_TYPE  (gst_video_vidcbuf_meta_api_get_type())
-#define GST_VIDEO_VIDCBUF_META_INFO  (gst_video_vidcbuf_meta_get_info())
-typedef struct _GstVideoVIDCBufMeta GstVideoVIDCBufMeta;
-
-/**
- * GstVideoVIDCBufMeta:
- * @meta: parent #GstMeta
- * @vidc_buf: associated pointer of VIDC Buffer
- *
- * Extra buffer metadata describing associated pointer of VIDC Buffer.
- */
-struct _GstVideoVIDCBufMeta
-{
-  GstMeta meta;
-
-  void *vidc_buf;
-};
-
-GType gst_video_vidcbuf_meta_api_get_type (void);
-const GstMetaInfo *gst_video_vidcbuf_meta_get_info (void);
-
 GstBuffer *gst_qvidc_buffer_pool_find_buffer (GstBufferPool * bpool,
     gint64 key);
-
-#define gst_buffer_get_video_vidcbuf_meta(b) ((GstVideoVIDCBufMeta*)gst_buffer_get_meta((b),GST_VIDEO_VIDCBUF_META_API_TYPE))
-#define gst_buffer_add_video_vidcbuf_meta(b) ((GstVideoVIDCBufMeta*)gst_buffer_add_meta((b),GST_VIDEO_VIDCBUF_META_INFO, NULL))
 
 G_END_DECLS
 #endif /* __GST_QVIDCBUFFERPOOL_H__ */
