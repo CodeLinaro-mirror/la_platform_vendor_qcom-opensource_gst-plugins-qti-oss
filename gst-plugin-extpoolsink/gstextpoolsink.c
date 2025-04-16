@@ -523,6 +523,10 @@ gst_ext_pool_sink_propose_allocation (GstBaseTransform * trans,
   guint min_up = 0, max_up = 0, size_up = 0;
   gboolean update_pool = FALSE;
 
+  if (!query) {
+    GST_ERROR_OBJECT(self, "query is null");
+    return FALSE;
+  }
   gst_query_parse_allocation (query, &outcaps, NULL);
 
   GST_INFO_OBJECT (self, "decide_query %" GST_PTR_FORMAT ", query %" GST_PTR_FORMAT,
@@ -567,7 +571,7 @@ gst_ext_pool_sink_propose_allocation (GstBaseTransform * trans,
       gst_object_unref (pool);
 
     return TRUE;
-  } else if (query) {
+  } else {
     GST_INFO_OBJECT (self, "query pool");
     if (gst_query_get_n_allocation_pools (query) > 0) {
       GST_INFO_OBJECT (self, "query has pool");
