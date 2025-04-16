@@ -431,8 +431,10 @@ WidevineContext::CreateLicenseRequest ()
 
   // Decode base64 encoded Widevine object.
   decoded_str = g_base64_decode (init_data_, &out_len);
-  wv_header.assign (decoded_str, decoded_str + out_len);
-  g_free (decoded_str);
+  if (decoded_str) {
+    wv_header.assign (decoded_str, decoded_str + out_len);
+    g_free (decoded_str);
+  }
 
   if ((status = cdm_->generateRequest (session_id_, widevine::Cdm::kCenc, wv_header)) !=
       widevine::Cdm::kSuccess) {
