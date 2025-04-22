@@ -42,9 +42,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
-
-#include <linux/msm_ion.h>
-#include <ion/ion.h>
+#include <BufferAllocator/BufferAllocatorWrapper.h>
 #include <sys/mman.h>
 #include <linux/dma-buf.h>
 #include "OMX_Core.h"
@@ -172,7 +170,8 @@ static uint64_t s_pts = 0;
 static uint32_t s_timestampInterval = 33333333;  //ns
 static gboolean s_secure_mode = TRUE;
 static gboolean s_external_input_buffer_mode = FALSE;
-static int s_iondev_fd = -1;
+static BufferAllocator *s_dmaheap_allocator = NULL;
+
 static GstAllocator * s_extbuf_gst_alloc = NULL;
 static GstBuffer* s_extgstbuf_array[SEC_ION_BUF_CAPACITY] = {0};
 static int s_codec_type = 0;
@@ -185,47 +184,24 @@ static int Read_Buffer_From_H264_Start_Code_File(uint8_t *data);
 static int Read_Buffer_From_H265_Start_Code_File(uint8_t *data);
 static int Read_Buffer_From_Ivf_File(uint8_t *data);
 
-static gboolean alloc_ion_memory(int buffer_size, int *data_fd, int flag)
+static gboolean alloc_dma_memory(int buffer_size, int *data_fd, const char *heap_name)
 {
   int rc = -EINVAL;
-  unsigned int heap_id_mask = 0;
 
   if (buffer_size <= 0) {
     ERROR_PRINT("Invalid arguments to alloc_ion_memory");
     return FALSE;
   }
 
-
-  heap_id_mask = ION_HEAP(ION_SYSTEM_HEAP_ID);
-  if (flag & ION_FLAG_SECURE) {
-    heap_id_mask = ION_HEAP(ION_SECURE_HEAP_ID);
-    INFO_PRINT("secure heap id: 0x%x", heap_id_mask);
-  }
-
-  /* Use secure display cma heap, because this heap is physical continue memory */
-  if (flag & ION_FLAG_CP_BITSTREAM) {
-    heap_id_mask |= ION_HEAP(ION_SECURE_DISPLAY_HEAP_ID);
-    INFO_PRINT("secure heap id when ION_FLAG_CP_BITSTREAM: 0x%x", heap_id_mask);
-  }
-
-  rc = ion_alloc_fd(s_iondev_fd, buffer_size, 0, heap_id_mask, flag, data_fd);
-
-  if (rc || *data_fd < 0) {
-    ERROR_PRINT("ION ALLOC memory failed rc:%d", rc);
+  *data_fd = DmabufHeapAlloc (s_dmaheap_allocator, heap_name, buffer_size, 0, 0);
+  if (*data_fd < 0) {
+    ERROR_PRINT ("failed to allocate buffer from dma %s heap data fd %d error %s-%d",
+                heap_name, *data_fd, strerror (errno), errno);
     return FALSE;
   }
 
-  INFO_PRINT("Alloc ion memory: fd (iondev_fd:%d data_fd:%d) len %d flag %#x mask %#x",
-            s_iondev_fd, *data_fd, buffer_size, flag, heap_id_mask);
+  INFO_PRINT("Alloc dma memory: heap named %s data_fd %d len %d", heap_name, *data_fd, buffer_size);
   return TRUE;
-}
-
-static void free_ion_memory(int data_fd)
-{
-  INFO_PRINT("Free ion memory: data fd %d ion dev fd %d", data_fd, s_iondev_fd);
-  if (data_fd >= 0) {
-    close(data_fd);
-  }
 }
 
 #define NUM_MBS_4k (((4096 + 15) >> 4) * ((2304 + 15) >> 4))
@@ -265,20 +241,20 @@ static gboolean allocate_ext_input_buffers(int sz)
   GstMemory *gst_mem;
   GstBuffer *gst_buf;
   int fd = -1;
-
   gboolean ret = FALSE;
-  s_iondev_fd = ion_open();
-  if (s_iondev_fd < 0) {
-    ERROR_PRINT("opening ion device failed with ion dev fd = %d", s_iondev_fd);
+
+  s_dmaheap_allocator = CreateDmabufHeapBufferAllocator ();
+  if (!s_dmaheap_allocator) {
+    ERROR_PRINT ("Failed to create dma heap allocator");
     return FALSE;
   }
 
   s_extbuf_gst_alloc = gst_fd_allocator_new();
   for (int i = 0; i < SEC_ION_BUF_CAPACITY; i++) {
     if (s_secure_mode)
-      ret = alloc_ion_memory(sz, &fd, ION_FLAG_SECURE | ION_FLAG_CP_BITSTREAM);
+      ret = alloc_dma_memory(sz, &fd, "system-secure");
     else
-      ret = alloc_ion_memory(sz, &fd, 0);
+      ret = alloc_dma_memory(sz, &fd, "qcom,system-uncached");
 
     if (ret) {
       gst_mem = gst_fd_allocator_alloc(s_extbuf_gst_alloc, fd, sz, GST_FD_MEMORY_FLAG_KEEP_MAPPED);
@@ -287,10 +263,10 @@ static gboolean allocate_ext_input_buffers(int sz)
         gst_buffer_append_memory (gst_buf, gst_mem);
       }
 
-      INFO_PRINT("alloc ion memory successful id:%d, gstbuffer:%p, gst_mem:%p, fd:%d", i, gst_buf, gst_mem, fd);
+      INFO_PRINT("alloc dma memory successful id:%d, gstbuffer:%p, gst_mem:%p, fd:%d", i, gst_buf, gst_mem, fd);
       s_extgstbuf_array[i] = gst_buf;
     } else {
-      ERROR_PRINT("alloc ion memory failed id:%d", i);
+      ERROR_PRINT("alloc dma memory failed id:%d", i);
       return FALSE;
     }
   }
@@ -310,21 +286,23 @@ static void free_ext_input_buffers()
       gst_mem = gst_buffer_peek_memory (gst_buf, 0);
       if (gst_is_fd_memory(gst_mem)) {
         fd = gst_fd_memory_get_fd(gst_mem);
-        free_ion_memory(fd);
+        INFO_PRINT("Free dma memory fd %d", fd);
+        if (fd >= 0)
+          close(fd);
       } else {
         fd = -1;
         ERROR_PRINT("is not fd gst memory when try to free external input buf");
       }
-      INFO_PRINT("free ion fd %d and gstbuf %p", fd, gst_buf);
+
+      INFO_PRINT("free dma fd %d and gstbuf %p", fd, gst_buf);
       gst_buffer_unref(gst_buf);
       s_extgstbuf_array[i] = NULL;
     }
   }
 
-  if (s_iondev_fd >= 0) {
-    INFO_PRINT("Will close ion dev fd %d", s_iondev_fd);
-    ion_close(s_iondev_fd);
-    s_iondev_fd = -1;
+  if (s_dmaheap_allocator) {
+    FreeDmabufHeapBufferAllocator (s_dmaheap_allocator);
+    s_dmaheap_allocator = NULL;
   }
 
   if (s_extbuf_gst_alloc) {
@@ -479,11 +457,14 @@ static GstFlowReturn onNewSample(GstElement *appsink, SECUREAPPSRCCTX *secureapp
     buffer = gst_sample_get_buffer(sample);
     if (s_secure_mode) {
       int secure_fd = 0;
-      GstVideoMeta* meta = gst_buffer_get_video_meta(buffer);
-      if (meta && meta->n_planes <= 2 && SIG_OF_QVMETA(meta) == SECURE_MAKE_FOURCC('Q','a','U','T')) {
-        secure_fd = FD_OF_QVMETA(meta);
-        length = DATASZ_OF_QVMETA(meta);
-        GST_PRT_DEBUG("Found QVMeta signature, fd %d, size %d", secure_fd, length);
+
+      //gst-omx 1.20 don't support trick information embedded in GstVideoMeta. So, get secure_fd by gst_dmabuf_memory_get_fd.
+      GstMemory *mem = NULL;
+      mem = gst_buffer_peek_memory(buffer, 0);
+      if (gst_is_dmabuf_memory (mem)) {
+        secure_fd = gst_dmabuf_memory_get_fd (mem);
+        length = gst_memory_get_sizes (mem, NULL, NULL);
+        GST_PRT_DEBUG("Dmabuf fd %d, size %d", secure_fd, length);
         g_mutex_lock (&secureappsrc->crypto_copy_lock);
         SecureCopyResult ret1 = crypto_copy (secureappsrc->crypto, SECURE_COPY_SECURE_TO_NONSECURE,
                                             s_output_nonsecure_buffer, (unsigned long)secure_fd, &length);
@@ -495,7 +476,7 @@ static GstFlowReturn onNewSample(GstElement *appsink, SECUREAPPSRCCTX *secureapp
         //yuv data is NV12_UBWC format
         ret = fwrite(s_output_nonsecure_buffer, 1, length, s_output_fp);
       } else {
-        GST_PRT_ERROR("Unable to read QVMeta from buffer %p.", buffer);
+        GST_PRT_ERROR("Not Dmabuf %p.", buffer);
       }
     } else {
       if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
