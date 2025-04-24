@@ -172,6 +172,5 @@ class WidevineContext : public DrmContext, public widevine::Cdm::IEventListener 
     WVStorageImpl *storage_impl;
     WVClockImpl   *clock_impl;
     WVTimerImpl   *timer_impl;
-    widevine::StderrLogger stderr_logger;
 };
 #endif
