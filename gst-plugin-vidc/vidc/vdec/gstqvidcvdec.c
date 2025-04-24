@@ -1064,7 +1064,14 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
   g_ptr_array_add (config, &frame_rate);
   GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
 
-  if (!vidc_config (dec->comp, config, BLOCK_MODE_DONT_BLOCK)) {
+  BLOCK_MODE_TYPE mode = BLOCK_MODE_DONT_BLOCK;
+  if (codectype.codec == VIDC_CODEC_VP9 && dec->check_10bit) {
+    GST_DEBUG_OBJECT (dec,
+        "vp9, 10bit not indicated in caps, do check in handle frame func");
+    mode = BLOCK_MODE_MAY_BLOCK;
+  }
+
+  if (!vidc_config (dec->comp, config, mode)) {
     GST_WARNING_OBJECT (dec, "Failed to set config");
     goto error_set_format;
   }
