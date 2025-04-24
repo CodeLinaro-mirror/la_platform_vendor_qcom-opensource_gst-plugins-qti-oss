@@ -163,19 +163,20 @@ gboolean qvratevpp_queue_buf(void *ctx, enum vpp_port port, struct vpp_buffer *b
 
 
   if (!ctx || !buf || (port != VPP_PORT_INPUT && port != VPP_PORT_OUTPUT)) {
-    GST_ERROR("error input parameter cxt:%p port:%u buf=%p", ctx, port, buf);
+    GST_ERROR ("error input parameter cxt:%p port:%u buf=%p", ctx, port, buf);
     return ret;
   }
 
   gst_buf = buf->pvGralloc;
-  GST_DEBUG("VPP queue buf, port=%u, vpp buf=%p, gst buf=%p", port, buf, gst_buf);
+  GST_DEBUG ("VPP queue buf, port=%u, vpp buf=%p, gst buf=%p", port, buf, gst_buf);
 
   vpp_ret = vpp_queue_buf(ctx, port, buf);
   if (vpp_ret == VPP_OK) {
-    GST_DEBUG("qvratevpp_queue_buf queue buffer success");
+    GST_DEBUG ("queue buffer success, port: %u", port);
     ret = TRUE;
-  } else
-    GST_ERROR ("vpp_queue_buf error: %d, ctx: %p", vpp_ret, ctx);
+  } else {
+    GST_ERROR ("queue buffer error: %d, port: %u, ctx: %p", vpp_ret, port, ctx);
+  }
 
   return ret;
 }
