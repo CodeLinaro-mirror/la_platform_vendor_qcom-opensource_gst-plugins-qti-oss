@@ -26,6 +26,9 @@ G_BEGIN_DECLS
     "stream-format = (string) { byte-stream, hvc1, hev1 }, " \
     "alignment = (string) { au }, " \
     COMMON_VIDEO_CAPS(96, 8192)
+#define VP8_CAPS \
+    "video/x-vp8, " \
+    COMMON_VIDEO_CAPS(96, 4096)
 #define VP9_CAPS \
     "video/x-vp9, " \
     COMMON_VIDEO_CAPS(96, 4096)
@@ -103,6 +106,10 @@ struct _GstVesDeliver
   TRANSFORM_CAPS transform_caps;
   void *secure_handle;
   void *crypto_handle;
+  gint min_output_buf_size;
+  gchar *input_format;
+  gint input_width;
+  gint input_height;
 #ifdef USE_DMAHEAP
   void *vmmem_lib_handle;
   VmMem *vm_instance;
