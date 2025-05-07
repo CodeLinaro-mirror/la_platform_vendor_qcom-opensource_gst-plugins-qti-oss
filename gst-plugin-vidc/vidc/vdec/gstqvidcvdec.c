@@ -2063,6 +2063,10 @@ gst_qvidc_vdec_class_init (GstQvidcVdecClass * klass)
   video_decoder_class->flush = GST_DEBUG_FUNCPTR (gst_qvidc_vdec_flush);
   video_decoder_class->decide_allocation =
       GST_DEBUG_FUNCPTR (gst_qvidc_vdec_decide_allocation);
+  video_decoder_class->src_event =
+      GST_DEBUG_FUNCPTR (gst_qvidc_vdec_src_event);
+  video_decoder_class->sink_event =
+      GST_DEBUG_FUNCPTR (gst_qvidc_vdec_sink_event);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "vidc decoder", "Decoder/Video",
