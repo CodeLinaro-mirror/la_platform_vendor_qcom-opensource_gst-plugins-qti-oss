@@ -62,6 +62,7 @@ struct _GstBufferPoolInitParam
   GstBufferPool *ext_pool;
   GstVideoInfo info;
   GstVIDCComp *gst_vidc_comp;
+  guint metasize;
   gboolean is_ubwc;
   gboolean is_outport;
   gboolean is_ext_pool;
@@ -72,7 +73,7 @@ struct _GstQvidcBufferPool
 {
   GstBufferPool bufferpool;
   GstAllocator *allocator;
-  gboolean add_vidcbufmeta;
+  GstAllocator *meta_allocator;
   GHashTable *buffer_table;
   GQueue pending_buffers;
 

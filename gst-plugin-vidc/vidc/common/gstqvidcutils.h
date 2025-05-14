@@ -26,6 +26,8 @@ GType gst_vidc_comp_get_type (void);
 GstVIDCComp *gst_vidc_comp_create (void *comp);
 GstVIDCComp *gst_vidc_comp_ref (GstVIDCComp * comp);
 void gst_vidc_comp_unref (GstVIDCComp * comp);
+void gst_vidc_buffer_get_custom_meta(GstBuffer *buffer, const gchar *name,
+    gint *meta_fd, guint *metasize);
 
 ConfigParams make_framerate_param (gfloat framerate, gboolean is_input);
 
