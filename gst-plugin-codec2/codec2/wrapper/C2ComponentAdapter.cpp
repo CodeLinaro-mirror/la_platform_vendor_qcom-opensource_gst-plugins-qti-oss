@@ -1191,7 +1191,6 @@ void C2ComponentAdapter::handleWorkDone(
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
                     this);
-                continue;
             } else if (outputFrameFlag & C2FrameData::FLAG_DROP_FRAME
                 || outputFrameFlag & C2FrameData::FLAG_DISCARD_FRAME) {
                 /* When an input is dropped, output Buffer is not produced.
@@ -1214,7 +1213,6 @@ void C2ComponentAdapter::handleWorkDone(
                 LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
 
-            break;
         }
     }
 }
