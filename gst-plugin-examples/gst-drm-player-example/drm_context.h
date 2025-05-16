@@ -13,6 +13,7 @@
 
 #ifdef ENABLE_WIDEVINE
 #include <cdm.h>
+#include "stderr_logger.h"
 #endif
 #include <media/drm/DrmAPI.h>
 
@@ -157,7 +158,7 @@ class WidevineContext : public DrmContext, public widevine::Cdm::IEventListener 
     // widevine::Cdm::IEventListener
     void onMessage(const std::string& session_id,
                     widevine::Cdm::MessageType message_type,
-                    const std::string& message) override {
+                    const std::string& message, const std::string& server_url) override {
       if (session_id == session_id_ && message_type == widevine::Cdm::kLicenseRequest)
         on_message_.set_value (message);
       else
@@ -166,9 +167,11 @@ class WidevineContext : public DrmContext, public widevine::Cdm::IEventListener 
     void onKeyStatusesChange (const std::string& session_id,
         bool has_new_usable_key) override {}
     void onRemoveComplete(const std::string& session_id) override {}
+    void onExpirationChange(const std::string& session_id, int64_t new_expiry_time_seconds) override {}
 
     WVStorageImpl *storage_impl;
     WVClockImpl   *clock_impl;
     WVTimerImpl   *timer_impl;
+    widevine::StderrLogger stderr_logger;
 };
 #endif

@@ -78,7 +78,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2h264dec.h"
 #include "gstqcodec2h265dec.h"
 #include "gstqcodec2vp9dec.h"
+#ifdef GST_SUPPORT_MPEG2_DEC
 #include "gstqcodec2mpeg2dec.h"
+#endif
 #ifdef GST_SUPPORT_AV1_DEC
 #include "gstqcodec2av1dec.h"
 #endif
@@ -113,7 +115,9 @@ static const ElementInfo kDECODER_ELEMENTS[] = {
   DECODER_ELEMENT (avc, h264),
   DECODER_ELEMENT (hevc, h265),
   DECODER_ELEMENT (vp9, vp9),
+#ifdef GST_SUPPORT_MPEG2_DEC
   DECODER_ELEMENT (mpeg2, mpeg2),
+#endif
 #ifdef GST_SUPPORT_AV1_DEC
   DECODER_ELEMENT (av1, av1),
 #endif
@@ -1456,7 +1460,8 @@ release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
     gst_video_codec_frame_unref (frame);
     GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
   } else {
-    GST_WARNING_OBJECT (dec, "Can not find video frame for index %lu", index);
+    GST_DEBUG_OBJECT (dec, "Not find frame %lu,"
+        " maybe released during work done.", index);
   }
 }
 
@@ -1690,12 +1695,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           if (deinterlace == TRUE) {
             interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
           } else {
+#ifdef GST_SUPPORT_MPEG2_DEC
             if (GST_IS_QCODEC2_MPEG2_DEC (dec)) {
               if (dec->interlace_mode == GST_VIDEO_INTERLACE_MODE_PROGRESSIVE)
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
               else
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
-            } else if (GST_IS_QCODEC2_H264_DEC (dec)) {
+            }
+#endif
+            if (GST_IS_QCODEC2_H264_DEC (dec)) {
               if (out_buf->interlaceMode != INTERLACE_MODE_PROGRESSIVE)
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
             }
@@ -1862,8 +1870,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       /* Since firmware does not report crop info for mpeg2 video in reconfig,
        * aligned resolution will be used when acquiring external buffer.
        * Introduced a workaround to treat such case as resolution unchanged. */
-      gboolean is_mpeg2_cornercase = GST_IS_QCODEC2_MPEG2_DEC (dec)
+      gboolean is_mpeg2_cornercase = FALSE;
+#ifdef GST_SUPPORT_MPEG2_DEC
+      is_mpeg2_cornercase = GST_IS_QCODEC2_MPEG2_DEC (dec)
           && (GST_ROUND_UP_32 (dec->height) == resolution->height);
+#endif
       if ((dec->width != resolution->width || dec->height != resolution->height)
           && !is_mpeg2_cornercase) {
         GST_DEBUG_OBJECT (dec,
