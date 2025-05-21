@@ -540,7 +540,7 @@ gboolean vidc_stop(void* const comp, BUFFER_PORT_TYPE port);
 gboolean vidc_config(void* const comp, GPtrArray* config, BLOCK_MODE_TYPE block);
 gboolean vidc_freeOutBuffer(void* const comp, BufferDescriptor* buffer);
 gboolean vidc_delete(void* comp);
-gboolean writePlane(void* comp, uint8_t* dest, uint8_t* src);
+gboolean writePlane(void* comp, uint8_t* dest, BufferDescriptor* buffer_info);
 gboolean vidc_isEncoder(void* const comp);
 
 #ifdef __cplusplus

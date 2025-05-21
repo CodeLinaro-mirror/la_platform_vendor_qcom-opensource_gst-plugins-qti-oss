@@ -1176,3 +1176,8 @@ int GstClient::getPlaneStride(int plane)
 {
     return mPlaneInfo.getPlaneStride(plane);
 }
+
+PlaneInfo::color_format_type GstClient::getPortColorFormat()
+{
+    return mPlaneInfo.getPortColorFormat();
+}

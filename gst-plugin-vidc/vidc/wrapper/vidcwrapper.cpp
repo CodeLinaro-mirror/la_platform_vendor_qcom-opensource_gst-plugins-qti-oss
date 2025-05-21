@@ -567,51 +567,97 @@ gboolean vidc_config(void* const comp, GPtrArray* config, BLOCK_MODE_TYPE block)
     return ret;
 }
 
-gboolean writePlane(void* const comp, uint8_t* dest, uint8_t* src)
+gboolean writePlane(void* const comp, uint8_t* dest, BufferDescriptor* buffer_info)
 {
     gboolean ret = FALSE;
-    uint8_t* dst = dest;
-    LOG_MESSAGE("%s dst %p src %p", __func__, dst, src);
 
-    if (dst == nullptr || src == nullptr) {
-        LOG_ERROR("%s: Invalid dst and src", __func__);
+    if (!dest || !buffer_info) {
+        LOG_ERROR("%s: Invalid dest(%p) or buffer_info(%p)", __func__, dest, buffer_info);
         return ret;
     }
+
+    uint8_t* dst = dest;
+    uint8_t* src = buffer_info->data;
+    LOG_MESSAGE("%s dst %p src %p", __func__, dst, src);
+
+    if (!src) {
+        LOG_ERROR("%s: Invalid src", __func__);
+        return ret;
+    }
+
+    uint32_t width = buffer_info->width;
+    uint32_t height = buffer_info->height;
+    uint32_t stride = buffer_info->stride[0];
+    uint32_t stride_uv = buffer_info->stride[1];
+
+    LOG_MESSAGE("input format %d, %ux%u, stride %u-%u, "
+        "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT ".",
+        buffer_info->format, width, height, stride, stride_uv,
+        buffer_info->offset[0], buffer_info->offset[1]);
 
     // TODO: only support NV12 now, add P010
     if (comp) {
         GstClient* client = (GstClient*)comp;
-        int read_bytes = 0;
-        int bytes = 0;
-        int cnt = client->getPlaneCount();
 
-        uint32_t y_stride = client->getPlaneStride(0);
-        uint32_t uv_stride = client->getPlaneStride(1);
-        uint32_t y_scanlines = ALIGN(client->getPlaneHeight(0), 32);
-        uint32_t width = client->getPlaneWidth(0);
-        uint32_t height = client->getPlaneHeight(0);
-        uint32_t offset = y_stride * y_scanlines;
+        PlaneInfo::color_format_type color = client->getPortColorFormat();
+        if (color == PlaneInfo::COLOR_FORMAT_NV12
+            || color == PlaneInfo::COLOR_FORMAT_NV21
+            || color == PlaneInfo::COLOR_FORMAT_P010) {
+            uint32_t read_bytes = 0;
+            uint32_t bpp = (color == PlaneInfo::COLOR_FORMAT_P010) ? 2 : 1;
+            uint32_t y_stride = client->getPlaneStride(0);
+            uint32_t uv_stride = client->getPlaneStride(1);
+            uint32_t dest_width = client->getPlaneWidth(0);
+            uint32_t dest_height = client->getPlaneHeight(0);
+            LOG_MESSAGE("%s output %ux%u, y_stride %i, uv_stride %u, bpp %u, Y planeoffset %d",
+                __func__, dest_width, dest_height, y_stride, uv_stride, bpp, client->getPlaneBytes(0));
 
-        // write Y plane
-        for (int i = 0; i < height; i++) {
-            memcpy(dst, src, width);
+            // write Y plane
+            src += buffer_info->offset[0];
+            if (stride == y_stride) {
+                // Fast path: copy entire Y plane at once if strides match
+                memcpy(dst, src, stride * height);
 
-            dst += y_stride;
-            src += width;
-            read_bytes += width;
+                dst += y_stride * height;
+                src += stride * height;
+                read_bytes += height * width * bpp;
+            } else {
+                // Slow path: copy line by line if strides differ
+                for (int i = 0; i < height; i++) {
+                    memcpy(dst, src, width * bpp);
+
+                    dst += y_stride;
+                    src += stride;
+                    read_bytes += width * bpp;
+                }
+            }
+
+            // write UV plane
+            dst = dest + client->getPlaneBytes(0);
+            if (buffer_info->offset[1] > 0) {
+                src = buffer_info->data + buffer_info->offset[1];
+            }
+            if (stride_uv == uv_stride) {
+                // Fast path: copy entire uv plane at once if strides match
+                memcpy(dst, src, stride_uv * (height >> 1));
+
+                read_bytes += (height >> 1) * width * bpp;
+            } else {
+                // Slow path: copy line by line if strides differ
+                for (int i = 0; i < height / 2; i++) {
+                    memcpy(dst, src, width * bpp);
+
+                    dst += uv_stride;
+                    src += stride_uv;
+                    read_bytes += width * bpp;
+                }
+            }
+
+            LOG_MESSAGE("%s total read %u", __func__, read_bytes);
+            ret = TRUE;
+        } else {
+            LOG_ERROR("%s color fmt 0x%x not supported", __func__, color);
         }
-
-        // write UV plane
-        dst = dest + offset;
-        for (int i = 0; i < ((height + 1) >> 1); i++) {
-            memcpy(dst, src, width);
-
-            dst += uv_stride;
-            src += width;
-            read_bytes += width;
-        }
-        LOG_MESSAGE("%s total read %d", __func__, read_bytes);
-        ret = TRUE;
     }
 
     return ret;

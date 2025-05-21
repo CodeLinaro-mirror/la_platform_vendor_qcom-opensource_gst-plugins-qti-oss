@@ -109,6 +109,7 @@ public:
     int getPlaneHeight(int plane);
     int getPlaneWidth(int plane);
     int getPlaneStride(int plane);
+    PlaneInfo::color_format_type getPortColorFormat();
 
 protected:
     ConfigType mConfig; // Client config info

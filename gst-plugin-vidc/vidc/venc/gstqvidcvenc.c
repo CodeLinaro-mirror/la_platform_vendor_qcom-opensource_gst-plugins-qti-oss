@@ -1153,20 +1153,6 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
   GST_DEBUG_OBJECT (enc, "start config pool port %s",
       port == BUFFER_PORT_INPUT ? "in" : "out");
 
-  memset (&param, 0, sizeof (GstBufferPoolInitParam));
-
-  if (port == BUFFER_PORT_INPUT) {
-    param.info = enc->input_state->info;
-    param.info.size = size;
-    param.is_ubwc = enc->is_ubwc;
-    param.is_outport = FALSE;
-  } else {
-    param.info = enc->output_state->info;
-    param.info.size = size;
-    param.is_outport = TRUE;
-  }
-  param.mode = GST_QVIDC_DMABUF_HEAP_MODE;
-
   if (query) {
     gst_query_parse_allocation (query, &caps, NULL);
     GST_DEBUG_OBJECT (enc, "caps %" GST_PTR_FORMAT, caps);
@@ -1229,6 +1215,17 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
     GST_ERROR_OBJECT (enc, "external buffer mode for input");
     return TRUE;
   }
+
+  memset (&param, 0, sizeof (GstBufferPoolInitParam));
+  if (port == BUFFER_PORT_INPUT) {
+    param.info.size = size;
+    param.is_ubwc = enc->is_ubwc;
+    param.is_outport = FALSE;
+  } else {
+    param.info.size = size;
+    param.is_outport = TRUE;
+  }
+  param.mode = GST_QVIDC_DMABUF_HEAP_MODE;
 
   param.gst_vidc_comp = gst_vidc_comp_ref (enc->gst_vidc_comp);
   param.metasize = metasize;
@@ -1990,6 +1987,14 @@ gst_qvidc_venc_handle_frame (GstVideoEncoder * encoder,
     goto done;
   }
 
+  if (!enc->in_port_pool) {
+    if (!gst_qvidc_config_pool (encoder, NULL, BUFFER_PORT_INPUT)) {
+      GST_ERROR_OBJECT (enc, "failed to config pool in");
+      ret = GST_FLOW_ERROR;
+      goto done;
+    }
+  }
+
   GST_DEBUG ("Frame number : %d, pts: %" GST_TIME_FORMAT,
       frame->system_frame_number, GST_TIME_ARGS (frame->pts));
 
@@ -2698,9 +2703,9 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
         GST_DEBUG_OBJECT (enc, "mem data %p, size %d, maxsize %d, ubwc_flag %d",
             info.data, info.size, info.maxsize, inBuf.ubwc_flag);
         if (inBuf.ubwc_flag) {
-          memcpy (info.data, inBuf.data, info.size);
+          memcpy (info.data, inBuf.data, inBuf.size);
         } else {
-          if (!writePlane (enc->comp, info.data, inBuf.data)) {
+          if (!writePlane (enc->comp, info.data, &inBuf)) {
             ret = GST_FLOW_ERROR;
             gst_memory_unmap (inter_mem, &info);
             gst_buffer_unref (inter_buf);
