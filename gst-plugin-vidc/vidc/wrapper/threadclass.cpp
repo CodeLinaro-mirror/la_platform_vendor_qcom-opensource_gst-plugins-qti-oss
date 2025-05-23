@@ -40,16 +40,11 @@ ThreadClass::ThreadClass()
     mThreadEntryFcn = NULL;
 }
 
-// CameraCreateThread requires a static function as the
-// entry point.  Pass in the "this" pointer so we can
-// get back into the ThreadClass context.
 int ThreadClass::threadEntry(void* arg)
 {
     ThreadClass* thisPtr = (ThreadClass*)arg;
     if (thisPtr->mThreadEntryFcn) {
         thisPtr->mThreadEntryFcn();
-    } else {
-        thisPtr->run();
     }
 
     return 0;
@@ -60,8 +55,6 @@ void ThreadClass::start(
     uint32_t stackSize,
     int32_t priority)
 {
-    // OMX components need a stack bigger than the default
-    // size of 8K.  If they fail to load increase the stack size.
     MM_Thread_Create(
         priority,
         0,

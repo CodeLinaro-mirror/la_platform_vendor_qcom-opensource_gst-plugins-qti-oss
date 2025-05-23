@@ -279,8 +279,11 @@ gboolean qcarcam_handle_new_frame(GstQcarcamSrc *self, QCarCamFrameInfo_t *frame
   gboolean ret = FALSE;
   QCarCamFrameInfo_t *frame = (QCarCamFrameInfo_t *)malloc(sizeof(QCarCamFrameInfo_t));
   GST_ERROR_OBJECT(self,"enter self %p, frameinfo %p, frame %p", self, frame_info, frame);
-  memcpy (frame, frame_info, sizeof(QCarCamFrameInfo_t));
-  g_queue_push_tail(&self->buffers, frame);
+  if (frame) {
+    memcpy (frame, frame_info, sizeof(QCarCamFrameInfo_t));
+    g_queue_push_tail(&self->buffers, frame);
+    ret = TRUE;
+  }
   GST_ERROR_OBJECT(self,"exit self %p", self);
   return ret;
 
@@ -591,10 +594,10 @@ gst_qcarcam_src_buffer_dispose (GstBuffer * qcarcamsrcbuf)
 {
   gint i, idx = -1;
   GstMemory *mem;
-  GstQcarcamSrc *src;
+  GstQcarcamSrc *src = NULL;
   QCarCamRequest_t request = {};
   QCarCamStreamRequest_t* pStreamRequest = &request.streamRequests[0];
-  GST_LOG_OBJECT (src, "buffer %p", qcarcamsrcbuf);
+  GST_LOG ("buffer %p", qcarcamsrcbuf);
   gst_buffer_ref (qcarcamsrcbuf);
   DmaBufDesc *desc = gst_qcarcam_meta_get_desc(qcarcamsrcbuf);
   src = (GstQcarcamSrc*)(desc->ptr);
@@ -732,6 +735,10 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
        self->buffer_list.colorFmt = QCARCAM_FMT_NV12;
      self->buffer_list.flags    = QCARCAM_BUFFER_FLAG_OS_HNDL;
      qcarcam_dmabuf_alloc(&desc, info, self->is_ubwc);
+     if (!desc) {
+       GST_ERROR_OBJECT (self, "desc is null");
+       return FALSE;
+     }
      desc->ptr = self;
      memcpy(&self->desc[i], desc, sizeof(DmaBufDesc));
      *ainfo = *info;

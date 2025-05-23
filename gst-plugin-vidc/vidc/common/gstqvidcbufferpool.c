@@ -57,45 +57,6 @@ static GstFlowReturn
 _buffer_pool_add_buffer_to_table (GstBufferPool * bpool,
     GstBuffer * buffer, GstMemory * mem);
 
-GType
-gst_video_vidcbuf_meta_api_get_type (void)
-{
-  static GType type = 0;
-  static const gchar *tags[] = { GST_META_TAG_VIDEO_STR, NULL };
-
-  if (g_once_init_enter (&type)) {
-    GType _type = gst_meta_api_type_register ("GstVideoVIDCBufMetaAPI", tags);
-    g_once_init_leave (&type, _type);
-  }
-  return type;
-}
-
-static gboolean
-gst_video_vidcbuf_meta_init (GstMeta * meta, gpointer params,
-    GstBuffer * buffer)
-{
-  GstVideoVIDCBufMeta *vidcbuf_meta = (GstVideoVIDCBufMeta *) meta;
-  vidcbuf_meta->vidc_buf = NULL;
-
-  return TRUE;
-}
-
-const GstMetaInfo *
-gst_video_vidcbuf_meta_get_info (void)
-{
-  static const GstMetaInfo *video_vidcbuf_meta_info = NULL;
-
-  if (g_once_init_enter ((GstMetaInfo **) & video_vidcbuf_meta_info)) {
-    const GstMetaInfo *meta =
-        gst_meta_register (GST_VIDEO_VIDCBUF_META_API_TYPE,
-        "GstVideoVIDCBufMeta",
-        sizeof (GstVideoVIDCBufMeta),
-        (GstMetaInitFunction) gst_video_vidcbuf_meta_init, NULL, NULL);
-    g_once_init_leave ((GstMetaInfo **) & video_vidcbuf_meta_info,
-        (GstMetaInfo *) meta);
-  }
-  return video_vidcbuf_meta_info;
-}
 
 static void
 print_gst_buf (gpointer key, gpointer value, gpointer data)
@@ -106,16 +67,6 @@ print_gst_buf (gpointer key, gpointer value, gpointer data)
 static void
 gst_qvidc_buffer_pool_init (GstQvidcBufferPool * pool)
 {
-}
-
-static const gchar **
-gst_qvidc_buffer_pool_get_options (GstBufferPool * pool)
-{
-  static const gchar *options[] = { GST_BUFFER_POOL_OPTION_VIDEO_VIDCBUF_META,
-    NULL
-  };
-
-  return options;
 }
 
 static gboolean
@@ -296,18 +247,6 @@ gst_qvidc_buffer_pool_acquire_buffer (GstBufferPool * bpool,
 
   GST_DEBUG_OBJECT (pool, "enter");
   return _buffer_pool_acquire_buffer_wrap (bpool, buffer, params);
-}
-
-static void
-gst_qvidc_buffer_pool_free_buffer (GstBufferPool * bpool, GstBuffer * buffer)
-{
-  GstBufferPoolClass *bp_class = GST_BUFFER_POOL_CLASS (parent_class);
-  GstQvidcBufferPool *pool = GST_QVIDC_BUFFER_POOL_CAST (bpool);
-  GstMemory *mem = NULL;
-
-  GST_DEBUG_OBJECT (pool, "enter");
-
-  gst_buffer_unref (buffer);
 }
 
 static void
@@ -504,10 +443,8 @@ gst_qvidc_buffer_pool_class_init (GstQvidcBufferPoolClass * klass)
 
   gobj_class->finalize = gst_qvidc_buffer_pool_finalize;
 
-  bp_class->get_options = gst_qvidc_buffer_pool_get_options;
   bp_class->set_config = gst_qvidc_buffer_pool_set_config;
   bp_class->alloc_buffer = gst_qvidc_buffer_pool_alloc_buffer;
-  bp_class->free_buffer = gst_qvidc_buffer_pool_free_buffer;
   bp_class->acquire_buffer = gst_qvidc_buffer_pool_acquire_buffer;
   bp_class->release_buffer = gst_qvidc_buffer_pool_release_buffer;
 }

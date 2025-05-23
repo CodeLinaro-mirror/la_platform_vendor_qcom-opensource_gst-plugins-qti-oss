@@ -56,10 +56,6 @@ vidc_color_format_type PlaneInfo::convertToVidcFromInt(
     vidc_color_format_type vidc_color_fmt = VIDC_COLOR_FORMAT_UNUSED;
 
     switch (col_fmt) {
-    case COLOR_FORMAT_UYVY:
-        vidc_color_fmt = VIDC_COLOR_FORMAT_UYVY;
-        break;
-
     case COLOR_FORMAT_NV12:
         vidc_color_fmt = VIDC_COLOR_FORMAT_NV12;
         break;
@@ -80,64 +76,11 @@ vidc_color_format_type PlaneInfo::convertToVidcFromInt(
         vidc_color_fmt = VIDC_COLOR_FORMAT_NV12_P010;
         break;
 
-    case COLOR_FORMAT_RGBA8888:
-        vidc_color_fmt = VIDC_COLOR_FORMAT_RGBA8888;
-        break;
-
-    case COLOR_FORMAT_RGBA8888_UBWC:
-        vidc_color_fmt = VIDC_COLOR_FORMAT_RGBA8888_UBWC;
-        break;
-
     default:
         break;
     }
 
     return vidc_color_fmt;
-}
-
-PlaneInfo::color_format_type PlaneInfo::convertToIntFromVidc(
-    vidc_color_format_type vidc_color_fmt)
-{
-    color_format_type color_fmt = COLOR_FORMAT_UNUSED;
-
-    switch (vidc_color_fmt) {
-    case VIDC_COLOR_FORMAT_UYVY:
-        color_fmt = COLOR_FORMAT_UYVY;
-        break;
-
-    case VIDC_COLOR_FORMAT_NV12:
-        color_fmt = COLOR_FORMAT_NV12;
-        break;
-
-    case VIDC_COLOR_FORMAT_NV21:
-        color_fmt = COLOR_FORMAT_NV21;
-        break;
-
-    case VIDC_COLOR_FORMAT_NV12_UBWC:
-        color_fmt = COLOR_FORMAT_NV12_UBWC;
-        break;
-
-    case VIDC_COLOR_FORMAT_YUV420_TP10_UBWC:
-        color_fmt = COLOR_FORMAT_TP10_UBWC;
-        break;
-
-    case VIDC_COLOR_FORMAT_NV12_P010:
-        color_fmt = COLOR_FORMAT_P010;
-        break;
-
-    case VIDC_COLOR_FORMAT_RGBA8888:
-        color_fmt = COLOR_FORMAT_RGBA8888;
-        break;
-
-    case VIDC_COLOR_FORMAT_RGBA8888_UBWC:
-        color_fmt = COLOR_FORMAT_RGBA8888_UBWC;
-        break;
-
-    default:
-        break;
-    }
-
-    return color_fmt;
 }
 
 int PlaneInfo::computeBytes(
@@ -209,23 +152,6 @@ void PlaneInfo::setPlaneAttributes(
         compressed = true;
     }
     switch (vidcColorFormat) {
-    case VIDC_COLOR_FORMAT_RGB888:
-    case VIDC_COLOR_FORMAT_RGBA8888:
-    case VIDC_COLOR_FORMAT_RGBA8888_UBWC:
-        mPlaneCount = 1;
-        planedefColorFormat = PLANEDEF_FORMAT_RGBA8888;
-        if (vidcColorFormat == VIDC_COLOR_FORMAT_RGB888) {
-            planedefColorFormat = PLANEDEF_FORMAT_RGB888;
-        }
-        if (compressed) {
-            // Meta must be pushed first
-            planeIndex[0].push_back(PLANEDEF_META_PLANE_INDEX_RGB_UBWC);
-            planeIndex[0].push_back(PLANEDEF_PAYLOAD_PLANE_INDEX_RGB_UBWC);
-        } else {
-            planeIndex[0].push_back(PLANEDEF_PAYLOAD_PLANE_INDEX_RGB);
-        }
-        break;
-
     case VIDC_COLOR_FORMAT_NV12:
     case VIDC_COLOR_FORMAT_NV21:
     case VIDC_COLOR_FORMAT_NV12_UBWC:
@@ -333,39 +259,6 @@ void PlaneInfo::setPlaneAttributesInt(
         mPlane[1].bytes = mPlane[1].stride * uv_sclines;
         break;
 
-    case COLOR_FORMAT_UYVY:
-        mPlaneCount = 1;
-
-        mPlane[0].stride = BUFFER_ALIGN((mPlane[0].width * 2), 16);
-        mPlane[0].bytes = mPlane[0].stride * BUFFER_ALIGN(mPlane[0].height, LUMA_HEIGHT_ALIGN);
-        break;
-
-    case COLOR_FORMAT_UYVY10:
-        mPlaneCount = 1;
-
-        mPlane[0].stride = BUFFER_ALIGN((mPlane[0].width * 4), UYVY_STRIDE_ALIGN);
-        mPlane[0].bytes = mPlane[0].stride * BUFFER_ALIGN(mPlane[0].height, LUMA_HEIGHT_ALIGN);
-        mPlane[0].stride_multiples = UYVY_STRIDE_ALIGN;
-        mPlane[0].height_multiples = LUMA_HEIGHT_ALIGN;
-
-        break;
-        /*
-      case YUV semiplanar:
-         // Y and UV planes are separate
-         mPlaneCount = 2;
-         mPlane[1].width  = width;
-         mPlane[1].height = height / 2;
-         break;
-
-      case YUV planar:
-         // Y, U and V planes are separate
-         mPlaneCount = 3;
-         mPlane[1].width  = width / 2;
-         mPlane[2].width  = width / 2;
-         mPlane[1].height = height / 2;
-         mPlane[2].height = height / 2;
-         break;
-*/
     default:
         MM_ERROR_MSG("PlaneInfo::setPlaneAttributesInt unsupported VIDC color format 0x%X", pixelFormat);
         break;

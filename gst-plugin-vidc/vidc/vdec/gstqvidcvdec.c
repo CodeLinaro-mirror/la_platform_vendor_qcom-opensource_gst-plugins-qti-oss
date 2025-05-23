@@ -123,12 +123,9 @@ static const ElementInfo kDECODER_ELEMENTS[] = {
 enum
 {
   PROP_0,
-  PROP_SILENT,
   PROP_OUTPUT_PICTURE_ORDER,
   PROP_LOW_LATENCY,
-  PROP_SECURE,
   PROP_USE_EXTERNAL_POOL,
-  PROP_RELEASE_INPUT,
 };
 
 /* GstVideoDecoder base class method */
@@ -971,6 +968,8 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
   GPtrArray *config = NULL;
   ConfigParams codectype;
   ConfigParams resolution;
+  ConfigParams output_picture_order_mode;
+  ConfigParams low_latency_mode;
   ConfigParams frame_rate;
   GstVideoInfo input_info;
   gfloat fps = COMMON_FRAMERATE;
@@ -1041,6 +1040,17 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
   resolution = make_resolution_param (width, height, TRUE);
   g_ptr_array_add (config, &resolution);
+
+  if (dec->output_picture_order_mode != DEFAULT_OUTPUT_PICTURE_ORDER_MODE) {
+    output_picture_order_mode =
+        make_output_picture_order_param (dec->output_picture_order_mode);
+    g_ptr_array_add (config, &output_picture_order_mode);
+  }
+
+  if (dec->low_latency_mode) {
+    low_latency_mode = make_low_latency_param (dec->low_latency_mode);
+    g_ptr_array_add (config, &low_latency_mode);
+  }
 
   if (input_info.fps_n != 0 && input_info.fps_d != 0) {
     fps = (float) input_info.fps_n / input_info.fps_d;
@@ -1828,23 +1838,14 @@ gst_qvidc_vdec_set_property (GObject * object, guint prop_id,
   GST_DEBUG_OBJECT (dec, "qvidc_vdec_set_property");
 
   switch (prop_id) {
-    case PROP_SILENT:
-      dec->silent = g_value_get_boolean (value);
-      break;
     case PROP_OUTPUT_PICTURE_ORDER:
       dec->output_picture_order_mode = g_value_get_uint (value);
       break;
     case PROP_LOW_LATENCY:
       dec->low_latency_mode = g_value_get_boolean (value);
       break;
-    case PROP_SECURE:
-      dec->secure = g_value_get_boolean (value);
-      break;
     case PROP_USE_EXTERNAL_POOL:
       dec->use_external_buf = g_value_get_boolean (value);
-      break;
-    case PROP_RELEASE_INPUT:
-      dec->release_input_buf = g_value_get_boolean (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1861,23 +1862,14 @@ gst_qvidc_vdec_get_property (GObject * object, guint prop_id, GValue * value,
   GST_DEBUG_OBJECT (dec, "qvidc_vdec_get_property");
 
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean (value, dec->silent);
-      break;
     case PROP_OUTPUT_PICTURE_ORDER:
       g_value_set_uint (value, dec->output_picture_order_mode);
       break;
     case PROP_LOW_LATENCY:
       g_value_set_boolean (value, dec->low_latency_mode);
       break;
-    case PROP_SECURE:
-      g_value_set_boolean (value, dec->secure);
-      break;
     case PROP_USE_EXTERNAL_POOL:
       g_value_set_boolean (value, dec->use_external_buf);
-      break;
-    case PROP_RELEASE_INPUT:
-      g_value_set_boolean (value, dec->release_input_buf);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -2011,10 +2003,6 @@ gst_qvidc_vdec_class_init (GstQvidcVdecClass * klass)
   gobject_class->finalize = gst_qvidc_vdec_finalize;
 
   /* Add property to this class */
-  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SILENT,
-      g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
-          FALSE, G_PARAM_READWRITE));
-
   g_object_class_install_property (G_OBJECT_CLASS (klass),
       PROP_OUTPUT_PICTURE_ORDER, g_param_spec_uint ("output-picture-order-mode",
           "output picture order mode",
@@ -2030,27 +2018,12 @@ gst_qvidc_vdec_class_init (GstQvidcVdecClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
-  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SECURE,
-      g_param_spec_boolean ("secure", "secure mode",
-          "If enabled, decoder should be in secure mode. Secure mode only support UBWC output "
-          "For any secure cases, output is forced to set UBWC",
-          DEFAULT_SECURE_MODE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
-          GST_PARAM_MUTABLE_READY));
-
   g_object_class_install_property (G_OBJECT_CLASS (klass),
       PROP_USE_EXTERNAL_POOL, g_param_spec_boolean ("use-external-pool",
           "if allow using external pool",
           "If enabled, decoder will use external buffer pool if supported by downstream.",
           DEFAULT_USE_EXTERNAL_POOL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (G_OBJECT_CLASS (klass),
-      PROP_RELEASE_INPUT, g_param_spec_boolean ("release-input-buf",
-          "whether to release the input buffer after use",
-          "If enabled, decoder will copy and release the input buffer, "
-          "which can avoid holding too many input buffers",
-          DEFAULT_RELEASE_INPUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   video_decoder_class->set_format =
       GST_DEBUG_FUNCPTR (gst_qvidc_vdec_set_format);
@@ -2063,6 +2036,10 @@ gst_qvidc_vdec_class_init (GstQvidcVdecClass * klass)
   video_decoder_class->flush = GST_DEBUG_FUNCPTR (gst_qvidc_vdec_flush);
   video_decoder_class->decide_allocation =
       GST_DEBUG_FUNCPTR (gst_qvidc_vdec_decide_allocation);
+  video_decoder_class->src_event =
+      GST_DEBUG_FUNCPTR (gst_qvidc_vdec_src_event);
+  video_decoder_class->sink_event =
+      GST_DEBUG_FUNCPTR (gst_qvidc_vdec_sink_event);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
       "vidc decoder", "Decoder/Video",
@@ -2088,7 +2065,6 @@ gst_qvidc_vdec_init (GstQvidcVdec * dec)
   dec->set_gstbuf_interlace_flag = DEFAULT_SET_GSTBUF_INTERLACE_FLAG;
   dec->use_external_buf = DEFAULT_USE_EXTERNAL_POOL;
   dec->is_flushing = FALSE;
-  dec->release_input_buf = DEFAULT_RELEASE_INPUT;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);
