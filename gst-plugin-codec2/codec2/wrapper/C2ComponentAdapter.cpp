@@ -76,7 +76,7 @@ static void s_releaseExtBuf (void *comp, int32_t extFd)
     reinterpret_cast<C2ComponentAdapter*>(comp)->releaseExtBuf(extFd);
 }
 
-C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
+C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp):mInPendingBuffer(),mOutPendingBuffer(),mTrackBuffers()
 {
 
     LOG_MESSAGE("Component(%p) created", this);
