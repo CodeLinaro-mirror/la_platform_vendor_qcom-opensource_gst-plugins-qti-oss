@@ -42,12 +42,18 @@ GST_DEBUG_CATEGORY (gst_qcarcam_src_debug);
 #define QCARCAMSRC_MIN_BUFFERS 3
 #define QCARCAMSRC_BUFFERS (QCARCAMSRC_MIN_BUFFERS + 3)
 #define DEFAULT_PROP_INPUT 0
+#define DEFAULT_PROP_USECASE 0xffffffff
+#define DEFAULT_PROP_BUFFERLIST 0xffffffff
+#define DEFAULT_PROP_MODE 0xffffffff
 #define DEFALUT_WAIT_TIME 2 //2 seconds
 
 enum
 {
   PROP_0,
   PROP_INPUT,
+  PROP_USECASE,
+  PROP_BUFFERLIST,
+  PROP_MODE,
 };
 
 #define SRC_FORMATS "{" \
@@ -110,6 +116,15 @@ gst_qcarcam_src_class_init (GstQcarcamSrcClass * klass)
   g_object_class_install_property (object_class, PROP_INPUT,
     g_param_spec_uint ("input", "Input", "The input of QCarCam", 0, G_MAXUINT,
     DEFAULT_PROP_INPUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_USECASE,
+    g_param_spec_uint ("usecase", "Usecase", "The usecase id of QCarCam", 0, G_MAXUINT,
+    DEFAULT_PROP_USECASE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_BUFFERLIST,
+    g_param_spec_uint ("bufferlist", "Bufferlist", "The bufferlist id of QCarCam", 0, G_MAXUINT,
+    DEFAULT_PROP_BUFFERLIST, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (object_class, PROP_MODE,
+    g_param_spec_uint ("mode", "Mode", "The mode id of QCarCam", 0, G_MAXUINT,
+    DEFAULT_PROP_MODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_set_static_metadata (element_class,
     "Qualcomm Technologies Inc gstreamer qcarqcam source",
@@ -138,6 +153,10 @@ gst_qcarcam_src_init (GstQcarcamSrc * qcarcamsrc)
   qcarcamsrc->is_ubwc = FALSE;
   qcarcamsrc->started = FALSE;
   qcarcamsrc->request_id = 0;
+  qcarcamsrc->input_id = DEFAULT_PROP_INPUT;
+  qcarcamsrc->usecase = DEFAULT_PROP_USECASE;
+  qcarcamsrc->bufferlist = DEFAULT_PROP_BUFFERLIST;
+  qcarcamsrc->mode_id = DEFAULT_PROP_MODE;
   qcarcamsrc->allocator = gst_dmabuf_allocator_new ();
   g_mutex_init (&qcarcamsrc->lock);
   g_mutex_init (&qcarcamsrc->buf_lock);
@@ -182,6 +201,15 @@ gst_qcarcam_src_set_property (GObject * object, guint prop_id,
     case PROP_INPUT:
       qcarcamsrc->input_id = g_value_get_uint (value);
       break;
+    case PROP_USECASE:
+      qcarcamsrc->usecase = g_value_get_uint (value);
+      break;
+    case PROP_BUFFERLIST:
+      qcarcamsrc->bufferlist = g_value_get_uint (value);
+      break;
+    case PROP_MODE:
+      qcarcamsrc->mode_id = g_value_get_uint (value);
+      break;
 
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -200,6 +228,15 @@ gst_qcarcam_src_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_INPUT:
       g_value_set_uint (value, qcarcamsrc->input_id);
+      break;
+    case PROP_USECASE:
+      g_value_set_uint (value, qcarcamsrc->usecase);
+      break;
+    case PROP_BUFFERLIST:
+      g_value_set_uint (value, qcarcamsrc->bufferlist);
+      break;
+    case PROP_MODE:
+      g_value_set_uint (value, qcarcamsrc->mode_id);
       break;
 
     default:
@@ -435,6 +472,7 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   gboolean ret = FALSE;
   char tips[39];
   unsigned int num_inputs = 0;
+  uint32_t mode_id = 0;
   QCarCamInput_t *inputs;
   QCarCamOpen_t openParams = {};
   uint32_t param = 0;
@@ -488,19 +526,25 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   querymodes.pModes = modes;
 
   ret = qcarcamqcx_query_input_modes(qcarcamsrc->input_id, &querymodes);
-  if (!ret || modes[querymodes.currentMode].numSources > QCARCAM_INPUT_MAX_NUM_SOURCES) {
+  if (qcarcamsrc->mode_id != DEFAULT_PROP_MODE) {
+    mode_id = qcarcamsrc->mode_id;
+  } else {
+    mode_id = querymodes.currentMode;
+  }
+  GST_INFO_OBJECT (qcarcamsrc, "mode id is %d, property mode id %d", mode_id, qcarcamsrc->mode_id);
+  if (!ret || modes[mode_id].numSources > QCARCAM_INPUT_MAX_NUM_SOURCES) {
     GST_ERROR_OBJECT(qcarcamsrc, "qcarcamsrc query input mode failed %d", ret);
     goto error_free_modes;
   }
-  memcpy(&qcarcamsrc->source, &(modes[querymodes.currentMode].sources[0]), sizeof(QCarCamInputSrc_t));
- 
+  memcpy(&qcarcamsrc->source, &(modes[mode_id].sources[0]), sizeof(QCarCamInputSrc_t));
+
   GST_DEBUG_OBJECT (qcarcamsrc,"will open qcarcam qcarcamsrc->input_id %d", qcarcamsrc->input_id);
   kpi_place_marker("M - qcarcamsrc will open qcarcam");
   openParams.opMode = QCARCAM_OPMODE_ISP;
   openParams.numInputs = 1;
   openParams.inputs[0].inputId = qcarcamsrc->input_id;
   openParams.inputs[0].srcId = 0;
-  openParams.inputs[0].inputMode = querymodes.currentMode;
+  openParams.inputs[0].inputMode = mode_id;
   openParams.flags |= QCARCAM_OPEN_FLAGS_REQUEST_MODE;
   ret = qcarcamqcx_open(&openParams, &qcarcamsrc->hndl);
   if (!ret || qcarcamsrc->hndl == QCARCAM_HNDL_INVALID) {
@@ -523,6 +567,9 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
 #else
   qcarcamsrc->isp_config.usecaseId = 64;
 #endif
+  if (qcarcamsrc->usecase != DEFAULT_PROP_USECASE)
+    qcarcamsrc->isp_config.usecaseId = qcarcamsrc->usecase;
+  GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc usecase id %d, property usecase id %d", qcarcamsrc->isp_config.usecaseId, qcarcamsrc->usecase);
   ret = qcarcamqcx_setparam(qcarcamsrc->hndl,
                   QCARCAM_STREAM_CONFIG_PARAM_ISP_USECASE,
                   &qcarcamsrc->isp_config,
@@ -624,11 +671,8 @@ gst_qcarcam_src_buffer_dispose (GstBuffer * qcarcamsrcbuf)
   if (G_LIKELY (idx != -1) && src->started) {
     request.requestId = src->request_id++;
     request.numStreamRequests = 1;
-#ifndef _ENABLE_UMD_
-    pStreamRequest->bufferlistId = 0;
-#else
-    pStreamRequest->bufferlistId = 1;
-#endif
+    pStreamRequest->bufferlistId = src->buffer_list.id;
+    GST_INFO_OBJECT (src, "gst_qcarcam_src_buffer_dispose request bufferlist id %d", pStreamRequest->bufferlistId);
     pStreamRequest->bufferIdx = idx;
     qcarcamqcx_submit_request(src->hndl, &request);
   }
@@ -730,6 +774,9 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
 #ifdef _ENABLE_UMD_
   self->buffer_list.id = 1;
 #endif
+  if (self->bufferlist != DEFAULT_PROP_BUFFERLIST)
+    self->buffer_list.id = self->bufferlist;
+  GST_INFO_OBJECT (self, "bufferlist id %d, property bufferlist id %d", self->buffer_list.id, self->bufferlist);
   for (int i = 0; i < min; i++)
   {
      self->buffer_list.nBuffers = min;
@@ -817,11 +864,8 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
     request.requestId = self->request_id++;
     request.numStreamRequests = 1;
     QCarCamStreamRequest_t* pStreamRequest = &request.streamRequests[0];
-#ifndef _ENABLE_UMD_
-    pStreamRequest->bufferlistId = 0;
-#else
-    pStreamRequest->bufferlistId = 1;
-#endif
+    pStreamRequest->bufferlistId = self->buffer_list.id;
+    GST_INFO_OBJECT (self, "request bufferlist id %d", pStreamRequest->bufferlistId);
     pStreamRequest->bufferIdx = i;
     qcarcamqcx_submit_request(self->hndl, &request);
   }
