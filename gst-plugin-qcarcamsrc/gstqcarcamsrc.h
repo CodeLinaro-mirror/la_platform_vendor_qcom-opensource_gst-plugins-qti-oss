@@ -47,6 +47,8 @@ struct _GstQcarcamSrc
   gboolean started;
   QCarCamEventCallback_t callback;
   uint32_t input_id;
+  uint32_t usecase;
+  uint32_t bufferlist;
   uint32_t mode_id;
   LOG_HEARTBEAT_CTX logbeat;
   QCarCamInput_t input;
