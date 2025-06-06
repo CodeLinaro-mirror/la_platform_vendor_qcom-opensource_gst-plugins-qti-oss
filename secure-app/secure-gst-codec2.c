@@ -39,8 +39,8 @@
 #define strlcpy g_strlcpy
 Crypto* crypto = NULL;
 
-int secure_copy (int dstbuf_fd, void* srcbuf, uint32_t* pdatalen, void* param) {
-  SecureCopyResult ret = crypto_copy (crypto, SECURE_COPY_NONSECURE_TO_SECURE, srcbuf, dstbuf_fd, pdatalen);
+int secure_copy (int dstbuf_fd, void* srcbuf, unsigned int* pdatalen, void* param) {
+  int ret = crypto_copy (crypto, SECURE_COPY_NONSECURE_TO_SECURE, srcbuf, dstbuf_fd, pdatalen);
   if (ret != SECURE_COPY_SUCCESS) {
     g_error ("secure copy failed, ret:%d dstbuf_fd:%d srcbuf:%p datalen:%d param:%p",
              ret, dstbuf_fd, srcbuf, *pdatalen, param);

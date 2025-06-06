@@ -29,7 +29,8 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /*
  * Changes from Qualcomm Innovation Center, Inc. are provided under the following license:
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * All Rights Reserved.
  * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -46,6 +47,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ion/ion.h>
 #include <sys/mman.h>
 #include <linux/dma-buf.h>
+#include "OMX_Core.h"
 #include "crypto.h"
 #include <sys/syscall.h>
 #include <gst/allocators/gstfdmemory.h>
