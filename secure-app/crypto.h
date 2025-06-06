@@ -30,7 +30,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef _CRYPTO_H
 #define _CRYPTO_H
 
-#include <stdint.h>
 #include <gst/gst.h>
 
 struct secure_handle {
@@ -61,11 +60,12 @@ typedef enum SecureCopyDir {
   SECURE_COPY_INVALID_DIR
 } SecureCopyDir;
 
+
 typedef SecureCopyResult(*Crypto_Set_AppName)(const char *name);
 typedef SecureCopyResult(*Crypto_Init)(struct secure_handle **);
 typedef SecureCopyResult(*Crypto_Deinit)(struct secure_handle **);
 typedef SecureCopyResult(*Crypto_Copy)(struct secure_handle *,
-        uint8_t*, const uint32_t, uint32_t, uint32_t, uint32_t *, SecureCopyDir);
+        unsigned char*, const unsigned int, unsigned int, unsigned int, unsigned int*, SecureCopyDir);
 
 typedef struct secure_handle secure_handle;
 
@@ -78,10 +78,13 @@ typedef struct Crypto {
     Crypto_Copy m_crypto_copy;
 } Crypto;
 
-SecureCopyResult crypto_init(Crypto *crypto);
-SecureCopyResult crypto_deinit(Crypto *crypto);
-SecureCopyResult crypto_terminate(Crypto *crypto);
-SecureCopyResult crypto_copy(Crypto *crypto, SecureCopyDir eCopyDir,
-    uint8_t* pBuffer, unsigned long nBufferFd, uint32_t* pBufferSize);
+//Return 0 means ok. Return positive value, that value is SecureCopyResult enum. Return -1 means bad par error. Return -2 means undefined error.
+int crypto_init(Crypto *crypto);
+int crypto_deinit(Crypto *crypto);
+int crypto_terminate(Crypto *crypto);
+int crypto_copy(Crypto *crypto, SecureCopyDir eCopyDir,
+    unsigned char *pBuffer, unsigned long nBufferFd, unsigned int *pBufferSize);
+
+
 
 #endif //#ifndef _CRYPTO_H
