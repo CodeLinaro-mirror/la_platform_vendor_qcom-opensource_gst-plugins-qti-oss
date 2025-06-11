@@ -76,7 +76,9 @@ static void s_releaseExtBuf (void *comp, int32_t extFd)
     reinterpret_cast<C2ComponentAdapter*>(comp)->releaseExtBuf(extFd);
 }
 
-C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp)
+C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp):mStore(),
+mInPendingBuffer(),mOutPendingBuffer(),mTrackBuffers(),
+mLock(),mLockOut(),mPendingWorkCond()
 {
 
     LOG_MESSAGE("Component(%p) created", this);
@@ -156,7 +158,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
     uint8_t* dst = dest;
     uint8_t* src = buffer_info->data;
 
-    if (dst == nullptr || src == nullptr) {
+    if (!dst || !src) {
         LOG_ERROR("Inavlid buffer in writePlane(%p)", this);
         return C2_BAD_VALUE;
     }
@@ -281,7 +283,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
     uint32_t dim_x = buffer->width;
     uint32_t dim_y = buffer->height;
 
-    if (rawBuffer == nullptr) {
+    if (!rawBuffer) {
         LOG_ERROR("Inavlid buffer in prepareC2Buffer(%p)", this);
         result = C2_BAD_VALUE;
     } else {
@@ -449,7 +451,7 @@ void C2ComponentAdapter::registerTrackBuffer(const C2FrameData& input)
 
     for (size_t i = 0; i < input.buffers.size(); ++i) {
         TrackBuffer* trackbuf = new TrackBuffer(this, frameIndex, input.buffers[i]);
-        if (trackbuf != nullptr) {
+        if (trackbuf) {
             c2_status_t status = input.buffers[i]->registerOnDestroyNotify(
                 onDestroyNotify, trackbuf);
 
@@ -639,12 +641,12 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
             ret = mGraphicPool->fetchGraphicBlock(dim_x, dim_y,
                 gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphicBlock);
 
-            if (ret != C2_OK || graphicBlock == nullptr) {
+            if (ret != C2_OK || !graphicBlock) {
                 LOG_ERROR("Graphic pool failed to allocate input buffer");
                 ret = C2_NO_MEMORY;
             } else {
                 const C2Handle* handle = graphicBlock->handle();
-                if (nullptr == handle) {
+                if (!handle) {
                     LOG_ERROR("C2GraphicBlock's C2 handle is invalid");
                     ret = C2_CORRUPTED;
                 } else {
@@ -846,7 +848,7 @@ c2_status_t C2ComponentAdapter::start()
 
     auto ret = mComp->start();
 #ifdef USE_AGL_C2SERVICE
-    if(!mIC2AllocatorGBM) {
+    if(!mIC2AllocatorGBM && intf()) {
         C2String name = intf()->getName();
         auto isDecoder = name.find("decoder") != std::string::npos;
         if (isDecoder) {
@@ -931,12 +933,12 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
 
     if (poolType == C2BlockPool::BASIC_LINEAR) {
         ret = android::CreateCodec2BlockPool(C2AllocatorStore::DEFAULT_LINEAR, mComp, &mLinearPool);
-        if (ret != C2_OK || mLinearPool == nullptr) {
+        if (ret != C2_OK || !mLinearPool) {
             return ret;
         }
         uint64_t local_id = mLinearPool->getLocalId();
         android::GetCodec2BlockPoolWithAllocator(local_id, mComp, &pool, &allocator);
-        if (allocator == nullptr) {
+        if (!allocator) {
             LOG_ERROR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else {
@@ -944,15 +946,15 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         }
     } else if (poolType == C2BlockPool::BASIC_GRAPHIC) {
         ret = android::CreateCodec2BlockPool(C2AllocatorStore::DEFAULT_GRAPHIC, mComp, &mGraphicPool);
-        if (ret != C2_OK || mGraphicPool == nullptr) {
+        if (ret != C2_OK || !mGraphicPool) {
             return ret;
         }
         uint64_t local_id = mGraphicPool->getLocalId();
         android::GetCodec2BlockPoolWithAllocator(local_id, mComp, &pool, &allocator);
-        if (allocator == nullptr) {
+        if (!allocator) {
             LOG_ERROR("Failed to get allocator");
             ret = C2_NOT_FOUND;
-        } else {
+        } else if (intf()) {
             C2String name = intf()->getName();
             auto isDecoder = name.find("decoder") != std::string::npos;
             if (!(isDecoder && mUseAglC2Service)) {
@@ -1074,7 +1076,7 @@ void C2ComponentAdapter::printHDRStaticInfo(const C2StreamHdrStaticInfo::output&
 
 void C2ComponentAdapter::paramHelper(const std::shared_ptr<C2Buffer>& buffer, uint64_t index)
 {
-    if (nullptr == buffer) {
+    if (!buffer) {
         return;
     }
 
@@ -1129,7 +1131,7 @@ void C2ComponentAdapter::handleWorkDone(
             worklet->output.configUpdate.pop_back();
             switch (param->coreIndex().coreIndex()) {
             case C2PortActualDelayTuning::CORE_INDEX: {
-                if (param->forOutput()) {
+                if (param->forOutput() && intf()) {
                     C2PortActualDelayTuning::output outputDelay;
                     C2String name = intf()->getName();
                     bool isDecoder = name.find("decoder") != std::string::npos;
@@ -1375,7 +1377,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     linearHandle = new android::C2HandleIon(dup_fd, alignSize);
 #endif
 
-    if (nullptr == mC2LinearAllocator || nullptr == linearHandle) {
+    if (!mC2LinearAllocator || !linearHandle) {
         LOG_ERROR("Invalid mC2LinearAllocator or linearHandle");
         need_release = true;
         qcodec2_close_fd(dup_fd);
@@ -1390,7 +1392,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
         goto do_exit;
     }
     linearBlock = _C2BlockFactory::CreateLinearBlock(allocation);
-    if (linearBlock == nullptr) {
+    if (!linearBlock) {
         LOG_ERROR("Failed to CreateLinearBlock");
         result = C2_NO_MEMORY;
         goto do_exit;

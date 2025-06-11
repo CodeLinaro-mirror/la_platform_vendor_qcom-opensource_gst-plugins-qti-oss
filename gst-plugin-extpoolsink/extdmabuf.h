@@ -1,0 +1,46 @@
+// Copyright (c) 2022, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+#ifndef __GBM_DMABUF_H__
+#define __GBM_DMABUF_H__
+
+#include <gst/gst.h>
+#include <gst/video/video.h>
+
+#include <unistd.h>
+#include <string.h>
+
+// to catch the issue of fd already closed
+#define ext_close_fd(fd) do {                                         \
+  if (fd >= 0) {                                                         \
+    int r = close (fd);                                                   \
+    if (r != 0) {                                                        \
+      int e = errno;                                                     \
+      GST_ERROR ("close(fd %d), ret %d, error: %s", fd, r, strerror(e));  \
+    }                                                                    \
+  }                                                                      \
+} while (0)
+
+/* DmaBufDesc is opaque to user. */
+#ifdef USE_GBM
+typedef struct gbm_buf_desc DmaBufDesc;
+#else
+typedef struct dma_heap_allocation_data DmaBufDesc;
+#endif
+
+gboolean ext_dmabuf_load_libs_once (void);
+
+gboolean ext_dmabuf_alloc (DmaBufDesc ** desc,
+    const GstVideoInfo * info, gboolean ubwc);
+
+gint ext_dmabuf_get_fd (const DmaBufDesc * desc);
+
+gsize ext_dmabuf_get_size (const DmaBufDesc * desc);
+
+guint64 ext_dmabuf_get_modifier (const DmaBufDesc * desc);
+
+void ext_dmabuf_align_info (const DmaBufDesc * desc, GstVideoInfo * info);
+
+void ext_dmabuf_free (DmaBufDesc * desc);
+
+#endif /* __GBM_DMABUF_H__ */

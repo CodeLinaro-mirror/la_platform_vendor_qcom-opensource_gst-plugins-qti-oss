@@ -1,0 +1,105 @@
+/*
+* Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted (subject to the limitations in the
+* disclaimer below) provided that the following conditions are met:
+*
+*     * Redistributions of source code must retain the above copyright
+*       notice, this list of conditions and the following disclaimer.
+*
+*     * Redistributions in binary form must reproduce the above
+*       copyright notice, this list of conditions and the following
+*       disclaimer in the documentation and/or other materials provided
+*       with the distribution.
+*
+*     * Neither the name of Qualcomm Innovation Center, Inc. nor the names of its
+*       contributors may be used to endorse or promote products derived
+*       from this software without specific prior written permission.
+*
+* NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE
+* GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT
+* HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+* WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+* MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+* IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+* ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+* GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+* IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+* OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+* IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+
+#ifndef __GST_QVIDCBUFFERPOOL_H__
+#define __GST_QVIDCBUFFERPOOL_H__
+
+#include <gst/gst.h>
+#include <gst/video/video.h>
+#include <gst/video/gstvideodecoder.h>
+#include <gst/video/gstvideopool.h>
+#include <gst/allocators/allocators.h>
+#include <gst/allocators/gstdmabuf.h>
+#include "gstqvidcutils.h"
+#include "gstqvidcallocator.h"
+
+G_BEGIN_DECLS
+/* buffer pool functions */
+#define GST_TYPE_QVIDC_BUFFER_POOL      (gst_qvidc_buffer_pool_get_type())
+#define GST_IS_QVIDC_BUFFER_POOL(obj)   (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_QVIDC_BUFFER_POOL))
+#define GST_QVIDC_BUFFER_POOL(obj)      (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_QVIDC_BUFFER_POOL, GstQvidcBufferPool))
+#define GST_QVIDC_BUFFER_POOL_CAST(obj) ((GstQvidcBufferPool*)(obj))
+typedef struct _GstQvidcBufferPool GstQvidcBufferPool;
+typedef struct _GstQvidcBufferPoolClass GstQvidcBufferPoolClass;
+typedef struct _GstBufferPoolInitParam GstBufferPoolInitParam;
+
+#define GST_BUFFER_POOL_OPTION_VIDEO_VIDCBUF_META "GstVideoVIDCBufMeta"
+
+struct _GstBufferPoolInitParam
+{
+  GstBufferPool *ext_pool;
+  GstVideoInfo info;
+  GstVIDCComp *gst_vidc_comp;
+  gboolean is_ubwc;
+  gboolean is_outport;
+  gboolean is_ext_pool;
+  GstQvidcAllocMode mode;
+};
+
+struct _GstQvidcBufferPool
+{
+  GstBufferPool bufferpool;
+  GstAllocator *allocator;
+  gboolean add_vidcbufmeta;
+  GHashTable *buffer_table;
+  GQueue pending_buffers;
+
+  GstBufferPoolInitParam param;
+  GMutex buflock;
+};
+
+struct _GstQvidcBufferPoolClass
+{
+  GstBufferPoolClass parent_class;
+};
+
+typedef struct GstBufferPoolAcquireParamsExt
+{
+  GstBufferPoolAcquireParams params;
+  gint32 fd;
+  gint32 meta_fd;
+  guint64 index;
+  guint32 size;
+  void *vidc_buf;
+} GstBufferPoolAcquireParamsExt;
+
+GType gst_qvidc_buffer_pool_get_type (void);
+GstBufferPool *gst_qvidc_buffer_pool_new (GstBufferPoolInitParam * param);
+
+GstBuffer *gst_qvidc_buffer_pool_find_buffer (GstBufferPool * bpool,
+    gint64 key);
+
+G_END_DECLS
+#endif /* __GST_QVIDCBUFFERPOOL_H__ */

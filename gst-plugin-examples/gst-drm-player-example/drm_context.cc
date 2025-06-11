@@ -21,10 +21,6 @@
 #define LA_URL                 "https://test.playready.microsoft.com/service/" \
     "rightsmanager.asmx?cfg=(securestop:false,persist:false,sl:150)"
 
-// To be obtained and specified post Widevine license agreement.
-#define CDM_PROV_URL           ""
-#define CDM_LIC_URL            ""
-
 const std::string kProductName = "DRMPlayer";
 const std::string kCompanyName = "QTI";
 const std::string kModelName   = "QRB5165";
@@ -334,6 +330,7 @@ WidevineContext::FetchProvisioningResponse (std::string request)
 {
   struct curl_slist *http_header = NULL;
   gchar *url = NULL;
+  gchar *prov_url = NULL;
   gchar *req_buf = NULL;
   std::string response;
   size_t req_buf_size;
@@ -341,7 +338,14 @@ WidevineContext::FetchProvisioningResponse (std::string request)
   req_buf_size = request.length();
   req_buf = g_strndup (request.c_str(), req_buf_size);
 
-  url = g_strconcat ((const gchar *) CDM_PROV_URL, req_buf, NULL);
+  prov_url = std::getenv ("CDM_PROV_URL");
+  if (prov_url == NULL || strlen (prov_url) == 0) {
+    g_printerr ("ERROR: the Widevine provisioning URL is NULL\n");
+    g_free (req_buf);
+    return "";
+  }
+
+  url = g_strconcat ((const gchar *) prov_url, req_buf, NULL);
 
   http_header = curl_slist_append (http_header, "Host: www.googleapis.com");
   http_header = curl_slist_append (http_header, "Connection: close");
@@ -349,7 +353,7 @@ WidevineContext::FetchProvisioningResponse (std::string request)
 
   if (perform_curl (url, http_header, &req_buf, &req_buf_size) != 0) {
     g_free (url);
-    return nullptr;
+    return "";
   }
 
   response.assign (req_buf, req_buf + req_buf_size);
@@ -367,7 +371,7 @@ WidevineContext::InitSession ()
 
   // Initialize the CDM Library.
   if ((status = widevine::Cdm::initialize (widevine::Cdm::kOpaqueHandle,
-      storage_impl, clock_impl, timer_impl, widevine::Cdm::kErrors))
+      storage_impl, clock_impl, timer_impl, &stderr_logger, widevine::Cdm::kErrors))
       != widevine::Cdm::kSuccess) {
     g_printerr ("ERROR: Couldn't initialize the CDM Library! \n");
     return status;
@@ -427,8 +431,10 @@ WidevineContext::CreateLicenseRequest ()
 
   // Decode base64 encoded Widevine object.
   decoded_str = g_base64_decode (init_data_, &out_len);
-  wv_header.assign (decoded_str, decoded_str + out_len);
-  g_free (decoded_str);
+  if (decoded_str) {
+    wv_header.assign (decoded_str, decoded_str + out_len);
+    g_free (decoded_str);
+  }
 
   if ((status = cdm_->generateRequest (session_id_, widevine::Cdm::kCenc, wv_header)) !=
       widevine::Cdm::kSuccess) {
@@ -453,9 +459,15 @@ gint
 WidevineContext::FetchLicense ()
 {
   struct curl_slist *http_header = NULL;
-  gchar *url = (gchar *) CDM_LIC_URL;
+  gchar *lic_url = NULL;
   gchar *req_buf = NULL;
   size_t req_buf_size;
+
+  lic_url = std::getenv ("CDM_LIC_URL");
+  if (lic_url == NULL || strlen (lic_url) == 0) {
+    g_printerr ("ERROR: the Widevine License URL is NULL\n");
+    return widevine::Cdm::kTypeError;
+  }
 
   req_buf_size = license_request_.length();
   req_buf = const_cast <gchar *> (license_request_.c_str());
@@ -464,7 +476,7 @@ WidevineContext::FetchLicense ()
   http_header = curl_slist_append (http_header, "Connection: close");
   http_header = curl_slist_append (http_header, "User-Agent: Widevine CDM v1.0");
 
-  if (perform_curl (url, http_header, &req_buf, &req_buf_size) != CURLE_OK)
+  if (perform_curl (lic_url, http_header, &req_buf, &req_buf_size) != CURLE_OK)
     return widevine::Cdm::kTypeError;
 
   license_response_.assign (req_buf, req_buf + req_buf_size);

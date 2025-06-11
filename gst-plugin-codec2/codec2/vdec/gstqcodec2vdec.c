@@ -78,7 +78,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gstqcodec2h264dec.h"
 #include "gstqcodec2h265dec.h"
 #include "gstqcodec2vp9dec.h"
+#ifdef GST_SUPPORT_MPEG2_DEC
 #include "gstqcodec2mpeg2dec.h"
+#endif
 #ifdef GST_SUPPORT_AV1_DEC
 #include "gstqcodec2av1dec.h"
 #endif
@@ -113,7 +115,9 @@ static const ElementInfo kDECODER_ELEMENTS[] = {
   DECODER_ELEMENT (avc, h264),
   DECODER_ELEMENT (hevc, h265),
   DECODER_ELEMENT (vp9, vp9),
+#ifdef GST_SUPPORT_MPEG2_DEC
   DECODER_ELEMENT (mpeg2, mpeg2),
+#endif
 #ifdef GST_SUPPORT_AV1_DEC
   DECODER_ELEMENT (av1, av1),
 #endif
@@ -429,6 +433,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
   GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
   ConfigParams pixelformat;
   gboolean ret = TRUE;
+  gboolean is_10bit = FALSE;
 
   GST_DEBUG_OBJECT (dec, "dec set format");
 
@@ -442,7 +447,20 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
     s = gst_caps_get_structure (state->caps, 0);
     if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
         gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
-      if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
+      if (bit_depth_luma == 10) {
+        if (GST_IS_QCODEC2_H265_DEC (dec)) {
+          /* For H.265, the Main 10 profile supports a chroma bit depth of 8 to 10.*/
+          if (bit_depth_chroma >= 8 && bit_depth_chroma <= 10) {
+            is_10bit = TRUE;
+          }
+        } else {
+          if (bit_depth_chroma == 10) {
+            is_10bit = TRUE;
+          }
+        }
+      }
+
+      if (is_10bit) {
         if (dec->is_ubwc) {
           output_format = GST_VIDEO_FORMAT_NV12_10LE32;
         } else {
@@ -451,8 +469,9 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
 
         GST_LOG_OBJECT (dec, "set 10bit format: %d (%s)", output_format,
             gst_video_format_to_string (output_format));
-      } else if (bit_depth_luma == 12 && bit_depth_chroma == 12) {
-        GST_ERROR_OBJECT (dec, "bitdepth 12, not supported yet");
+      } else if (bit_depth_luma != 8 || bit_depth_chroma != 8) {
+        GST_ERROR_OBJECT (dec, "bitdepth %u,%u not supported yet",
+            bit_depth_luma, bit_depth_chroma);
         ret = FALSE;
         goto done;
       }
@@ -1456,7 +1475,8 @@ release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
     gst_video_codec_frame_unref (frame);
     GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
   } else {
-    GST_WARNING_OBJECT (dec, "Can not find video frame for index %lu", index);
+    GST_DEBUG_OBJECT (dec, "Not find frame %lu,"
+        " maybe released during work done.", index);
   }
 }
 
@@ -1690,12 +1710,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           if (deinterlace == TRUE) {
             interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
           } else {
+#ifdef GST_SUPPORT_MPEG2_DEC
             if (GST_IS_QCODEC2_MPEG2_DEC (dec)) {
               if (dec->interlace_mode == GST_VIDEO_INTERLACE_MODE_PROGRESSIVE)
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
               else
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
-            } else if (GST_IS_QCODEC2_H264_DEC (dec)) {
+            }
+#endif
+            if (GST_IS_QCODEC2_H264_DEC (dec)) {
               if (out_buf->interlaceMode != INTERLACE_MODE_PROGRESSIVE)
                 interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
             }
@@ -1862,8 +1885,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       /* Since firmware does not report crop info for mpeg2 video in reconfig,
        * aligned resolution will be used when acquiring external buffer.
        * Introduced a workaround to treat such case as resolution unchanged. */
-      gboolean is_mpeg2_cornercase = GST_IS_QCODEC2_MPEG2_DEC (dec)
+      gboolean is_mpeg2_cornercase = FALSE;
+#ifdef GST_SUPPORT_MPEG2_DEC
+      is_mpeg2_cornercase = GST_IS_QCODEC2_MPEG2_DEC (dec)
           && (GST_ROUND_UP_32 (dec->height) == resolution->height);
+#endif
       if ((dec->width != resolution->width || dec->height != resolution->height)
           && !is_mpeg2_cornercase) {
         GST_DEBUG_OBJECT (dec,
