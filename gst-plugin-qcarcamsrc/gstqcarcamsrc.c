@@ -600,6 +600,10 @@ gst_qcarcam_src_buffer_dispose (GstBuffer * qcarcamsrcbuf)
   GST_LOG ("buffer %p", qcarcamsrcbuf);
   gst_buffer_ref (qcarcamsrcbuf);
   DmaBufDesc *desc = gst_qcarcam_meta_get_desc(qcarcamsrcbuf);
+  if (!desc) {
+    GST_ERROR ("desc is null");
+    return FALSE;
+  }
   src = (GstQcarcamSrc*)(desc->ptr);
   mem = gst_buffer_get_memory (qcarcamsrcbuf, 0);
   GST_LOG_OBJECT (src, "buffer %p, mem %p", qcarcamsrcbuf, mem);

@@ -23,6 +23,13 @@ G_DEFINE_TYPE (GstDrmDecryptor, gst_drm_decryptor, GST_TYPE_ELEMENT);
 #define DEFAULT_BUFFER_SIZE       (1024*1024*2)
 #define DEFAULT_MIN_BUFFERS       2
 #define DEFAULT_MAX_BUFFERS       10
+#define OUTPUT_BUF_SIZE_PROP_PREDEFINED 0
+#define OUTPUT_BUF_SIZE_PROP_CALCULATE -1
+#define OUTPUT_BUF_SIZE_PROP_DEFAULT OUTPUT_BUF_SIZE_PROP_PREDEFINED
+#define MB_SIZE_IN_PIXEL          (16 * 16)
+#define NUM_MBS_PER_FRAME(__width, __height) \
+    (((__width + 15) >> 4) * ((__height + 15) >> 4))
+#define NUM_MBS_4k NUM_MBS_PER_FRAME(4096, 2304)
 
 static GstStaticPadTemplate gst_drm_decryptor_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE (
@@ -55,7 +62,8 @@ GST_STATIC_PAD_TEMPLATE (
 enum {
   PROP_0,
   PROP_SESSION_ID,
-  PROP_CDM_INSTANCE
+  PROP_CDM_INSTANCE,
+  PROP_OUTPUT_BUF_SIZE,
 };
 
 static gboolean
@@ -96,10 +104,44 @@ gst_drm_decryptor_update_srccaps (GstDrmDecryptor *decryptor, GstCaps *caps)
     return FALSE;
   }
 
+  if (decryptor->original_media_type) {
+    g_free (decryptor->original_media_type);
+  }
+  decryptor->original_media_type = g_strdup (media_type);
+
   gst_caps_unref (updated_caps);
   gst_caps_unref (src_caps);
 
   return TRUE;
+}
+
+
+static guint
+calculate_output_buffer_size (GstDrmDecryptor *decryptor)
+{
+  guint frame_size;
+  guint div_factor = 1;
+  guint base_res_mbs = NUM_MBS_4k;
+
+  if (g_strcmp0 (decryptor->original_media_type, "video/x-vp8") == 0 ||
+      g_strcmp0 (decryptor->original_media_type, "video/x-vp9") == 0) {
+    div_factor = 1;
+  } else {
+    div_factor = 2;
+  }
+
+  // for secure sessions, the required size is halved compared to the normal case.
+  div_factor = div_factor << 1;
+
+  frame_size = base_res_mbs * MB_SIZE_IN_PIXEL * 3 / 2 / div_factor;
+
+  // multiply by 10/8 (1.25) to get size to cover possible 10 bit case h265 and vp9
+  if (g_strcmp0 (decryptor->original_media_type, "video/x-h265") == 0 ||
+      g_strcmp0 (decryptor->original_media_type, "video/x-vp9") == 0) {
+    frame_size = frame_size + (frame_size >> 2);
+  }
+
+  return GST_ROUND_UP_N(frame_size, 4096);
 }
 
 static GstBufferPool*
@@ -108,6 +150,26 @@ gst_drm_decryptor_create_pool (GstDrmDecryptor *decryptor)
   GstStructure *config = NULL;
   GstBufferPool *pool = NULL;
   GstAllocator *allocator = NULL;
+  guint buffer_size = 0;
+
+  switch (decryptor->output_buf_size) {
+      case OUTPUT_BUF_SIZE_PROP_DEFAULT:
+        buffer_size = DEFAULT_BUFFER_SIZE;
+        break;
+      case OUTPUT_BUF_SIZE_PROP_CALCULATE:
+        buffer_size = calculate_output_buffer_size (decryptor);
+        GST_INFO_OBJECT (decryptor, "calculate output buffer size as %u",
+            buffer_size);
+        break;
+      default:
+        if (decryptor->output_buf_size < 0) {
+          GST_ERROR_OBJECT (decryptor, "Invalid output buffer size: %d",
+              decryptor->output_buf_size);
+          return NULL;
+        }
+        buffer_size = decryptor->output_buf_size;
+        break;
+  }
 
   if (!(pool = gst_mem_buffer_pool_new (GST_MEMORY_BUFFER_POOL_TYPE_SECURE))) {
     GST_ERROR_OBJECT (decryptor, "Failed to create new buffer pool !");
@@ -115,7 +177,7 @@ gst_drm_decryptor_create_pool (GstDrmDecryptor *decryptor)
   }
 
   config = gst_buffer_pool_get_config (pool);
-  gst_buffer_pool_config_set_params (config, NULL, DEFAULT_BUFFER_SIZE,
+  gst_buffer_pool_config_set_params (config, NULL, buffer_size,
       DEFAULT_MIN_BUFFERS, DEFAULT_MAX_BUFFERS);
 
   if (!(allocator = gst_dmabuf_allocator_new ())) {
@@ -239,6 +301,9 @@ gst_drm_decryptor_set_property (GObject *gobject, guint prop_id,
     case PROP_CDM_INSTANCE:
       decryptor->cdm_instance = g_value_get_pointer (value);
       break;
+    case PROP_OUTPUT_BUF_SIZE:
+      decryptor->output_buf_size = g_value_get_int (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (gobject, prop_id, pspec);
       break;
@@ -258,6 +323,9 @@ gst_drm_decryptor_get_property (GObject *gobject, guint prop_id,
     case PROP_CDM_INSTANCE:
       g_value_set_pointer (value, decryptor->cdm_instance);
       break;
+    case PROP_OUTPUT_BUF_SIZE:
+      g_value_set_int (value, decryptor->output_buf_size);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (gobject, prop_id, pspec);
       break;
@@ -275,6 +343,11 @@ gst_drm_decryptor_finalize (GObject *object)
   if (decryptor->pool)
     gst_object_unref (decryptor->pool);
 
+  if (decryptor->original_media_type) {
+    g_free (decryptor->original_media_type);
+    decryptor->original_media_type = NULL;
+  }
+
   G_OBJECT_CLASS (parent_class)->finalize (G_OBJECT (decryptor));
 }
 
@@ -285,6 +358,8 @@ gst_drm_decryptor_init (GstDrmDecryptor *decryptor)
   decryptor->session_id = DEFAULT_PROP_SESSION_ID;
   decryptor->cdm_instance = NULL;
   decryptor->pool = NULL;
+  decryptor->output_buf_size = OUTPUT_BUF_SIZE_PROP_DEFAULT;
+  decryptor->original_media_type = NULL;
 
   decryptor->sinkpad = gst_pad_new_from_static_template (
       &gst_drm_decryptor_sink_pad_template, "sink");
@@ -326,6 +401,17 @@ gst_drm_decryptor_class_init (GstDrmDecryptorClass *klass)
       g_param_spec_pointer ("cdm-instance", "CDM Instance",
           "Widevine CDM Instance to call CDM decrypt API",
           GParamFlags (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (gobject, PROP_OUTPUT_BUF_SIZE,
+      g_param_spec_int ("output-buf-size", "Output Buffer Size",
+          "Set the output buffer size. A value of 0 means to use the predefined "
+          "buffer size(1024*1024*2). While -1 means to calculate the size based "
+          "on the decoding bitstream buffer requirements of the Gen3 kernel driver, "
+          "accounting for different codecs. Positive values specify a fixed buffer "
+          "size. The buffer size value should follow alignment request of secure memory",
+          G_MININT, G_MAXINT, OUTPUT_BUF_SIZE_PROP_DEFAULT,
+          GParamFlags (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY)));
 
   gst_element_class_set_static_metadata (element,
       "QTI DRM Decryptor Plugin", GST_ELEMENT_FACTORY_KLASS_DECRYPTOR,

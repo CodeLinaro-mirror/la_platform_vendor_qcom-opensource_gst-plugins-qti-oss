@@ -166,7 +166,7 @@ gst_qvidc_vp9_dec_handle_frame (GstQvidcVdec * decoder,
         GST_LOG_OBJECT (dec, "set vidc output format: %d for VP9",
             pixelformat.pixelFormat.fmt);
         g_ptr_array_add (config, &pixelformat);
-        if (!vidc_config (base_dec->comp, config, BLOCK_MODE_MAY_BLOCK)) {
+        if (!vidc_config (base_dec->comp, config, BLOCK_MODE_DONT_BLOCK)) {
           GST_ERROR_OBJECT (dec, "Failed to set config");
           ret = GST_FLOW_ERROR;
           goto done;
