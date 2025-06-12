@@ -39,6 +39,18 @@ if use_dmaheap
   gstvesdeliver_c_args += ['-DUSE_DMAHEAP']
 endif
 
+contiguous_mem_op = get_option('contiguous_mem_option')
+if contiguous_mem_op == 'op0'
+  gstvesdeliver_c_args += ['-DCONTIGUOUS_MEM_OPTION=0']
+elif contiguous_mem_op == 'op1'
+  gstvesdeliver_c_args += ['-DCONTIGUOUS_MEM_OPTION=1']
+endif
+
+disable_secure_copy = get_option('disable_secure_copy')
+if disable_secure_copy
+  gstvesdeliver_c_args += ['-DDISABLE_SECURE_COPY']
+endif
+
 gstvesdeliver = library('gstvesdeliver',
   gstvesdeliver_sources,
   c_args : [gstvesdeliver_c_args, '-Wall'],

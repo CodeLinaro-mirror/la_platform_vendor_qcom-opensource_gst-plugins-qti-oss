@@ -44,27 +44,36 @@ enum
   PROP_BUF_RECYCLE,
   PROP_BUF_CONTIGUOUS,
   PROP_TRANSFORM_CAPS,
+  PROP_MIN_OUTPUT_BUF_SIZE,
 };
 
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
         AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_DMABUF_CAPS));
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
+    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
         AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS));
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_CAPS));
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
 
 #define SECURE_COPY_RETURN_SUCCESS      0
 #define SECURE_COPY_NONSECURE_TO_SECURE 0
+#define MIN_OUTPUT_BUF_PROP_NO_LIMIT    0
+#define MIN_OUTPUT_BUF_PROP_CALCULATE   -1
+#define MIN_OUTPUT_BUF_PROP_DEFAULT MIN_OUTPUT_BUF_PROP_NO_LIMIT
+#define MB_SIZE_IN_PIXEL                (16 * 16)
+#define NUM_MBS_PER_FRAME(__width, __height) \
+    (((__width + 15) >> 4) * ((__height + 15) >> 4))
+#define NUM_MBS_4k NUM_MBS_PER_FRAME(4096, 2304)
+#define NUM_MBS_8k NUM_MBS_PER_FRAME(8192, 4320)
 #define GST_TYPE_VESDELIVER_SECURE_MODE (gst_vesdeliver_secure_mode_get_type ())
 #define GST_TYPE_VESDELIVER_TRANSFORM_CAPS (gst_vesdeliver_transform_caps_get_type ())
 
@@ -84,6 +93,8 @@ static gboolean gst_vesdeliver_start (GstBaseTransform * trans);
 static gboolean gst_vesdeliver_stop (GstBaseTransform * trans);
 static GstCaps *gst_vesdeliver_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter);
+static gboolean gst_vesdeliver_set_caps (GstBaseTransform * trans,
+    GstCaps * in_caps, GstCaps * out_caps);
 
 static GType
 gst_vesdeliver_secure_mode_get_type (void)
@@ -115,6 +126,8 @@ gst_vesdeliver_transform_caps_get_type (void)
           "cenc-to-clear"},
       {TRANSFORM_CLEAR_TO_CENC, "Transform caps from clear to CENC",
           "clear-to-cenc"},
+      {TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO, "Transform caps from dmabuf raw video to common raw video",
+          "dmav-to-rawv"},
       {0, NULL, NULL}
     };
 
@@ -172,6 +185,17 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class,
+      PROP_MIN_OUTPUT_BUF_SIZE,
+      g_param_spec_int ("min-output-buf-size", "Minimum Output Buffer Size",
+          "Set the minimum output buffer size. A value of 0 indicates no limit. While -1 "
+          "means to calculate the size based on the decoding bitstream buffer requirements "
+          "of the Gen3 kernel driver, considering different codecs, resolutions, and security "
+          "factors. Positive values specify a fixed minimum buffer size.",
+          G_MININT, G_MAXINT, MIN_OUTPUT_BUF_PROP_DEFAULT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gstbasetrans_class->transform = GST_DEBUG_FUNCPTR (gst_vesdeliver_transform);
   gstbasetrans_class->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_vesdeliver_prepare_output_buffer);
@@ -179,6 +203,7 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
   gstbasetrans_class->stop = GST_DEBUG_FUNCPTR (gst_vesdeliver_stop);
   gstbasetrans_class->transform_caps =
       GST_DEBUG_FUNCPTR (gst_vesdeliver_transform_caps);
+  gstbasetrans_class->set_caps = GST_DEBUG_FUNCPTR (gst_vesdeliver_set_caps);
 
   gst_element_class_add_static_pad_template (gstelement_class, &sink_tmpl);
   gst_element_class_add_static_pad_template (gstelement_class, &src_tmpl);
@@ -199,6 +224,10 @@ gst_vesdeliver_init (GstVesDeliver * vesdeliver)
   vesdeliver->allocator = NULL;
   vesdeliver->secure_handle = NULL;
   vesdeliver->transform_caps = TRANSFORM_DISABLE;
+  vesdeliver->min_output_buf_size = MIN_OUTPUT_BUF_PROP_DEFAULT;
+  vesdeliver->input_format = NULL;
+  vesdeliver->input_width = 0;
+  vesdeliver->input_height = 0;
 
   gst_base_transform_set_in_place (GST_BASE_TRANSFORM (vesdeliver), FALSE);
 }
@@ -268,6 +297,11 @@ gst_vesdeliver_start (GstBaseTransform * trans)
     }
 #endif
   } else if (SECURE_COPY == vesdeliver->secure) {
+#ifdef DISABLE_SECURE_COPY
+    GST_ERROR_OBJECT (vesdeliver, "secure copy mode is not supported!");
+    g_warn_if_fail (FALSE && "secure copy mode is not supported!");
+    return FALSE;
+#endif
     vesdeliver->crypto_handle = dlopen (crypto_lib_name, RTLD_NOW);
     if (NULL == vesdeliver->crypto_handle) {
       const char *dlerr = dlerror ();
@@ -385,7 +419,46 @@ gst_vesdeliver_stop (GstBaseTransform * trans)
     GST_DEBUG_OBJECT (vesdeliver, "Unref vesdeliver allocator");
   }
 
+  if (vesdeliver->input_format) {
+    g_free (vesdeliver->input_format);
+    vesdeliver->input_format = NULL;
+  }
+
   return TRUE;
+}
+
+static guint
+calculate_min_output_buffer_size (GstVesDeliver *vesdeliver)
+{
+  guint frame_size;
+  guint div_factor = 1;
+  guint base_res_mbs = NUM_MBS_4k;
+
+  if (NUM_MBS_PER_FRAME(vesdeliver->input_width, vesdeliver->input_height) > base_res_mbs) {
+    div_factor = 4;
+    base_res_mbs = NUM_MBS_8k;
+  } else {
+    if (g_strcmp0 (vesdeliver->input_format, "video/x-vp8") == 0 ||
+        g_strcmp0 (vesdeliver->input_format, "video/x-vp9") == 0) {
+      div_factor = 1;
+    } else {
+      div_factor = 2;
+    }
+  }
+
+  if (vesdeliver->secure != SECURE_DISABLE) {
+    div_factor = div_factor << 1;
+  }
+
+  frame_size = base_res_mbs * MB_SIZE_IN_PIXEL * 3 / 2 / div_factor;
+
+  // multiply by 10/8 (1.25) to get size to cover possible 10 bit case h265 and vp9
+  if (g_strcmp0 (vesdeliver->input_format, "video/x-h265") == 0 ||
+      g_strcmp0 (vesdeliver->input_format, "video/x-vp9") == 0) {
+    frame_size = frame_size + (frame_size >> 2);
+  }
+
+  return GST_ROUND_UP_N(frame_size, 4096);
 }
 
 static GstFlowReturn
@@ -393,10 +466,38 @@ gst_vesdeliver_prepare_output_buffer (GstBaseTransform * trans,
     GstBuffer * inbuf, GstBuffer ** outbuf)
 {
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
+  gsize inbuf_size = gst_buffer_get_size (inbuf);
+  gsize outbuf_size = 0;
 
   if (TRANSFORM_DISABLE == vesdeliver->transform_caps) {
+    switch (vesdeliver->min_output_buf_size) {
+      case MIN_OUTPUT_BUF_PROP_NO_LIMIT:
+        outbuf_size = inbuf_size;
+        break;
+      case MIN_OUTPUT_BUF_PROP_CALCULATE:
+        outbuf_size = calculate_min_output_buffer_size (vesdeliver);
+        GST_INFO_OBJECT (vesdeliver, "calculate minimum output buffer size as %zu",
+            outbuf_size);
+        break;
+      default:
+        if (vesdeliver->min_output_buf_size < 0) {
+          GST_ERROR_OBJECT (vesdeliver, "Invalid output buffer size: %d",
+              vesdeliver->min_output_buf_size);
+          return GST_FLOW_ERROR;
+        }
+        outbuf_size = vesdeliver->min_output_buf_size;
+        break;
+    }
+
+    // ensure outbuf_size is at least the size of the input buffer
+    if (outbuf_size < inbuf_size) {
+      outbuf_size = inbuf_size;
+      GST_INFO_OBJECT (vesdeliver, "Update output buffer size to input buffer size %zu",
+          outbuf_size);
+    }
+
     *outbuf = gst_buffer_new_allocate (vesdeliver->allocator,
-        gst_buffer_get_size (inbuf), NULL);
+        outbuf_size, NULL);
 
     g_return_val_if_fail (*outbuf != NULL, GST_FLOW_ERROR);
     GST_BASE_TRANSFORM_CLASS (parent_class)->copy_metadata (trans, inbuf,
@@ -417,7 +518,6 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
   GstMemory *out_mem = NULL;
   int buf_fd = -1;
-  gsize fd_memory_size = 0;
 
   if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
     return GST_FLOW_OK;
@@ -435,7 +535,6 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   out_mem = gst_buffer_peek_memory (outbuf, 0);
   if (gst_is_dmabuf_memory (out_mem)) {
     buf_fd = gst_dmabuf_memory_get_fd (out_mem);
-    fd_memory_size = gst_memory_get_sizes (out_mem, NULL, NULL);
   } else {
     GST_ERROR_OBJECT (vesdeliver, "Invalide gst buffer type");
     status = GST_FLOW_ERROR;
@@ -462,14 +561,15 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   } else {
     void *ptr = NULL;
     ptr =
-        mmap (NULL, fd_memory_size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_fd,
+        mmap (NULL, input_map.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_fd,
         0);
     if (ptr != MAP_FAILED) {
       memcpy (ptr, input_map.data, input_map.size);
       GST_DEBUG_OBJECT (vesdeliver,
-          "memcpy %" G_GSIZE_FORMAT " bytes to %p with buf_fd: %d, size: %"
-          G_GSIZE_FORMAT, input_map.size, ptr, buf_fd, fd_memory_size);
-      munmap (ptr, fd_memory_size);
+          "memcpy %" G_GSIZE_FORMAT " bytes to %p with buf_fd: %d",
+          input_map.size, ptr, buf_fd);
+      munmap (ptr, input_map.size);
+      gst_memory_resize (out_mem, 0, input_map.size);
     } else {
       GST_ERROR_OBJECT (vesdeliver, "mmap failed(%s) for buf_fd:%d",
           strerror (errno), buf_fd);
@@ -578,6 +678,34 @@ gst_vesdeliver_transform_caps_from_clear_to_cenc (GstCaps * transformed_caps,
   }
 }
 
+static void
+gst_vesdeliver_transform_caps_from_dmav_to_rawv (GstVesDeliver * vesdeliver,
+    GstCaps * transformed_caps, GstStructure * in, GstCapsFeatures * f)
+{
+  if (f == NULL) {
+    GST_ERROR_OBJECT (vesdeliver, "video/x-raw has no feature, it's not expected!");
+  } else {
+    const char* str = gst_caps_features_to_string (f);
+    if (str && !strcmp (str, "memory:DMABuf")) {
+      GST_DEBUG_OBJECT (vesdeliver, "from dmav to rawv, remove feature memory:DMABuf");
+      gst_caps_append_structure (transformed_caps, gst_structure_copy(in));
+    } else {
+      GST_ERROR_OBJECT (vesdeliver, "Get string %s from feature %p, not expected, expect memory:DMABuf", str==NULL?"null":str, f);
+    }
+    g_free(str);
+  }
+  return;
+}
+
+static void
+gst_vesdeliver_transform_caps_from_rawv_to_dmav (GstVesDeliver * vesdeliver,
+    GstCaps * transformed_caps, GstStructure * in)
+{
+  GST_DEBUG_OBJECT (vesdeliver, "from rawv to dmav, add feature memory:DMABuf");
+  gst_caps_append_structure_full (transformed_caps, gst_structure_copy(in), gst_caps_features_from_string("memory:DMABuf"));
+  return;
+}
+
 static GstCaps *
 gst_vesdeliver_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter)
@@ -585,6 +713,7 @@ gst_vesdeliver_transform_caps (GstBaseTransform * trans,
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
   GstCaps *transformed_caps = NULL;
   guint caps_size;
+  const gchar *name = NULL;
 
   if (TRANSFORM_DISABLE == vesdeliver->transform_caps) {
     GST_DEBUG_OBJECT (vesdeliver,
@@ -607,6 +736,29 @@ gst_vesdeliver_transform_caps (GstBaseTransform * trans,
   caps_size = gst_caps_get_size (caps);
   for (guint index = 0; index < caps_size; ++index) {
     GstStructure *in = gst_caps_get_structure (caps, index);
+    name = gst_structure_get_name (in);
+
+    if (name && !strcmp(name, "video/x-raw")) {
+      if (TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO == vesdeliver->transform_caps) {
+        if (direction == GST_PAD_SINK) {
+          gst_vesdeliver_transform_caps_from_dmav_to_rawv (vesdeliver, transformed_caps, in, gst_caps_get_features(caps, index));
+        } else if (direction == GST_PAD_SRC) {
+          gst_vesdeliver_transform_caps_from_rawv_to_dmav (vesdeliver, transformed_caps, in);
+        } else {
+          GST_ERROR_OBJECT (vesdeliver, "error direction %d", direction);
+        }
+        //just handle video/x-raw, needn't handle other mime_types, ignore them
+        break;
+      } else {
+        //if TRANSFORM_CENC_TO_CLEAR or TRANSFORM_CLEAR_TO_CENC, ignore video/x-raw
+        continue;
+      }
+    } else {//mime_type is not video/x-raw
+      if (TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO == vesdeliver->transform_caps) {
+        //if TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO, ignore mime_types which are not video/x-raw
+        continue;
+      }
+    }
 
     if (direction == GST_PAD_SINK) {
       if (TRANSFORM_CENC_TO_CLEAR == vesdeliver->transform_caps) {
@@ -648,6 +800,37 @@ gst_vesdeliver_transform_caps (GstBaseTransform * trans,
   return transformed_caps;
 }
 
+static gboolean
+gst_vesdeliver_set_caps (GstBaseTransform * trans, GstCaps * in_caps, GstCaps * out_caps)
+{
+  GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
+  GstStructure *in_structure;
+  const gchar *format;
+  gint width, height;
+
+  in_structure = gst_caps_get_structure (in_caps, 0);
+
+  format = gst_structure_get_name (in_structure);
+
+  if (!gst_structure_get_int (in_structure, "width", &width) ||
+      !gst_structure_get_int (in_structure, "height", &height)) {
+    GST_ERROR_OBJECT (vesdeliver, "Failed to get width and height from caps");
+    return FALSE;
+  }
+
+  GST_INFO_OBJECT (vesdeliver, "Get input format: %s, width: %d, height: %d from caps",
+      format, width, height);
+
+  if (vesdeliver->input_format) {
+    g_free (vesdeliver->input_format);
+  }
+  vesdeliver->input_format = g_strdup (format);
+  vesdeliver->input_width = width;
+  vesdeliver->input_height = height;
+
+  return TRUE;
+}
+
 static void
 gst_vesdeliver_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
@@ -667,6 +850,9 @@ gst_vesdeliver_set_property (GObject * object, guint property_id,
       break;
     case PROP_TRANSFORM_CAPS:
       self->transform_caps = g_value_get_enum (value);
+      break;
+    case PROP_MIN_OUTPUT_BUF_SIZE:
+      self->min_output_buf_size = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -693,6 +879,9 @@ gst_vesdeliver_get_property (GObject * object, guint property_id,
     case PROP_TRANSFORM_CAPS:
       g_value_set_enum (value, self->transform_caps);
       break;
+    case PROP_MIN_OUTPUT_BUF_SIZE:
+      g_value_set_int (value, self->min_output_buf_size);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -718,4 +907,4 @@ GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     vesdeliver,
     "QTI Video Element Stream Plugin",
-    vesdeliver_init, PACKAGE_VERSION, GST_LICENSE_UNKNOWN, PACKAGE_NAME, "-")
+    vesdeliver_init, PACKAGE_VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), GST_LICENSE_UNKNOWN, PACKAGE_NAME, "-")

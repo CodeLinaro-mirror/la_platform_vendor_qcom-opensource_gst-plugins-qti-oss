@@ -26,6 +26,9 @@ G_BEGIN_DECLS
     "stream-format = (string) { byte-stream, hvc1, hev1 }, " \
     "alignment = (string) { au }, " \
     COMMON_VIDEO_CAPS(96, 8192)
+#define VP8_CAPS \
+    "video/x-vp8, " \
+    COMMON_VIDEO_CAPS(96, 4096)
 #define VP9_CAPS \
     "video/x-vp9, " \
     COMMON_VIDEO_CAPS(96, 4096)
@@ -53,6 +56,10 @@ G_BEGIN_DECLS
     "application/x-cenc, " \
     "original-media-type=(string)video/x-h265, " \
     "protection-system = (string) " WIDEVINE_PROTECTION_SYSTEM_ID
+#define VIDEO_RAW_CAPS \
+    "video/x-raw"
+#define VIDEO_RAW_DMABUF_CAPS \
+    "video/x-raw(memory:DMABuf)"
 #define GST_TYPE_VESDELIVER \
   (gst_vesdeliver_get_type())
 #define GST_VESDELIVER(obj) \
@@ -86,6 +93,7 @@ typedef enum
   TRANSFORM_DISABLE,
   TRANSFORM_CENC_TO_CLEAR,
   TRANSFORM_CLEAR_TO_CENC,
+  TRANSFORM_RAWVIDEODMA_TO_RAWVIDEO,
 } TRANSFORM_CAPS;
 
 struct _GstVesDeliver
@@ -98,6 +106,10 @@ struct _GstVesDeliver
   TRANSFORM_CAPS transform_caps;
   void *secure_handle;
   void *crypto_handle;
+  gint min_output_buf_size;
+  gchar *input_format;
+  gint input_width;
+  gint input_height;
 #ifdef USE_DMAHEAP
   void *vmmem_lib_handle;
   VmMem *vm_instance;
