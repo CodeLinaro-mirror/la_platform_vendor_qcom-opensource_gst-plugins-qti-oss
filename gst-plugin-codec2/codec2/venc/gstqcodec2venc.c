@@ -1452,16 +1452,28 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &slice_mode);
   }
 
-  if (enc->color_space_conversion) {
+  if (enc->color_space_conversion &&
+      enc->primaries != COLOR_PRIMARIES_UNSPECIFIED) {
     GST_DEBUG_OBJECT (enc, "enable color space conversion");
     color_space_conversion =
         make_color_space_conv_param (enc->color_space_conversion);
     g_ptr_array_add (config, &color_space_conversion);
-    GST_DEBUG_OBJECT (enc, "set color aspect info");
+  }
+
+  if (enc->primaries != COLOR_PRIMARIES_UNSPECIFIED) {
+    GST_DEBUG_OBJECT (enc, "set color aspect info: "
+        "primaries %u, transfer_char %u, matrix %u, full_range %u",
+        enc->primaries, enc->transfer_char, enc->matrix, enc->full_range);
     color_aspects =
         make_color_aspects_param (enc->primaries, enc->transfer_char,
         enc->matrix, enc->full_range);
     g_ptr_array_add (config, &color_aspects);
+  } else if (enc->transfer_char != COLOR_TRANSFER_UNSPECIFIED ||
+             enc->matrix != COLOR_MATRIX_UNSPECIFIED ||
+             enc->full_range != COLOR_RANGE_UNSPECIFIED) {
+    GST_WARNING_OBJECT (enc, "will ignore transfer_char %u, matrix %u, "
+        "full_range %u because primaries is unspecified",
+        enc->transfer_char, enc->matrix, enc->full_range);
   }
 
   if (enc->intra_refresh_mode && enc->intra_refresh_mbs) {
