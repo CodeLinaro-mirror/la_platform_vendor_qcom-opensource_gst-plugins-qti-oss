@@ -33,6 +33,7 @@
 */
 
 #include "gstclient.h"
+#include <sys/mman.h>
 #include <vidc_types.h>
 #include <algorithm>
 
@@ -89,6 +90,108 @@ GstClient::GstClient(ComponentIdType id)
 GstClient::~GstClient()
 {
     MM_DBG_MSG("GstClient::~GstClient");
+}
+
+int GstClient::flattenMetaData(vidc_frame_data_type& frameData)
+{
+    int rc = VIDC_ERR_NONE;
+    if (frameData.metadata_handle && frameData.alloc_metadata_len) {
+        void *meta_addr = mmap(NULL, frameData.alloc_metadata_len,
+            PROT_READ|PROT_WRITE, MAP_SHARED, frameData.metadata_handle, 0);
+        if (MAP_FAILED == meta_addr) {
+            LOG_ERROR("failed to map metadata %d", frameData.metadata_handle);
+            rc = VIDC_ERR_FAIL;
+        } else {
+            vidc_qmetabuf_header_type* metadataHdr =
+                (vidc_qmetabuf_header_type*)meta_addr;
+            if (metadataHdr) {
+                memset(metadataHdr, 0, sizeof(vidc_qmetabuf_header_type));
+                metadataHdr->size = sizeof(vidc_qmetabuf_header_type) +
+                    sizeof(vidc_qmetapayload_header_type) + 8;
+                metadataHdr->version = 1 << 16;
+
+                vidc_qmetapayload_header_type* metaPayloadHdr =
+                    (vidc_qmetapayload_header_type*) (metadataHdr + 1);
+                uint32 metaPayloadOffset = metadataHdr->size - 8;
+
+                memset(metaPayloadHdr, 0, sizeof(vidc_qmetapayload_header_type));
+
+                // flatten for VIDC_QMETADATA_BUFFER_TAG
+                metaPayloadHdr->qmetadata_type = VIDC_QMETADATA_BUFFER_TAG;
+                metaPayloadHdr->size = 8;
+                metaPayloadHdr->version = 1 << 16;
+                metaPayloadHdr->offset = metaPayloadOffset;
+                metaPayloadHdr->flags = 0;
+
+                vidc_qmetadata_buffer_tag_type *payload =
+                    (vidc_qmetadata_buffer_tag_type *)(((uint8 *)metadataHdr) + metaPayloadHdr->offset);
+                payload->tag = (uint64)frameData.input_tag;
+
+                LOG_INFO("meta[%d] type 0x%x", metadataHdr->count, metaPayloadHdr->qmetadata_type);
+                if (metaPayloadHdr->qmetadata_type == VIDC_QMETADATA_BUFFER_TAG) {
+                    LOG_INFO("tag 0x%x, size %d, offset %d", payload->tag,
+                        metaPayloadHdr->size, metaPayloadHdr->offset);
+                }
+
+                metadataHdr->count++;
+                metaPayloadHdr++;
+            }
+
+            munmap(meta_addr, frameData.alloc_metadata_len);
+        }
+    } else {
+        LOG_ERROR("No valid metadata");
+        rc = VIDC_ERR_FAIL;
+    }
+
+    return rc;
+}
+
+int GstClient::extractMetaData(vidc_frame_data_type& frameData)
+{
+    int rc = VIDC_ERR_NONE;
+    if (frameData.metadata_handle && frameData.alloc_metadata_len) {
+        void *meta_addr = mmap(NULL, frameData.alloc_metadata_len, PROT_READ,
+            MAP_SHARED, frameData.metadata_handle, 0);
+        if (MAP_FAILED == meta_addr) {
+            LOG_ERROR("failed to map metadata %d", frameData.metadata_handle);
+            rc = VIDC_ERR_FAIL;
+        } else {
+            vidc_qmetabuf_header_type* metadataHdr =
+                (vidc_qmetabuf_header_type*)meta_addr;
+            if (metadataHdr) {
+                if (metadataHdr->count > 0) {
+                    vidc_qmetapayload_header_type* metaPayloadHdr =
+                        (vidc_qmetapayload_header_type*) (metadataHdr + 1);
+                    for (uint32 i = 0; i < metadataHdr->count; i++) {
+                        LOG_INFO("meta[%d] type 0x%x", i, metaPayloadHdr->qmetadata_type);
+                        if (metaPayloadHdr->qmetadata_type == VIDC_QMETADATA_INTERLACE) {
+                            vidc_qmetadata_interlace_type *payload =
+                                (vidc_qmetadata_interlace_type *)(((uint8 *)metadataHdr) + metaPayloadHdr->offset);
+                            LOG_INFO("VIDC_QMETADATA_INTERLACE 0x%x, payload 0x%x, size %d, offset %d",
+                                VIDC_QMETADATA_INTERLACE, *payload,
+                                metaPayloadHdr->size, metaPayloadHdr->offset);
+                        } else if (metaPayloadHdr->qmetadata_type == VIDC_QMETADATA_BUFFER_TAG) {
+                            vidc_qmetadata_buffer_tag_type *payload =
+                                (vidc_qmetadata_buffer_tag_type *)(((uint8 *)metadataHdr) + metaPayloadHdr->offset);
+                            LOG_INFO("VIDC_QMETADATA_BUFFER_TAG 0x%x, payload 0x%x, size %d, offset %d",
+                                VIDC_QMETADATA_BUFFER_TAG, payload->tag,
+                                metaPayloadHdr->size, metaPayloadHdr->offset);
+                            frameData.input_tag = payload->tag;
+                        }
+                        metaPayloadHdr++;
+                    }
+                }
+            }
+
+            munmap(meta_addr, frameData.alloc_metadata_len);
+        }
+    } else {
+        LOG_ERROR("No valid metadata");
+        rc = VIDC_ERR_FAIL;
+    }
+
+    return rc;
 }
 
 bool GstClient::configureEncoder(ConfigType& config)
@@ -239,6 +342,20 @@ bool GstClient::configureEncoder(ConfigType& config)
     }
 
     if (true == rc) {
+        vidc_metadata_header_type payload;
+        memset(&payload, 0, sizeof(vidc_metadata_header_type));
+        payload.metadata_type = VIDC_QMETADATA_BUFFER_TAG;
+        payload.enable = true;
+        payload.port_index = VIDC_QMETADATA_PORT_INPUT_FROM_CLIENT|VIDC_QMETADATA_PORT_OUTPUT_TO_CLIENT;
+        MM_DBG_MSG("GstClient::configureEncoder enable VIDC_QMETADATA_BUFFER_TAG");
+        rc = setParameter(VIDC_I_METADATA_HEADER, &payload, sizeof(payload));
+        if (true != rc)
+        {
+            MM_ERROR_MSG("GstClient::configureEncoder Failed to enable buftag metadata property");
+        }
+    }
+
+    if (true == rc) {
         int bytes = mPlaneInfo.computeBytes(
             mPort[VIDC_BUFFER_INPUT].data.width,
             mPort[VIDC_BUFFER_INPUT].data.height,
@@ -356,6 +473,34 @@ bool GstClient::configureDecoder(ConfigType& config)
             if (true != rc) {
                 MM_ERROR_MSG("GstClient::configureDecoder Error failed to set color format");
             }
+        }
+    }
+
+    if (true == rc) {
+        vidc_metadata_header_type payload;
+        memset(&payload, 0, sizeof(vidc_metadata_header_type));
+        payload.metadata_type = VIDC_QMETADATA_INTERLACE;
+        payload.enable = true;
+        payload.port_index = VIDC_QMETADATA_PORT_OUTPUT_TO_CLIENT;
+        MM_DBG_MSG("GstClient::configureDecoder enable VIDC_QMETADATA_INTERLACE");
+        rc = setParameter(VIDC_I_METADATA_HEADER, &payload, sizeof(payload));
+        if (true != rc)
+        {
+            MM_ERROR_MSG("GstClient::configureDecoder Failed to enable interlace metadata property");
+        }
+    }
+
+    if (true == rc) {
+        vidc_metadata_header_type payload;
+        memset(&payload, 0, sizeof(vidc_metadata_header_type));
+        payload.metadata_type = VIDC_QMETADATA_BUFFER_TAG;
+        payload.enable = true;
+        payload.port_index = VIDC_QMETADATA_PORT_INPUT_FROM_CLIENT|VIDC_QMETADATA_PORT_OUTPUT_TO_CLIENT;
+        MM_DBG_MSG("GstClient::configureDecoder enable VIDC_QMETADATA_BUFFER_TAG");
+        rc = setParameter(VIDC_I_METADATA_HEADER, &payload, sizeof(payload));
+        if (true != rc)
+        {
+            MM_ERROR_MSG("GstClient::configureDecoder Failed to enable buftag metadata property");
         }
     }
 
@@ -493,12 +638,16 @@ bool GstClient::setListenercallback(std::unique_ptr<EventCallback> callback)
 }
 
 bool GstClient::getBufferRequirement(
-    vidc_buffer_type type, uint32* min_count, uint32* size, bool is_set)
+    vidc_buffer_type type, uint32* min_count, uint32* size, uint32* metasize, bool is_set)
 {
     MM_DBG_MSG("GstClient::getBufferRequirement type %d", type);
     bool rc = false;
     vidc_buffer_reqmnts_type bufreq;
     memset(&bufreq, 0, sizeof(vidc_buffer_reqmnts_type));
+
+    vidc_buffer_reqmnts_type meta_bufreq;
+    memset(&meta_bufreq, 0, sizeof(vidc_buffer_reqmnts_type));
+
     bufreq.buf_type = type;
     rc = getParameter(VIDC_I_BUFFER_REQUIREMENTS, &bufreq, sizeof(bufreq));
     if (true != rc) {
@@ -517,20 +666,41 @@ bool GstClient::getBufferRequirement(
                 bufreq.actual_count = bufreq.min_count + NUM_OF_BACKBUFFER_IN;
             }
 
-            MM_DBG_MSG("GstClient::getBufferRequirement:"
-                "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
-                bufreq.min_count, bufreq.actual_count, bufreq.size, is_set);
-            if (is_set) {
-                rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &bufreq, sizeof(bufreq));
-                if (true != rc) {
-                    MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set buffer requirement");
-                    return rc;
+            meta_bufreq.buf_type = type == VIDC_BUFFER_OUTPUT ?
+                VIDC_BUFFER_METADATA_OUTPUT : VIDC_BUFFER_METADATA_INPUT;
+            rc = getParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
+            meta_bufreq.actual_count = bufreq.actual_count;
+
+            if (true != rc) {
+                MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to get metabuffer requirement");
+                return rc;
+            } else {
+                MM_DBG_MSG("GstClient::getBufferRequirement:"
+                    "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
+                    bufreq.min_count, bufreq.actual_count, bufreq.size, is_set);
+                if (is_set) {
+                    rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &bufreq, sizeof(bufreq));
+                    if (true != rc) {
+                        MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set buffer requirement");
+                        return rc;
+                    }
+
+                    MM_DBG_MSG("GstClient::getBufferRequirement:metadata"
+                        "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
+                        meta_bufreq.min_count, meta_bufreq.actual_count, meta_bufreq.size, is_set);
+
+                    rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
+                    if (true != rc) {
+                        MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set metabuffer requirement");
+                        return rc;
+                    }
                 }
             }
         }
 
         *min_count = bufreq.actual_count;
         *size = bufreq.size;
+        *metasize = meta_bufreq.size;
     }
 
     return rc;
@@ -761,7 +931,6 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
 {
     vidc_frame_data_type* frameDataPtr = &frameData;
     int rc;
-    bool rcBool = true;
     std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
 
     MM_DBG_MSG("GstClient::emptyBuffer-%s", mNamePtr);
@@ -781,9 +950,15 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
 
     RETURN_BOOL_ON_ERROR(frameDataPtr != NULL,
         "GstClient::emptyBuffer-%s buffer not found", mNamePtr);
-    MM_DBG_MSG("GstClient::emptyBuffer-%s type %d, handle %d, len %d",
-        mNamePtr, frameDataPtr->buf_type,
-        frameDataPtr->frame_handle, frameDataPtr->data_len);
+    MM_DBG_MSG("GstClient::emptyBuffer-%s type %d, handle %d, len %d, tag %lu "
+        "metadata_handle %d, metasize %d",
+        mNamePtr, frameDataPtr->buf_type, frameDataPtr->frame_handle,
+        frameDataPtr->data_len, frameDataPtr->input_tag,
+        frameDataPtr->metadata_handle, frameDataPtr->alloc_metadata_len);
+
+    rc = flattenMetaData(frameData);
+    RETURN_BOOL_ON_ERROR(rc == VIDC_ERR_NONE,
+        "GstClient::emptyBuffer-%s flattenMeta error", mNamePtr);
 
     rc = device_ioctl(
         mHandle,
@@ -802,7 +977,6 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
 {
     vidc_frame_data_type* frameDataPtr = &frameData;
     int rc;
-    bool rcBool = true;
     std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
 
     MM_DBG_MSG("GstClient::fillBuffer-%s", mNamePtr);
@@ -836,9 +1010,9 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
 
     RETURN_BOOL_ON_ERROR(frameDataPtr != NULL,
         "GstClient::fillBuffer-%s buffer not found", mNamePtr);
-    MM_DBG_MSG("GstClient::fillBuffer-%s type %d, handle %d, len %d",
+    MM_DBG_MSG("GstClient::fillBuffer-%s type %d, handle %d, len %d, meta_fd %d",
         mNamePtr, frameDataPtr->buf_type,
-        frameDataPtr->frame_handle, frameDataPtr->data_len);
+        frameDataPtr->frame_handle, frameDataPtr->data_len, frameDataPtr->metadata_handle);
 
     rc = device_ioctl(
         mHandle,
@@ -960,7 +1134,7 @@ void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData
         MM_DBG_MSG("GstClient::FilledCallback-%s, EOS detected", mNamePtr);
     }
 
-    frameData.input_tag = mTag++;
+    extractMetaData(frameData);
 
     mCallback->onBufferAvailable(frameData);
 }

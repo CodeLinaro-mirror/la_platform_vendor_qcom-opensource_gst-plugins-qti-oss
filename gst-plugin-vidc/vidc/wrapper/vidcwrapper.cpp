@@ -121,9 +121,12 @@ void CodecCallback::onBufferAvailable(
     }
 
     if (frameData.buf_type == VIDC_BUFFER_INPUT) {
-        LOG_INFO("EBD fd:%d, data_len %d, alloc_len %d, input_tag %d, timestamp %lld\n",
+        LOG_INFO("EBD fd:%d, data_len %u, alloc_len %u, input_tag %lu, "
+            "timestamp %lld, meta_fd %d, metasize %u",
             frameData.frame_handle, frameData.data_len, frameData.alloc_len,
-            frameData.input_tag, frameData.timestamp);
+            frameData.input_tag, frameData.timestamp,
+            frameData.metadata_handle, frameData.alloc_metadata_len);
+
         BufferDescriptor inBuf;
         memset(&inBuf, 0, sizeof(BufferDescriptor));
 
@@ -136,9 +139,17 @@ void CodecCallback::onBufferAvailable(
         inBuf.capacity = frameData.alloc_len;
         inBuf.size = frameData.data_len;
         inBuf.index = frameData.input_tag;
+        inBuf.meta_fd = frameData.metadata_handle;
+        inBuf.metasize = frameData.alloc_metadata_len;
 
         mCallback(mHandle, EVENT_INPUTS_DONE, &inBuf);
     } else if (frameData.buf_type == VIDC_BUFFER_OUTPUT) {
+        LOG_INFO("FBD fd:%d, data_len %u, alloc_len %u, input_tag %lu, "
+            "timestamp %lld, meta_fd %d, metasize %u",
+            frameData.frame_handle, frameData.data_len, frameData.alloc_len,
+            frameData.input_tag, frameData.timestamp,
+            frameData.metadata_handle, frameData.alloc_metadata_len);
+
         BufferDescriptor outBuf;
         memset(&outBuf, 0, sizeof(BufferDescriptor));
 
@@ -151,10 +162,8 @@ void CodecCallback::onBufferAvailable(
         outBuf.capacity = frameData.alloc_len;
         outBuf.size = frameData.data_len;
         outBuf.index = frameData.input_tag;
-
-        LOG_INFO("FBD fd:%d, data_len %d, alloc_len %d, input_tag %d, timestamp %lld\n",
-            frameData.frame_handle, frameData.data_len, frameData.alloc_len,
-            frameData.input_tag, frameData.timestamp);
+        outBuf.meta_fd = frameData.metadata_handle;
+        outBuf.metasize = frameData.alloc_metadata_len;
 
         mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
     }
@@ -271,7 +280,7 @@ gboolean vidc_setListener(void* const comp, void* cb_context,
 }
 
 gboolean vidc_getAllocationCountAndSize(void* const comp,
-    BUFFER_PORT_TYPE type, guint* count, guint* size)
+    BUFFER_PORT_TYPE type, guint* count, guint* size, guint* metasize)
 {
     gboolean rc = FALSE;
 
@@ -280,7 +289,7 @@ gboolean vidc_getAllocationCountAndSize(void* const comp,
     if (comp) {
         GstClient* client = (GstClient*)comp;
         rc = client->getBufferRequirement(type == BUFFER_PORT_INPUT ?
-            VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, count, size, true);
+            VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, count, size, metasize, true);
     }
 
     return rc;
@@ -290,7 +299,7 @@ gboolean vidc_alloc(void* const comp, BufferDescriptor* buffer)
 {
     gboolean rc = FALSE;
     if (!buffer) {
-        LOG_MESSAGE("error: buffer is null");
+        LOG_ERROR("error: buffer is null");
         return rc;
     }
 
@@ -299,6 +308,14 @@ gboolean vidc_alloc(void* const comp, BufferDescriptor* buffer)
 
     if (comp) {
         GstClient* client = (GstClient*)comp;
+        if (client->isLoaded()) {
+            rc = client->stateIdle();
+            if (!rc) {
+                LOG_ERROR("set Comp %p stateIdle failed", comp);
+                return rc;
+            }
+        }
+
         rc = client->useBuffer(buffer->port_type == BUFFER_PORT_INPUT ?
             VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, buffer->fd, buffer->size);
     }
@@ -327,8 +344,9 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
         //If state is loaded, we need to put into stateIdle
         //If state is idle, we need to put int stateExecuting
         if (client->isLoaded()) {
-            LOG_MESSAGE("Comp %p stateIdle", comp);
-            rc = client->stateIdle();
+            LOG_ERROR("Comp %p stateLoaded, invalid", comp);
+            // put into stateIdle when vidc_alloc instead
+            // rc = client->stateIdle();
         }
 
         if (rc && (client->isIdle() || client->isPaused())) {
@@ -344,7 +362,8 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
             frameData.frame_handle = buffer->fd;
             frameData.input_tag = buffer->index;
             frameData.timestamp = buffer->timestamp;
-            // frameData.frame_addr = buffer->data;
+            frameData.metadata_handle = buffer->meta_fd;
+            frameData.alloc_metadata_len = buffer->metasize;
 
             if (buffer->port_type == BUFFER_PORT_INPUT) {
                 frameData.buf_type = VIDC_BUFFER_INPUT;
@@ -357,8 +376,8 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
                 }
                 rc = client->emptyBuffer(frameData);
             } else {
-                LOG_MESSAGE("Comp %p fillBuffer handle %d, input_tag %d",
-                    comp, frameData.frame_handle, frameData.input_tag);
+                LOG_MESSAGE("Comp %p fillBuffer handle %d, input_tag %d, meta_fd %d",
+                    comp, frameData.frame_handle, frameData.input_tag, frameData.metadata_handle);
                 frameData.buf_type = VIDC_BUFFER_OUTPUT;
                 rc = client->fillBuffer(frameData);
             }

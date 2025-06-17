@@ -55,7 +55,7 @@ _buffer_pool_release_buffer_wrap (GstBufferPool * bpool, GstBuffer * buffer);
 
 static GstFlowReturn
 _buffer_pool_add_buffer_to_table (GstBufferPool * bpool,
-    GstBuffer * buffer, GstMemory * mem);
+    GstBuffer * buffer, gint64 key);
 
 
 static void
@@ -131,6 +131,13 @@ gst_qvidc_buffer_pool_finalize (GObject * obj)
 
   g_queue_clear (&pool->pending_buffers);
 
+  if (pool->meta_allocator) {
+    GST_DEBUG_OBJECT (pool, "finalize meta allocator:%p ref cnt:%d", pool->meta_allocator,
+        GST_OBJECT_REFCOUNT (pool->meta_allocator));
+    gst_object_unref (pool->meta_allocator);
+    pool->meta_allocator = NULL;
+  }
+
   if (pool->allocator) {
     GST_DEBUG_OBJECT (pool, "finalize allocator:%p ref cnt:%d", pool->allocator,
         GST_OBJECT_REFCOUNT (pool->allocator));
@@ -154,6 +161,32 @@ destroy_gst_buffer (gpointer data)
   if (gst_buf) {
     GST_LOG ("destroy gst buffer:%p ref_cnt:%d", gst_buf,
         GST_OBJECT_REFCOUNT (gst_buf));
+
+    GstCustomMeta *meta = NULL;
+    meta = gst_buffer_get_custom_meta (gst_buf, "GstQVIDCDMeta");
+    if (meta) {
+      GST_LOG ("gst buffer has GstQVIDCDMeta");
+    } else {
+      meta = gst_buffer_get_custom_meta (gst_buf, "GstQVIDCEMeta");
+      if (meta) {
+        GST_LOG ("gst buffer has GstQVIDCEMeta");
+      }
+    }
+
+    if (meta) {
+      GstMemory *meta_mem = NULL;
+      GstStructure *structure =
+          gst_custom_meta_get_structure ((GstCustomMeta *) meta);
+      if (structure &&
+          gst_structure_get (structure, "meta-mem", GST_TYPE_MEMORY, &meta_mem, NULL)) {
+        GST_LOG ("destroy custom meta-mem:%p ref_cnt:%d", meta_mem,
+            GST_OBJECT_REFCOUNT (meta_mem));
+        gst_memory_unref (meta_mem);
+      } else {
+        GST_ERROR ("failed to get custom meta-mem");
+      }
+    }
+
     gst_buffer_unref (gst_buf);
   }
 }
@@ -175,6 +208,7 @@ gst_qvidc_buffer_pool_alloc_buffer (GstBufferPool * bpool,
   GstBufferPoolClass *pclass = GST_BUFFER_POOL_CLASS (parent_class);
   GstFlowReturn ret = GST_FLOW_ERROR;
   GstMemory *mem = NULL;
+  GstMemory *meta_mem = NULL;
 
   GST_DEBUG_OBJECT (pool, "enter, size %d", pool->param.info.size);
 
@@ -194,21 +228,7 @@ gst_qvidc_buffer_pool_alloc_buffer (GstBufferPool * bpool,
       if (mem == NULL) {
         GST_WARNING_OBJECT (pool, "Failed to acquire ext memory block!");
         gst_buffer_unref (*buffer);
-      } else {
-        ret = _buffer_pool_add_buffer_to_table (bpool, *buffer, mem);
-        if (ret == GST_FLOW_OK) {
-          gint fd;
-          if (gst_is_dmabuf_memory (mem)) {
-            fd = gst_dmabuf_memory_get_fd (mem);
-          } else {
-            fd = gst_fd_memory_get_fd (mem);
-          }
-          GST_DEBUG_OBJECT (pool,
-              "Acquired ext buffer fd: %d in buffer: %p from pool: %p", fd,
-              *buffer, pool->param.ext_pool);
-        } else {
-          gst_buffer_unref (*buffer);
-        }
+        ret = GST_FLOW_ERROR;
       }
     }
   } else {
@@ -217,21 +237,69 @@ gst_qvidc_buffer_pool_alloc_buffer (GstBufferPool * bpool,
     if (mem == NULL) {
       GST_WARNING_OBJECT (pool, "Failed to allocate memory block!");
       gst_buffer_unref (*buffer);
+      ret = GST_FLOW_ERROR;
     } else {
-      ret = _buffer_pool_add_buffer_to_table (bpool, *buffer, mem);
-      if (ret == GST_FLOW_OK) {
-        gst_buffer_append_memory (*buffer, mem);
-        gint fd;
-        if (gst_is_dmabuf_memory (mem)) {
-          fd = gst_dmabuf_memory_get_fd (mem);
-        } else {
-          fd = gst_fd_memory_get_fd (mem);
-        }
-        GST_DEBUG_OBJECT (pool, "append mem %p to buf %p, fd %d", mem, *buffer,
-            fd);
+      gst_buffer_append_memory (*buffer, mem);
+      GST_DEBUG_OBJECT (pool, "append mem %p to buf %p", mem, *buffer);
+      ret = GST_FLOW_OK;
+    }
+  }
+
+  if (ret == GST_FLOW_OK) {
+    meta_mem =
+        gst_allocator_alloc (pool->meta_allocator, pool->param.metasize, NULL);
+    if (meta_mem == NULL) {
+      GST_WARNING_OBJECT (pool, "Failed to allocate meta memory block!");
+      gst_buffer_unref (*buffer);
+      ret = GST_FLOW_ERROR;
+    } else {
+      gint fd = -1;
+      gint meta_fd = -1;
+
+      if (gst_is_dmabuf_memory (mem)) {
+        fd = gst_dmabuf_memory_get_fd (mem);
       } else {
-        gst_buffer_unref (*buffer);
+        fd = gst_fd_memory_get_fd (mem);
       }
+
+      if (gst_is_dmabuf_memory (meta_mem)) {
+        meta_fd = gst_dmabuf_memory_get_fd (meta_mem);
+      } else {
+        meta_fd = gst_fd_memory_get_fd (meta_mem);
+      }
+
+      /* Attach QTI video meta */
+      GstCustomMeta *qvd_meta = NULL;
+      GstVIDCComp *gst_vidc_comp = pool->param.gst_vidc_comp;
+      if (vidc_isEncoder (gst_vidc_comp->comp)) {
+        qvd_meta = gst_buffer_add_custom_meta (*buffer, "GstQVIDCEMeta");
+      } else {
+        qvd_meta = gst_buffer_add_custom_meta (*buffer, "GstQVIDCDMeta");
+      }
+      if (qvd_meta) {
+        GstStructure *structure = gst_custom_meta_get_structure (qvd_meta);
+        if (structure) {
+          gst_structure_set (structure, "meta-mem", GST_TYPE_MEMORY, meta_mem, NULL);
+          GST_DEBUG_OBJECT (pool, "add custom meta-mem %p to buf %p, meta_fd %d",
+              meta_mem, *buffer, meta_fd);
+
+          gint64 key = ((gint64) fd << 32) | ((gint64) meta_fd);
+          ret = _buffer_pool_add_buffer_to_table (bpool, *buffer, key);
+          if (ret != GST_FLOW_OK) {
+            gst_buffer_unref (*buffer);
+          }
+        } else {
+          GST_WARNING_OBJECT (pool, "Failed to get custom meta structure");
+          gst_buffer_unref (*buffer);
+          ret = GST_FLOW_ERROR;
+        }
+      } else {
+        GST_WARNING_OBJECT (pool, "Failed to get custom meta");
+        gst_buffer_unref (*buffer);
+        ret = GST_FLOW_ERROR;
+      }
+
+      gst_memory_unref (meta_mem);
     }
   }
 
@@ -279,7 +347,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   GST_ERROR_OBJECT (pool, "acquire_buffer %p", params);
 
   if (param_ext)
-    key = ((gint64) param_ext->fd << 32) | param_ext->meta_fd;
+    key = ((gint64) param_ext->fd << 32) | ((gint64) param_ext->meta_fd);
   if (key > 0) {
     GST_DEBUG_OBJECT (pool, "lookup buffer from table key 0x%lx, fd %d", key,
         (key >> 32) & 0xFFFFFFFF);
@@ -345,7 +413,7 @@ _buffer_pool_release_buffer_wrap (GstBufferPool * bpool, GstBuffer * buffer)
   GstBufferPoolClass *bp_class = GST_BUFFER_POOL_CLASS (parent_class);
   GstQvidcBufferPool *pool = GST_QVIDC_BUFFER_POOL_CAST (bpool);
 
-  GST_DEBUG_OBJECT (pool, "enter buf %p", buffer);
+  GST_DEBUG_OBJECT (pool, "enter buf %p, is_outport %d", buffer, pool->param.is_outport);
   g_mutex_lock (&pool->buflock);
   if (buffer) {
 
@@ -355,28 +423,38 @@ _buffer_pool_release_buffer_wrap (GstBufferPool * bpool, GstBuffer * buffer)
     } else {
       GstVIDCComp *gst_vidc_comp = pool->param.gst_vidc_comp;
       if (gst_vidc_comp) {
-        if (!vidc_isEncoder (gst_vidc_comp->comp)) {
-          if (pool->param.is_outport) {
-            gint fd;
-            if (gst_is_dmabuf_memory (mem)) {
-              fd = gst_dmabuf_memory_get_fd (mem);
-            } else {
-              fd = gst_fd_memory_get_fd (mem);
-            }
-            GST_DEBUG_OBJECT (pool,
-                "queue buf to driver fd %d, capacity %d, size %d", fd,
-                pool->param.info.size, gst_buffer_get_size (buffer));
+        if (pool->param.is_outport) {
+          gint fd;
+          if (gst_is_dmabuf_memory (mem)) {
+            fd = gst_dmabuf_memory_get_fd (mem);
+          } else {
+            fd = gst_fd_memory_get_fd (mem);
+          }
 
-            BufferDescriptor vidcbuf;
-            memset (&vidcbuf, 0, sizeof (BufferDescriptor));
-            vidcbuf.fd = fd;
-            vidcbuf.port_type = BUFFER_PORT_OUTPUT;
-            vidcbuf.capacity = pool->param.info.size;
-            vidcbuf.size = 0;
+          gint meta_fd = -1;
+          guint metasize = 0;
+          GstCustomMeta *meta = NULL;
+          if (vidc_isEncoder (gst_vidc_comp->comp)) {
+            gst_vidc_buffer_get_custom_meta (buffer, "GstQVIDCEMeta", &meta_fd, &metasize);
+          } else {
+            gst_vidc_buffer_get_custom_meta (buffer, "GstQVIDCDMeta", &meta_fd, &metasize);
+          }
 
-            if (!vidc_queue (gst_vidc_comp->comp, &vidcbuf)) {
-              GST_ERROR_OBJECT (pool, "failed to queue buf fd %d", fd);
-            }
+          GST_DEBUG_OBJECT (pool,
+              "queue buf to driver fd %d, capacity %d, size %d, meta_fd %d", fd,
+              pool->param.info.size, gst_buffer_get_size (buffer), meta_fd);
+
+          BufferDescriptor vidcbuf;
+          memset (&vidcbuf, 0, sizeof (BufferDescriptor));
+          vidcbuf.fd = fd;
+          vidcbuf.port_type = BUFFER_PORT_OUTPUT;
+          vidcbuf.capacity = pool->param.info.size;
+          vidcbuf.size = 0;
+          vidcbuf.meta_fd = meta_fd;
+          vidcbuf.metasize = metasize;
+
+          if (!vidc_queue (gst_vidc_comp->comp, &vidcbuf)) {
+            GST_ERROR_OBJECT (pool, "failed to queue buf fd %d", fd);
           }
         }
       }
@@ -391,7 +469,7 @@ _buffer_pool_release_buffer_wrap (GstBufferPool * bpool, GstBuffer * buffer)
 
 static GstFlowReturn
 _buffer_pool_add_buffer_to_table (GstBufferPool * bpool,
-    GstBuffer * buffer, GstMemory * mem)
+    GstBuffer * buffer, gint64 key)
 {
   GstBufferPoolClass *bp_class = GST_BUFFER_POOL_CLASS (parent_class);
   GstQvidcBufferPool *pool = GST_QVIDC_BUFFER_POOL_CAST (bpool);
@@ -399,36 +477,25 @@ _buffer_pool_add_buffer_to_table (GstBufferPool * bpool,
   GHashTable *buffer_table = pool->buffer_table;
   GstVideoInfo *vinfo = &pool->param.info;
 
-  GST_DEBUG_OBJECT (pool, "enter buf %p", buffer);
+  GST_DEBUG_OBJECT (pool, "enter buf %p, key 0x%lx", buffer, key);
 
   if (G_UNLIKELY (!buffer)) {
     GST_ERROR_OBJECT (pool, "invalid gst buffer");
     ret = GST_FLOW_ERROR;
   }
 
-  if (G_UNLIKELY (!mem)) {
-    GST_ERROR_OBJECT (pool, "invalid gst memory");
-    ret = GST_FLOW_ERROR;
-  }
-
   if (ret == GST_FLOW_OK) {
-    gint fd;
-    if (gst_is_dmabuf_memory (mem)) {
-      fd = gst_dmabuf_memory_get_fd (mem);
-    } else {
-      fd = gst_fd_memory_get_fd (mem);
-    }
-    if (fd < 0) {
-      GST_ERROR_OBJECT (pool, "failed to get buffer fd");
-      ret = GST_FLOW_ERROR;
-    } else {
-      guint64 *buf_key = g_malloc (sizeof (guint64));
-      *buf_key = (guint64) fd << 32;
+    gint64 *buf_key = g_malloc (sizeof (gint64));
+    if (buf_key) {
+      *buf_key = key;
       g_hash_table_insert (buffer_table, buf_key, buffer);
       GST_DEBUG_OBJECT (pool,
           "add a gst buf:%p fd:%d meta_fd:%d ref_cnt:%d, key:0x%lx", buffer,
           (*buf_key >> 32) & 0xFFFFFFFF, (*buf_key & 0xFFFFFFFF),
           GST_OBJECT_REFCOUNT (buffer), *buf_key);
+    } else {
+      GST_ERROR_OBJECT (pool, "fail to alloc buf key");
+      ret = GST_FLOW_ERROR;
     }
   }
 
@@ -481,6 +548,9 @@ gst_qvidc_buffer_pool_new (GstBufferPoolInitParam * param)
     g_return_val_if_fail (pool->allocator != NULL, NULL);
   }
 
+  pool->meta_allocator = gst_qvidc_allocator_new (param->mode);
+  g_return_val_if_fail (pool->meta_allocator != NULL, NULL);
+
   buffer_table =
       g_hash_table_new_full (g_int64_hash, g_int64_equal, g_free,
       destroy_gst_buffer);
@@ -489,8 +559,8 @@ gst_qvidc_buffer_pool_new (GstBufferPoolInitParam * param)
   g_queue_init (&pool->pending_buffers);
 
   GST_INFO_OBJECT (pool,
-      "new output buffer pool:%p allocator:%p table %p ubwc:%d", pool,
-      pool->allocator, buffer_table, param->is_ubwc);
+      "new buffer pool:%p allocator:%p table %p ubwc:%d, meta_allocator %p", pool,
+      pool->allocator, buffer_table, param->is_ubwc, pool->meta_allocator);
 
   return GST_BUFFER_POOL (pool);
 }
