@@ -82,7 +82,6 @@ GstClient::GstClient(ComponentIdType id)
     mConfig.profile.profile = VIDC_PROFILE_H264_UNUSED;
     mConfig.level.level = VIDC_LEVEL_H264_UNUSED;
     mConfig.bitRate.target_bitrate = DEFAULT_BITRATE;
-    mTag = 0;
 
     mPlaneInfo.initialize();
 }

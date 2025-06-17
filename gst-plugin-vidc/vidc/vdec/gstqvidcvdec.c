@@ -71,6 +71,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "gstqvidcvdec.h"
 #include <dlfcn.h>
@@ -1412,14 +1413,22 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
   }
 
   GST_DEBUG_OBJECT (dec,
-      "push_frame_downstream, buffer: %p, fd: %d, index %d, meta_fd: %d, timestamp: %lu",
-      decode_buf->data, decode_buf->fd, decode_buf->index, decode_buf->meta_fd,
-      decode_buf->timestamp);
+      "buffer: %p, fd: %d, index %" PRIu64
+      ", meta_fd: %d, timestamp: %" PRIu64 ", flag 0x%x",
+      decode_buf->data, decode_buf->fd, decode_buf->index,
+      decode_buf->meta_fd, decode_buf->timestamp, decode_buf->flag);
+
+  if (decode_buf->flag & FLAG_TYPE_DROP_FRAME) {
+    GST_DEBUG_OBJECT (dec, "read-only/drop frame queue to vidc");
+    queue_vidc_bufferDesc (decode_buf, decoder);
+    ret = GST_FLOW_OK;
+    goto out;
+  }
 
   frame = gst_video_decoder_get_frame (decoder, decode_buf->index);
   if (frame == NULL) {
     GST_DEBUG_OBJECT (dec,
-        "seek: can't get frame (%lu), which was released during FLUSH-STOP event",
+        "seek: can't get frame (%" PRIu64 "), which was released during FLUSH-STOP event",
         decode_buf->index);
     /* free old output buffer since of seeking */
     queue_vidc_bufferDesc (decode_buf, decoder);
@@ -1527,9 +1536,9 @@ queue_vidc_bufferDesc (BufferDescriptor * buffer, gpointer user_data)
   GstVideoDecoder *decoder = (GstVideoDecoder *) user_data;
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
   GST_DEBUG_OBJECT (dec,
-      "buffer=%p, mem fd %d, capacity %d, size %d, port %d, index %d",
+      "buffer=%p, mem fd %d, capacity %d, size %d, port %d, meta fd %d, index %" PRIu64,
       buffer, buffer->fd, buffer->capacity, buffer->size, buffer->port_type,
-      buffer->index);
+      buffer->meta_fd, buffer->index);
 
   buffer->size = 0;
 
@@ -1553,8 +1562,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       BufferDescriptor *in_buf = (BufferDescriptor *) data;
       GstBufferPool *pool = dec->in_port_pool;
       GST_DEBUG_OBJECT (dec,
-          "EVENT_INPUTS_DONE buffer fd %d, index %d to pool %p", in_buf->fd,
-          in_buf->index, pool);
+          "EVENT_INPUTS_DONE buffer fd %d, index %" PRIu64 " to pool %p",
+          in_buf->fd, in_buf->index, pool);
 
       gint64 key = ((gint64) in_buf->fd << 32) | ((gint64) in_buf->meta_fd);
       GstBuffer *gst_buf = gst_qvidc_buffer_pool_find_buffer (pool, key);
@@ -1714,6 +1723,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
       break;
     }
+    case EVENT_DROP_FRAME: {
+      BufferDescriptor *out_buf = (BufferDescriptor *) data;
+      if (out_buf) {
+        GST_DEBUG_OBJECT (dec, "drop frame %" PRIu64 ", fd %d",
+            out_buf->index, out_buf->fd);
+        GstFlowReturn ret = push_frame_downstream (decoder, out_buf);
+      }
+      break;
+    }
 
     default:{
       GST_ERROR_OBJECT (dec, "Invalid Event(%d)", type);
@@ -1822,7 +1840,7 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
       if (inBuf.data) {
-          memcpy (info.data, inBuf.data, inBuf.size);
+        memcpy (info.data, inBuf.data, inBuf.size);
       }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;

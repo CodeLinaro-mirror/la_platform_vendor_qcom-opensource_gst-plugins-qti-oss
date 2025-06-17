@@ -137,7 +137,6 @@ private:
 
     std::unique_ptr<EventCallback> mCallback;
     PlaneInfo mPlaneInfo;
-    int mTag;
 };
 
 #endif // GSTCLIENT_H

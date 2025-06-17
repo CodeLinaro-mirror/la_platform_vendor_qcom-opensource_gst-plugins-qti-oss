@@ -145,9 +145,9 @@ void CodecCallback::onBufferAvailable(
         mCallback(mHandle, EVENT_INPUTS_DONE, &inBuf);
     } else if (frameData.buf_type == VIDC_BUFFER_OUTPUT) {
         LOG_INFO("FBD fd:%d, data_len %u, alloc_len %u, input_tag %lu, "
-            "timestamp %lld, meta_fd %d, metasize %u",
+            "timestamp %lld, flags 0x%x, meta_fd %d, metasize %u",
             frameData.frame_handle, frameData.data_len, frameData.alloc_len,
-            frameData.input_tag, frameData.timestamp,
+            frameData.input_tag, frameData.timestamp, frameData.flags,
             frameData.metadata_handle, frameData.alloc_metadata_len);
 
         BufferDescriptor outBuf;
@@ -165,7 +165,12 @@ void CodecCallback::onBufferAvailable(
         outBuf.meta_fd = frameData.metadata_handle;
         outBuf.metasize = frameData.alloc_metadata_len;
 
-        mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
+        if (frameData.flags & VIDC_FRAME_FLAG_READONLY) {
+            outBuf.flag = FLAG_TYPE_DROP_FRAME;
+            mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
+        } else {
+            mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
+        }
     }
 }
 
@@ -366,9 +371,9 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
             frameData.alloc_metadata_len = buffer->metasize;
 
             if (buffer->port_type == BUFFER_PORT_INPUT) {
+                LOG_MESSAGE("Comp %p emptyBuffer handle %d, input_tag %d, meta_fd %d",
+                    comp, frameData.frame_handle, frameData.input_tag, frameData.metadata_handle);
                 frameData.buf_type = VIDC_BUFFER_INPUT;
-                LOG_MESSAGE("Comp %p emptyBuffer handle %d, input_tag %d",
-                    comp, frameData.frame_handle, frameData.input_tag);
                 if (buffer->flag == FLAG_TYPE_END_OF_STREAM) {
                     LOG_MESSAGE("Comp %p emptyBuffer handle %d, EOS",
                         comp, frameData.frame_handle);
