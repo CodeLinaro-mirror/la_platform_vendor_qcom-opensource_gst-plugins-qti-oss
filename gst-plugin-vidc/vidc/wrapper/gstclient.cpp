@@ -41,6 +41,25 @@
 #define NUM_OF_BACKBUFFER_OUT 6
 #define DEFAULT_BITRATE 500000
 
+typedef enum {
+    INTERLACE_MODE_PROGRESSIVE = 0, ///< progressive
+    INTERLACE_MODE_INTERLEAVED_TOP_FIRST, ///< line-interleaved. top-field-first
+    INTERLACE_MODE_INTERLEAVED_BOTTOM_FIRST, ///< line-interleaved. bottom-field-first
+    INTERLACE_MODE_FIELD_TOP_FIRST, ///< field-sequential. top-field-first
+    INTERLACE_MODE_FIELD_BOTTOM_FIRST, ///< field-sequential. bottom-field-first
+} INTERLACE_MODE_TYPE;
+
+std::unordered_map<vidc_qmetadata_interlace_type, INTERLACE_MODE_TYPE>
+    meta_interlace_type_table =
+{
+    {VIDC_QMETADATA_INTERLACE_NONE, INTERLACE_MODE_PROGRESSIVE},
+    {VIDC_QMETADATA_FRAME_PROGRESSIVE, INTERLACE_MODE_PROGRESSIVE},
+    {VIDC_QMETADATA_FRAME_INTERLEAVE_TOPFIELD_FIRST, INTERLACE_MODE_INTERLEAVED_TOP_FIRST},
+    {VIDC_QMETADATA_FRAME_INTERLEAVE_BOTTOMFIELD_FIRST, INTERLACE_MODE_INTERLEAVED_BOTTOM_FIRST},
+    {VIDC_QMETADATA_FRAME_INTERLACE_TOPFIELD_FIRST, INTERLACE_MODE_FIELD_TOP_FIRST},
+    {VIDC_QMETADATA_FRAME_INTERLACE_BOTTOMFIELD_FIRST, INTERLACE_MODE_FIELD_BOTTOM_FIRST},
+};
+
 GstClient::GstClient(ComponentIdType id)
     : BaseClient(id == COMPONENT_DECODER ? "Decoder" : "Encoder")
 {
@@ -146,9 +165,15 @@ int GstClient::flattenMetaData(vidc_frame_data_type& frameData)
     return rc;
 }
 
-int GstClient::extractMetaData(vidc_frame_data_type& frameData)
+int GstClient::extractMetaData(vidc_frame_data_type& frameData,
+    std::vector<std::shared_ptr<MetaInfo>> *infos)
 {
     int rc = VIDC_ERR_NONE;
+    if (infos == NULL) {
+        LOG_ERROR("invalid infos pointer");
+        return VIDC_ERR_FAIL;
+    }
+
     if (frameData.metadata_handle && frameData.alloc_metadata_len) {
         void *meta_addr = mmap(NULL, frameData.alloc_metadata_len, PROT_READ,
             MAP_SHARED, frameData.metadata_handle, 0);
@@ -164,12 +189,26 @@ int GstClient::extractMetaData(vidc_frame_data_type& frameData)
                         (vidc_qmetapayload_header_type*) (metadataHdr + 1);
                     for (uint32 i = 0; i < metadataHdr->count; i++) {
                         LOG_INFO("meta[%d] type 0x%x", i, metaPayloadHdr->qmetadata_type);
+                        auto metaInfo = std::make_shared<MetaInfo>();
+                        if (!metaInfo) {
+                            LOG_WARNING("failed to make metaInfo");
+                            continue;
+                        }
+
+                        metaInfo->header = *metaPayloadHdr;
+                        metaInfo->payload = malloc (metaPayloadHdr->size);
+                        if (!metaInfo->payload) {
+                            LOG_WARNING("failed to make metaInfo payload");
+                            continue;
+                        }
+
                         if (metaPayloadHdr->qmetadata_type == VIDC_QMETADATA_INTERLACE) {
                             vidc_qmetadata_interlace_type *payload =
                                 (vidc_qmetadata_interlace_type *)(((uint8 *)metadataHdr) + metaPayloadHdr->offset);
                             LOG_INFO("VIDC_QMETADATA_INTERLACE 0x%x, payload 0x%x, size %d, offset %d",
                                 VIDC_QMETADATA_INTERLACE, *payload,
                                 metaPayloadHdr->size, metaPayloadHdr->offset);
+                            memcpy (metaInfo->payload, payload, metaPayloadHdr->size);
                         } else if (metaPayloadHdr->qmetadata_type == VIDC_QMETADATA_BUFFER_TAG) {
                             vidc_qmetadata_buffer_tag_type *payload =
                                 (vidc_qmetadata_buffer_tag_type *)(((uint8 *)metadataHdr) + metaPayloadHdr->offset);
@@ -177,8 +216,10 @@ int GstClient::extractMetaData(vidc_frame_data_type& frameData)
                                 VIDC_QMETADATA_BUFFER_TAG, payload->tag,
                                 metaPayloadHdr->size, metaPayloadHdr->offset);
                             frameData.input_tag = payload->tag;
+                            memcpy (metaInfo->payload, payload, metaPayloadHdr->size);
                         }
                         metaPayloadHdr++;
+                        infos->push_back(metaInfo);
                     }
                 }
             }
@@ -1112,13 +1153,33 @@ bool GstClient::isEncoder()
     return mCompId == COMPONENT_ENCODER ? true : false;
 }
 
+bool GstClient::isProgressive()
+{
+    uint32 isProgressive = 1;
+
+    if (mCompId == COMPONENT_DECODER) {
+        bool rc = getParameter(VIDC_I_DEC_PROGRESSIVE_ONLY, &isProgressive, sizeof(uint32));
+        if (rc != true)
+        {
+            MM_ERROR_MSG("GstClient::isProgressive-%s query scanType failed", mNamePtr);
+        }
+
+        MM_DBG_MSG("GstClient::isProgressive-%s query scanType progressive %d", mNamePtr, isProgressive);
+    }
+
+    return isProgressive ? true : false;
+}
+
 void GstClient::EmptyCallback(BaseClient* base, vidc_frame_data_type& frameData)
 {
     MM_DBG_MSG("GstClient::EmptyCallback-%s", mNamePtr);
     if (frameData.flags & VIDC_FRAME_FLAG_EOS) {
         MM_DBG_MSG("GstClient::EmptyCallback-%s, EOS detected", mNamePtr);
     }
-    mCallback->onBufferAvailable(frameData);
+
+    InterlaceInfo interlaceInfo = {INTERLACE_MODE_PROGRESSIVE, true};
+
+    mCallback->onBufferAvailable(frameData, interlaceInfo);
 }
 
 void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData)
@@ -1128,9 +1189,40 @@ void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData
         MM_DBG_MSG("GstClient::FilledCallback-%s, EOS detected", mNamePtr);
     }
 
-    extractMetaData(frameData);
+    std::vector<std::shared_ptr<MetaInfo>> infos;
 
-    mCallback->onBufferAvailable(frameData);
+    extractMetaData(frameData, &infos);
+
+    InterlaceInfo interlaceInfo = {INTERLACE_MODE_PROGRESSIVE, true};
+    for (auto &info : infos) {
+        if (info) {
+            vidc_qmetapayload_header_type *header = &info->header;
+            void *payload = info->payload;
+
+            if (payload) {
+                if (header) {
+                    if (header->qmetadata_type == VIDC_QMETADATA_INTERLACE) {
+                        vidc_qmetadata_interlace_type interlace =
+                            *(vidc_qmetadata_interlace_type *) payload;
+                        auto interlaceMode =
+                            meta_interlace_type_table.find(interlace);
+                        if (interlaceMode != meta_interlace_type_table.end()) {
+                            interlaceInfo.interlaceMode = interlaceMode->second;
+                        }
+                        uint32 isProgressive = VIDC_SCAN_PROGRESSIVE;
+                        if (getParameter(VIDC_I_DEC_PROGRESSIVE_ONLY,
+                            &isProgressive, sizeof(uint32))) {
+                            interlaceInfo.deinterlaced = isProgressive ? true : false;
+                        }
+                    }
+                }
+
+                free (payload);
+            }
+        }
+    }
+
+    mCallback->onBufferAvailable(frameData, interlaceInfo);
 }
 
 void GstClient::outputReconfigureCallback(BaseClient* base)

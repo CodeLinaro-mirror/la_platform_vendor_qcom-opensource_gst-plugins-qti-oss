@@ -137,7 +137,6 @@ gst_qvidc_mpeg2_dec_set_format (GstQvidcVdec * decoder,
   GstQvidcMPEG2Dec *dec = GST_QVIDC_MPEG2_DEC (decoder);
   GstQvidcVdec *base_dec = GST_QVIDC_VDEC (decoder);
   gboolean result = TRUE;
-  ConfigParams deinterlace;
   ConfigParams pixel_format;
   GPtrArray *config = NULL;
 

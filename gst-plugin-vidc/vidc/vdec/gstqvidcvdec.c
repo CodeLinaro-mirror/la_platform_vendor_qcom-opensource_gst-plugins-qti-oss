@@ -279,20 +279,6 @@ make_pixel_format_param (guint32 fmt, gboolean is_input)
 }
 
 static ConfigParams
-make_interlace_param (INTERLACE_MODE_TYPE mode, gboolean is_input)
-{
-  ConfigParams param;
-
-  memset (&param, 0, sizeof (ConfigParams));
-
-  param.config_name = CONFIG_FUNCTION_KEY_INTERLACE_INFO;
-  param.isInput = is_input;
-  param.interlaceMode.type = mode;
-
-  return param;
-}
-
-static ConfigParams
 make_output_picture_order_param (guint output_picture_order_mode)
 {
   ConfigParams param;
@@ -962,10 +948,12 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
   GstQvidcVdecClass *dec_class = GST_QVIDC_VDEC_GET_CLASS (decoder);
   GstStructure *structure = NULL;
+  const gchar *mode_str;
   gint retval = 0;
   gboolean ret = FALSE;
   gint width = 0;
   gint height = 0;
+  GstVideoInterlaceMode interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
   gchar *comp_name = NULL;
   GPtrArray *config = NULL;
   ConfigParams codectype;
@@ -995,8 +983,21 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
       goto error_res;
     }
 
+    if ((mode_str = gst_structure_get_string (structure, "interlace-mode"))) {
+      if (g_str_equal ("progressive", mode_str)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
+      } else if (g_str_equal ("interleaved", mode_str)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+      } else if (g_str_equal ("mixed", mode_str)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
+      } else if (g_str_equal ("fields", mode_str)) {
+        interlace_mode = GST_VIDEO_INTERLACE_MODE_FIELDS;
+      }
+    }
+
     dec->width = width;
     dec->height = height;
+    dec->interlace_mode = interlace_mode;
     if (dec->comp_name) {
       g_free (dec->comp_name);
     }
@@ -1626,8 +1627,11 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       g_mutex_lock (&(dec->pending_lock));
       GstFlowReturn ret = GST_FLOW_OK;
       GstVideoCodecState *output_state = NULL;
+      GstVideoInterlaceMode interlace_mode =
+          GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
 
       gboolean started = *(gboolean *) data;
+      gboolean is_progressive = true;
       guint size, min, max;
       size = min = max = 0;
 
@@ -1641,10 +1645,27 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
       }
 
-      GST_DEBUG_OBJECT (dec, "start reconfig pool");
+      is_progressive = vidc_isProgressive (dec->comp);
+      GST_DEBUG_OBJECT (dec, "start reconfig pool, caps interlace_mode %d, progressive %d",
+          dec->interlace_mode, is_progressive);
 
-      output_state = gst_video_decoder_set_output_state (decoder,
-          dec->output_format, dec->width, dec->height, dec->input_state);
+      if (GST_IS_QVIDC_MPEG2_DEC (dec)) {
+        if (dec->interlace_mode == GST_VIDEO_INTERLACE_MODE_PROGRESSIVE
+            || is_progressive)
+          interlace_mode = GST_VIDEO_INTERLACE_MODE_INTERLEAVED;
+        else
+          interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
+      }
+
+      if (GST_IS_QVIDC_H264_DEC (dec)) {
+        if (dec->interlace_mode != GST_VIDEO_INTERLACE_MODE_PROGRESSIVE
+            || !is_progressive)
+          interlace_mode = GST_VIDEO_INTERLACE_MODE_MIXED;
+      }
+
+      output_state = gst_video_decoder_set_interlaced_output_state (decoder,
+          dec->output_format, interlace_mode,
+          dec->width, dec->height, dec->input_state);
       if (!output_state) {
         GST_ERROR_OBJECT (dec, "Failed to get output state");
         g_mutex_unlock (&(dec->pending_lock));
@@ -1652,6 +1673,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       }
 
       output_state->caps = gst_video_info_to_caps (&output_state->info);
+
+      GST_DEBUG_OBJECT (dec, "set interlace mode %s in caps",
+          gst_video_interlace_mode_to_string (interlace_mode));
+
       if (dec->downstream_supports_dma) {
         gst_caps_set_features (output_state->caps, 0,
             gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));

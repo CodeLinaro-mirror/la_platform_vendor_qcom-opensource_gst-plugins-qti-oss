@@ -96,7 +96,8 @@ class EventCallback {
 public:
     // Notify that an output buffer is available with given index.
     virtual void onBufferAvailable(
-        vidc_frame_data_type& frameData)
+        vidc_frame_data_type& frameData,
+        InterlaceInfo& interlaceInfo)
         = 0;
 
     virtual void onError(uint32_t errorCode) = 0;

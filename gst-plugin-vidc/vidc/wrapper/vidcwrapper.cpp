@@ -87,7 +87,8 @@ public:
     ~CodecCallback();
 
     void onBufferAvailable(
-        vidc_frame_data_type& frameData) override;
+        vidc_frame_data_type& frameData,
+        InterlaceInfo& interlaceInfo) override;
     void onError(uint32_t errorCode) override;
     void onReconfig(bool started) override;
 
@@ -112,7 +113,8 @@ CodecCallback::~CodecCallback()
 }
 
 void CodecCallback::onBufferAvailable(
-    vidc_frame_data_type& frameData)
+    vidc_frame_data_type& frameData,
+    InterlaceInfo& interlaceInfo)
 {
 
     if (!mCallback) {
@@ -157,8 +159,8 @@ void CodecCallback::onBufferAvailable(
         outBuf.timestamp = frameData.timestamp;
         outBuf.fd = frameData.frame_handle;
         outBuf.flag = static_cast<FLAG_TYPE>(0);
-        outBuf.interlaceMode = 0;
-        outBuf.deinterlaced = false;
+        outBuf.interlaceMode = interlaceInfo.interlaceMode;
+        outBuf.deinterlaced = interlaceInfo.deinterlaced;
         outBuf.capacity = frameData.alloc_len;
         outBuf.size = frameData.data_len;
         outBuf.index = frameData.input_tag;
@@ -704,6 +706,17 @@ gboolean vidc_isEncoder(void* const comp)
     if (comp) {
         GstClient* client = (GstClient*)comp;
         ret = client->isEncoder();
+    }
+
+    return ret;
+}
+
+gboolean vidc_isProgressive(void* const comp)
+{
+    gboolean ret = TRUE;
+    if (comp) {
+        GstClient* client = (GstClient*)comp;
+        ret = client->isProgressive();
     }
 
     return ret;

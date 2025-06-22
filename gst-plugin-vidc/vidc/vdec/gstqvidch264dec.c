@@ -137,7 +137,6 @@ gst_qvidc_h264_dec_set_format (GstQvidcVdec * decoder,
   GstQvidcH264Dec *dec = GST_QVIDC_H264_DEC (decoder);
   GstQvidcVdec *base_dec = GST_QVIDC_VDEC (decoder);
   gboolean result = TRUE;
-  ConfigParams deinterlace;
   ConfigParams pixel_format;
   GPtrArray *config = NULL;
 
