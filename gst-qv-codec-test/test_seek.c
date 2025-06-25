@@ -51,6 +51,12 @@ main (int argc, char *argv[])
 
   msg = gst_bus_timed_pop_filtered (GST_ELEMENT_BUS (playbin),
       GST_CLOCK_TIME_NONE, GST_MESSAGE_ASYNC_DONE | GST_MESSAGE_ERROR);
+  if (!msg) {
+    g_printerr ("Failed to preroll!\n");
+    gst_element_set_state (playbin, GST_STATE_NULL);
+    gst_object_unref (playbin);
+    return -1;
+  }
   if (GST_MESSAGE_TYPE (msg) == GST_MESSAGE_ERROR) {
     g_printerr ("Received error message!\n");
     gst_message_unref (msg);
