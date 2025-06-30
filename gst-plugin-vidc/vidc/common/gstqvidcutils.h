@@ -24,13 +24,9 @@ GType gst_vidc_comp_get_type (void);
 
 
 GstVIDCComp *gst_vidc_comp_create (void *comp);
-void *get_vidc_comp (GstVIDCComp * gst_vidc_comp);
 GstVIDCComp *gst_vidc_comp_ref (GstVIDCComp * comp);
 void gst_vidc_comp_unref (GstVIDCComp * comp);
 
 ConfigParams make_framerate_param (gfloat framerate, gboolean is_input);
-ConfigParams
-make_hdr_static_info_param (GstVideoMasteringDisplayInfo display_info,
-    GstVideoContentLightLevel content_light_level, gboolean is_input);
 
 #endif /* __GST_QVIDC_UTILS_H__ */

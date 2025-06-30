@@ -77,7 +77,7 @@ DmaBufDesc *
 gst_qcarcam_meta_get_desc (GstBuffer * buffer)
 {
   GstQcarcamMeta *meta = gst_buffer_get_qcarcam_meta(buffer);
-  return meta->desc;
+  return meta ? meta->desc : NULL;
 }
 
 GstQcarcamMeta *

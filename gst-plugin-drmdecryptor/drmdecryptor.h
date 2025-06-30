@@ -41,6 +41,9 @@ struct _GstDrmDecryptor {
   gchar                   *session_id;
 
   gpointer                cdm_instance;
+
+  gint                    output_buf_size;
+  gchar                   *original_media_type;
 };
 
 struct _GstDrmDecryptorClass {

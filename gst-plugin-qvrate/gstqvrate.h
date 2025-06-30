@@ -13,6 +13,7 @@ G_BEGIN_DECLS
 typedef struct _GstQvrate GstQvrate;
 typedef struct _GstQvrateClass GstQvrateClass;
 typedef struct _GstQvrateMessage GstQvrateMessage;
+typedef struct _GstQvrateFrame GstQvrateFrame;
 
 #define GST_TYPE_QVRATE (gst_qvrate_get_type())
 
@@ -47,6 +48,11 @@ struct _GstQvrateMessage {
       struct vpp_event event;
     } qvrate_vpp_event;
   } content;
+};
+
+struct _GstQvrateFrame {
+  guint64 cookie;
+  GQueue events;
 };
 
 struct _GstQvrate {
@@ -93,6 +99,10 @@ struct _GstQvrate {
   GstTask *outbuf_task;
   GRecMutex outbuf_lock;
   guint64 frame_number;
+
+  GQueue pending_events;
+  GQueue pending_frames;
+  GMutex pending_lock; /* protect the pending_events and pending_frames */
 };
 
 struct _GstQvrateClass {

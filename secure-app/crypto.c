@@ -27,8 +27,13 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
 IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 --------------------------------------------------------------------*/
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #include "crypto.h"
 #include <dlfcn.h>
+#include <stdio.h>
 
 #define SymOEMCryptoLib "libcontentcopy.so"
 #define SymOEMCryptoAppName "smpcpyap64"
@@ -37,83 +42,106 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SymOEMCryptoTerminate "Content_Protection_Copy_Terminate"
 #define SymOEMCryptoCopy "Content_Protection_Copy"
 
+GST_DEBUG_CATEGORY (crypto_debug);
+#define GST_CAT_DEFAULT crypto_debug
+
 static int load_crypto_lib(Crypto *crypto);
 static void unload_crypto_lib(Crypto *crypto);
 
-SecureCopyResult crypto_init(Crypto *crypto) {
+static char dlerr_cached_str[512] = {0};
+char* dlerr_tip()
+{
+    //As dlerror() will clean that error string once it's called, need cache the string if need call dlerror() multiple times for one error
+    char* new_err = dlerror();
+    if (new_err) {
+      snprintf(dlerr_cached_str, sizeof(dlerr_cached_str), "%s", new_err);
+    }
+    return dlerr_cached_str;
+}
 
-    SecureCopyResult result = SECURE_COPY_SUCCESS;
+
+int crypto_init(Crypto *crypto) {
+    GST_DEBUG_CATEGORY_INIT (crypto_debug, "cryptoapi", 0, "crypto copy api");
+
     crypto->m_lib_handle = NULL;
     crypto->m_secure_handle = NULL;
     crypto->m_crypto_init = NULL;
     crypto->m_crypto_set_appname = NULL;
     crypto->m_crypto_deinit = NULL;
     crypto->m_crypto_copy = NULL;
-
     GST_DEBUG ("Crypto init");
-
-    if (load_crypto_lib(crypto) == 0) {
+    printf ("Crypto init\n");
+    int result = load_crypto_lib(crypto);
+    if (result == 0) {
         if (crypto->m_crypto_init) {
             result = crypto->m_crypto_init(&crypto->m_secure_handle);
             if (crypto->m_crypto_set_appname) {
                 result = crypto->m_crypto_set_appname(SymOEMCryptoAppName);
             } else {
                 GST_ERROR("Invalid method handle to OEMCryptoSetAppName");
+                printf("Invalid method handle to OEMCryptoSetAppName\n");
                 result = SECURE_COPY_ERROR_INIT_FAILED;
             }
         } else {
             GST_ERROR("Invalid method handle to OEMCryptoInit");
+            printf("Invalid method handle to OEMCryptoInit\n");
             result = SECURE_COPY_ERROR_INIT_FAILED;
         }
     } else {
         GST_ERROR("Failed to load crypto lib");
-        result = SECURE_COPY_ERROR_INIT_FAILED;
+        printf("Failed to load crypto lib\n");
     }
-
     return result;
 }
 
-SecureCopyResult crypto_deinit(Crypto *crypto) {
+int crypto_deinit(Crypto *crypto) {
 
-    SecureCopyResult result = SECURE_COPY_SUCCESS;
+    int result = 0;
 
     if (crypto->m_crypto_deinit) {
         result = crypto->m_crypto_deinit(&crypto->m_secure_handle);
     } else {
         GST_ERROR("Invalid method handle to OEMCryptoTerminate");
-        result = SECURE_COPY_ERROR_INIT_FAILED;
+        printf("Invalid method handle to OEMCryptoTerminate\n");
+        result = -1;
     }
     unload_crypto_lib(crypto);
-
     return result;
 }
 
-SecureCopyResult crypto_copy(Crypto *crypto, SecureCopyDir eCopyDir,
-        uint8_t* pBuffer, unsigned long nBufferFd, uint32_t* pBufferSize) {
+int crypto_copy(Crypto *crypto, SecureCopyDir eCopyDir,
+        unsigned char *pBuffer, unsigned long nBufferFd, unsigned int *pBufferSize) {
 
     SecureCopyResult result = SECURE_COPY_SUCCESS;
-    uint32_t nBytesCopied = 0;
-    uint32_t nBufferSize = *pBufferSize;
+    unsigned int nBytesCopied = 0;
+    unsigned int nBufferSize = *pBufferSize;
 
     if (crypto->m_crypto_copy == NULL) {
         GST_ERROR("Invalid method handle to OEMCryptoCopy");
-        return SECURE_COPY_ERROR_INIT_FAILED;
+        printf("Invalid method handle to OEMCryptoCopy\n");
+        return -1;
     }
 
     GST_DEBUG ("CryptoCopy, fd: %u, buf: %p, size: %u, byte_ct: %u, copy_dir: %d",
         (unsigned int)nBufferFd, pBuffer, (unsigned int)nBufferSize, (unsigned int)nBytesCopied, eCopyDir);
+    //printf ("CryptoCopy, fd: %u, buf: %p, size: %u, byte_ct: %u, copy_dir: %d\n",
+    //    (unsigned int)nBufferFd, pBuffer, (unsigned int)nBufferSize, (unsigned int)nBytesCopied, eCopyDir);
     result = crypto->m_crypto_copy(crypto->m_secure_handle, pBuffer, nBufferSize,
             nBufferFd, 0, &nBytesCopied, eCopyDir);
 
     if (result != SECURE_COPY_SUCCESS) {
-        GST_ERROR("Error in CryptoCopy, fd: %u, buf: %p, size: %u, byte_ct: %u, copy_dir: %d result:%d",
+        GST_ERROR(
+            "Error in CryptoCopy, fd: %u, buf: %p, size: %u, byte_ct: %u, copy_dir: %d result:%d",
+            (unsigned int)nBufferFd, pBuffer, (unsigned int)nBufferSize, (unsigned int)nBytesCopied, eCopyDir, result);
+        printf(
+            "Error in CryptoCopy, fd: %u, buf: %p, size: %u, byte_ct: %u, copy_dir: %d result:%d\n",
             (unsigned int)nBufferFd, pBuffer, (unsigned int)nBufferSize, (unsigned int)nBytesCopied, eCopyDir, result);
         return result;
     }
 
     *pBufferSize = nBytesCopied;
 
-    return result;
+    return 0;
 }
 
 int load_crypto_lib(Crypto *crypto) {
@@ -121,41 +149,47 @@ int load_crypto_lib(Crypto *crypto) {
     int result = 0;
 
     GST_DEBUG ("Loading crypto lib");
+    printf ("Loading crypto lib\n");
 
     crypto->m_lib_handle = dlopen(SymOEMCryptoLib, RTLD_NOW);
     if (crypto->m_lib_handle == NULL) {
-        GST_ERROR("Failed to open %s, error : %s", SymOEMCryptoLib, dlerror());
-        return -1;
+        GST_ERROR("Failed to open %s, error : %s", SymOEMCryptoLib, dlerr_tip());
+        printf("Failed to open %s, error : %s\n", SymOEMCryptoLib, dlerr_tip());
+        return -2;
     }
 
     crypto->m_crypto_set_appname = (Crypto_Set_AppName)dlsym(crypto->m_lib_handle, SymOEMCryptoSetAppName);
     if (crypto->m_crypto_set_appname == NULL) {
-        GST_ERROR("Failed to find symbol for OEMCryptoInit: %s", dlerror());
-        result = -1;
+        GST_ERROR("Failed to find symbol for OEMCryptoInit: %s", dlerr_tip());
+        printf("Failed to find symbol for OEMCryptoInit: %s\n", dlerr_tip());
+        result = -2;
     }
 
     crypto->m_crypto_init = (Crypto_Init)dlsym(crypto->m_lib_handle, SymOEMCryptoInit);
     if (crypto->m_crypto_init == NULL) {
-        GST_ERROR("Failed to find symbol for OEMCryptoInit: %s", dlerror());
-        result = -1;
+        GST_ERROR("Failed to find symbol for OEMCryptoInit: %s", dlerr_tip());
+        printf("Failed to find symbol for OEMCryptoInit: %s\n", dlerr_tip());
+        result = -2;
     }
-
-    crypto->m_crypto_deinit = (Crypto_Deinit)dlsym(crypto->m_lib_handle, SymOEMCryptoTerminate);
-    if (crypto->m_crypto_deinit == NULL) {
-        GST_ERROR("Failed to find symbol for OEMCryptoTerminate: %s", dlerror());
-        result = -1;
+    if (result == 0) {
+        crypto->m_crypto_deinit = (Crypto_Deinit)dlsym(crypto->m_lib_handle, SymOEMCryptoTerminate);
+        if (crypto->m_crypto_deinit == NULL) {
+            GST_ERROR("Failed to find symbol for OEMCryptoTerminate: %s", dlerr_tip());
+            printf("Failed to find symbol for OEMCryptoTerminate: %s\n", dlerr_tip());
+            result = -2;
+        }
     }
-
-    crypto->m_crypto_copy = (Crypto_Copy)dlsym(crypto->m_lib_handle, SymOEMCryptoCopy);
-    if (crypto->m_crypto_copy == NULL) {
-        GST_ERROR("Failed to find symbol for OEMCryptoCopy: %s", dlerror());
-        result = -1;
+    if (result == 0) {
+        crypto->m_crypto_copy = (Crypto_Copy)dlsym(crypto->m_lib_handle, SymOEMCryptoCopy);
+        if (crypto->m_crypto_copy == NULL) {
+            GST_ERROR("Failed to find symbol for OEMCryptoCopy: %s", dlerr_tip());
+            printf("Failed to find symbol for OEMCryptoCopy: %s\n", dlerr_tip());
+            result = -2;
+        }
     }
-
-    if (result) {
+    if (result != 0) {
         unload_crypto_lib(crypto);
     }
-
     return result;
 }
 
@@ -171,3 +205,4 @@ void unload_crypto_lib(Crypto *crypto) {
     crypto->m_crypto_deinit = NULL;
     crypto->m_crypto_copy = NULL;
 }
+
