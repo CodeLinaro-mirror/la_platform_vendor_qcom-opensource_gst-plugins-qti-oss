@@ -30,7 +30,8 @@
 /*
 Changes from Qualcomm Innovation Center are provided under the following license:
 
-Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted (subject to the limitations in the
@@ -84,6 +85,7 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_venc_debug
 
 #define DEFAULT_COLOR_SPACE_CONVERSION            (FALSE)
+#define DEFAULT_EMBED_COLOR_SPACE_INFO            (FALSE)
 #define DEFAULT_BITRATE_SAVING_MODE               (0xffffffff)
 #define DEFAULT_BLUR_MODE                         (0xffffffff)
 #define DEFAULT_INTERVAL_INTRAFRAMES              (0xffffffff)
@@ -147,6 +149,7 @@ enum
   PROP_COLOR_SPACE_TRANSFER_CHAR,
   PROP_COLOR_SPACE_FULL_RANGE,
   PROP_COLOR_SPACE_CONVERSION,
+  PROP_EMBED_COLOR_SPACE_INFO,
   PROP_MIRROR,
   PROP_ROTATION,
   PROP_INTRA_REFRESH_MODE,
@@ -178,6 +181,107 @@ enum
   PROP_LTR_MARK,
   PROP_LTR_USE,
 };
+
+FULL_RANGE toQCodec2VideoFullRange(GstVideoColorRange range)
+{
+  FULL_RANGE ret = COLOR_RANGE_UNSPECIFIED;
+  if (range == GST_VIDEO_COLOR_RANGE_0_255) {
+    ret = COLOR_RANGE_FULL;
+  } else if (range == GST_VIDEO_COLOR_RANGE_16_235) {
+    ret = COLOR_RANGE_LIMITED;
+  }
+  return ret;
+}
+
+COLOR_PRIMARIES toQCodec2VideoPrimaries(GstVideoColorPrimaries primaries)
+{
+  COLOR_PRIMARIES ret = COLOR_PRIMARIES_UNSPECIFIED;
+  switch (primaries) {
+    case GST_VIDEO_COLOR_PRIMARIES_BT709:
+      ret = COLOR_PRIMARIES_BT709;
+      break;
+    case GST_VIDEO_COLOR_PRIMARIES_BT470M:
+      ret = COLOR_PRIMARIES_BT470_M;
+      break;
+    case GST_VIDEO_COLOR_PRIMARIES_BT470BG:
+      ret = COLOR_PRIMARIES_BT601_625;
+      break;
+    case GST_VIDEO_COLOR_PRIMARIES_SMPTE170M:
+      ret = COLOR_PRIMARIES_BT601_525;
+      break;
+    case GST_VIDEO_COLOR_PRIMARIES_FILM:
+      ret = COLOR_PRIMARIES_GENERIC_FILM;
+      break;
+    case GST_VIDEO_COLOR_PRIMARIES_BT2020:
+      ret = COLOR_PRIMARIES_BT2020;
+      break;
+    default:
+      break;
+  }
+  return ret;
+}
+
+MATRIX toQCodec2VideoMatrixCoeffs(GstVideoColorMatrix matrix)
+{
+  MATRIX ret = COLOR_MATRIX_UNSPECIFIED;
+  switch (matrix) {
+    case GST_VIDEO_COLOR_MATRIX_BT709:
+      ret = COLOR_MATRIX_BT709;
+      break;
+    case GST_VIDEO_COLOR_MATRIX_FCC:
+      ret = COLOR_MATRIX_FCC47_73_682;
+      break;
+    case GST_VIDEO_COLOR_MATRIX_BT601:
+      ret = COLOR_MATRIX_BT601;
+      break;
+    case GST_VIDEO_COLOR_MATRIX_SMPTE240M:
+      ret = COLOR_MATRIX_240M;
+      break;
+    case GST_VIDEO_COLOR_MATRIX_BT2020:
+      ret = COLOR_MATRIX_BT2020;
+      break;
+    default:
+      break;
+  }
+  return ret;
+}
+
+TRANSFER_CHAR toQCodec2VideoTransfer(GstVideoTransferFunction transfer)
+{
+  TRANSFER_CHAR ret = COLOR_TRANSFER_UNSPECIFIED;
+  switch (transfer) {
+    case GST_VIDEO_TRANSFER_GAMMA10:
+      ret = COLOR_TRANSFER_LINEAR;
+      break;
+    case GST_VIDEO_TRANSFER_GAMMA22:
+      ret = COLOR_TRANSFER_GAMMA22;
+      break;
+    case GST_VIDEO_TRANSFER_GAMMA28:
+      ret = COLOR_TRANSFER_GAMMA28;
+      break;
+    case GST_VIDEO_TRANSFER_BT601:
+    case GST_VIDEO_TRANSFER_BT709:
+    case GST_VIDEO_TRANSFER_BT2020_10:
+    case GST_VIDEO_TRANSFER_BT2020_12:
+      ret = COLOR_TRANSFER_170M;
+      break;
+    case GST_VIDEO_TRANSFER_SMPTE240M:
+      ret = COLOR_TRANSFER_240M;
+      break;
+    case GST_VIDEO_TRANSFER_SRGB:
+      ret = COLOR_TRANSFER_SRGB;
+      break;
+    case GST_VIDEO_TRANSFER_SMPTE2084:
+      ret = COLOR_TRANSFER_ST2084;
+      break;
+    case GST_VIDEO_TRANSFER_ARIB_STD_B67:
+      ret = COLOR_TRANSFER_HLG;
+      break;
+    default:
+      break;
+  }
+  return ret;
+}
 
 /* GstVideoEncoder base class method */
 static gboolean gst_qcodec2_venc_stop (GstVideoEncoder * encoder);
@@ -1310,6 +1414,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams downscale;
   ConfigParams color_space_conversion;
   ConfigParams color_aspects;
+  gboolean enable_color_aspects = FALSE;
   ConfigParams intra_refresh;
   ConfigParams intra_refresh_type;
   ConfigParams bitrate;
@@ -1452,28 +1557,60 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &slice_mode);
   }
 
-  if (enc->color_space_conversion &&
-      enc->primaries != COLOR_PRIMARIES_UNSPECIFIED) {
-    GST_DEBUG_OBJECT (enc, "enable color space conversion");
-    color_space_conversion =
-        make_color_space_conv_param (enc->color_space_conversion);
-    g_ptr_array_add (config, &color_space_conversion);
+  if (enc->embed_color_space_info &&
+      enc->primaries == COLOR_PRIMARIES_UNSPECIFIED) {
+    //prop embed_color_space_info is only useful when prop primaries isn't set
+    if (enc->input_state->caps && !gst_caps_is_empty(enc->input_state->caps)) {
+      GstVideoInfo *info = &enc->input_state->info;
+      GST_INFO_OBJECT (enc, "colorimetry caps on input pad: "
+        "gst style primaries %u, transfer_char %u, matrix %u, full_range %u",
+        info->colorimetry.primaries, info->colorimetry.transfer,
+        info->colorimetry.matrix, info->colorimetry.range);
+
+      if (info->colorimetry.primaries != GST_VIDEO_COLOR_PRIMARIES_UNKNOWN) {
+        color_aspects = make_color_aspects_param (
+          toQCodec2VideoPrimaries(info->colorimetry.primaries),
+          toQCodec2VideoTransfer(info->colorimetry.transfer),
+          toQCodec2VideoMatrixCoeffs(info->colorimetry.matrix),
+          toQCodec2VideoFullRange(info->colorimetry.range));
+        GST_INFO_OBJECT (enc, "set color aspect info from input caps: "
+          "c2 style primaries %u, transfer_char %u, matrix %u, full_range %u",
+          color_aspects.colorAspects.primaries,
+          color_aspects.colorAspects.transfer_char,
+          color_aspects.colorAspects.matrix,
+          color_aspects.colorAspects.full_range);
+        g_ptr_array_add (config, &color_aspects);
+        enable_color_aspects = TRUE;
+      }
+    }
   }
 
   if (enc->primaries != COLOR_PRIMARIES_UNSPECIFIED) {
-    GST_DEBUG_OBJECT (enc, "set color aspect info: "
-        "primaries %u, transfer_char %u, matrix %u, full_range %u",
+    if (enc->embed_color_space_info) {
+        GST_WARNING_OBJECT (enc, "will ignore embed_color_space_info "
+            "and colorimetry in caps, because prop primaries is specified(%u)", enc->primaries);
+    }
+    GST_INFO_OBJECT (enc, "set color aspect info from property: "
+        "c2 style primaries %u, transfer_char %u, matrix %u, full_range %u",
         enc->primaries, enc->transfer_char, enc->matrix, enc->full_range);
     color_aspects =
         make_color_aspects_param (enc->primaries, enc->transfer_char,
         enc->matrix, enc->full_range);
     g_ptr_array_add (config, &color_aspects);
+    enable_color_aspects = TRUE;
   } else if (enc->transfer_char != COLOR_TRANSFER_UNSPECIFIED ||
              enc->matrix != COLOR_MATRIX_UNSPECIFIED ||
              enc->full_range != COLOR_RANGE_UNSPECIFIED) {
-    GST_WARNING_OBJECT (enc, "will ignore transfer_char %u, matrix %u, "
-        "full_range %u because primaries is unspecified",
+    GST_WARNING_OBJECT (enc, "will ignore prop c2 style transfer_char %u, matrix %u, "
+        "full_range %u because prop primaries is unspecified",
         enc->transfer_char, enc->matrix, enc->full_range);
+  }
+
+  if (enc->color_space_conversion && enable_color_aspects) {
+    GST_INFO_OBJECT (enc, "enable color space conversion");
+    color_space_conversion =
+        make_color_space_conv_param (enc->color_space_conversion);
+    g_ptr_array_add (config, &color_space_conversion);
   }
 
   if (enc->intra_refresh_mode && enc->intra_refresh_mbs) {
@@ -2660,6 +2797,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_COLOR_SPACE_CONVERSION:
       enc->color_space_conversion = g_value_get_boolean (value);
       break;
+    case PROP_EMBED_COLOR_SPACE_INFO:
+      enc->embed_color_space_info = g_value_get_boolean (value);
+      break;
     case PROP_INTRA_REFRESH_MODE:
       enc->intra_refresh_mode = g_value_get_enum (value);
       break;
@@ -2821,6 +2961,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_COLOR_SPACE_CONVERSION:
       g_value_set_boolean (value, enc->color_space_conversion);
+      break;
+    case PROP_EMBED_COLOR_SPACE_INFO:
+      g_value_set_boolean (value, enc->embed_color_space_info);
       break;
     case PROP_INTRA_REFRESH_MODE:
       g_value_set_enum (value, enc->intra_refresh_mode);
@@ -3065,6 +3208,14 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
       g_param_spec_boolean ("color-space-conversion", "Color space conversion",
           "If enabled, should be in color space conversion mode",
           DEFAULT_COLOR_SPACE_CONVERSION,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_EMBED_COLOR_SPACE_INFO,
+      g_param_spec_boolean ("embed-color-space-info", "Embed-color-space-info",
+          "Embed color space info in VUI according to caps, only workable for h264/h265 encoding and prop color-primaries not set",
+          DEFAULT_EMBED_COLOR_SPACE_INFO,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
