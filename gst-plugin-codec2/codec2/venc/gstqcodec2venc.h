@@ -29,7 +29,7 @@
 /*
 * Changes from Qualcomm Innovation Center are provided under the following license:
 
-* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 * SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
@@ -119,6 +119,7 @@ struct _GstQcodec2Venc
   guint32 downscale_width;
   guint32 downscale_height;
   gboolean color_space_conversion;
+  gboolean embed_color_space_info;
   COLOR_PRIMARIES primaries;
   TRANSFER_CHAR transfer_char;
   MATRIX matrix;
