@@ -24,7 +24,9 @@ else
   gstqcarcamsrc_link_args += ['-L.', '-lqcxclient', '-lqcxosal']
 endif
 
-
+if get_option('ASAN')
+  gstqcarcamsrc_c_args += ['-fsanitize=address']
+endif
 
 configinc = include_directories('.')
 core_conf = configuration_data()
