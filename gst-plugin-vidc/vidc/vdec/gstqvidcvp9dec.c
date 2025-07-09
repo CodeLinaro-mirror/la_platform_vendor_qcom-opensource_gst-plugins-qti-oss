@@ -151,26 +151,26 @@ gst_qvidc_vp9_dec_handle_frame (GstQvidcVdec * decoder,
       } else {
         output_format = GST_VIDEO_FORMAT_P010_10LE;
       }
+    }
 
-      base_dec->output_format = output_format;
+    base_dec->output_format = output_format;
 
-      GST_LOG_OBJECT (dec,
-          "output width: %d, height: %d, format: %d (%s) for VP9",
-          base_dec->width, base_dec->height, output_format,
-          gst_video_format_to_string (output_format));
+    GST_LOG_OBJECT (dec,
+        "output width: %d, height: %d, format: %d (%s) for VP9",
+        base_dec->width, base_dec->height, output_format,
+        gst_video_format_to_string (output_format));
 
-      if (config) {
-        pixelformat =
-            make_pixel_format_param (gst_to_vidc_pixelformat (base_dec,
-                output_format), FALSE);
-        GST_LOG_OBJECT (dec, "set vidc output format: %d for VP9",
-            pixelformat.pixelFormat.fmt);
-        g_ptr_array_add (config, &pixelformat);
-        if (!vidc_config (base_dec->comp, config, BLOCK_MODE_DONT_BLOCK)) {
-          GST_ERROR_OBJECT (dec, "Failed to set config");
-          ret = GST_FLOW_ERROR;
-          goto done;
-        }
+    if (config) {
+      pixelformat =
+          make_pixel_format_param (gst_to_vidc_pixelformat (base_dec,
+              output_format), FALSE);
+      GST_LOG_OBJECT (dec, "set vidc output format: %d for VP9",
+          pixelformat.pixelFormat.fmt);
+      g_ptr_array_add (config, &pixelformat);
+      if (!vidc_config (base_dec->comp, config, BLOCK_MODE_DONT_BLOCK)) {
+        GST_ERROR_OBJECT (dec, "Failed to set config");
+        ret = GST_FLOW_ERROR;
+        goto done;
       }
     }
 
