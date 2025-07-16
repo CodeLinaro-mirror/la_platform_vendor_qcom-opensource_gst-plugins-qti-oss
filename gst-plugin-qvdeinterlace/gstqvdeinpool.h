@@ -21,11 +21,14 @@ struct _GstQvdeinPool {
   GstAllocator *allocator;
   GstAllocationParams params;
 
+  GHashTable *buffer_table;
+
   gboolean ubwc;
   gboolean done_align_info;
+  gboolean need_import;
 };
 
-GstBufferPool * gst_qvdein_pool_new (gboolean ubwc);
+GstBufferPool * gst_qvdein_pool_new (gboolean ubwc, gboolean need_import);
 
 /* only can get aligned info after first allocation */
 static inline GstVideoInfo *
