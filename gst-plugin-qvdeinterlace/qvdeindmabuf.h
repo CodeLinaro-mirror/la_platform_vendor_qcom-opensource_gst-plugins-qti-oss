@@ -33,6 +33,9 @@ gboolean qvdein_dmabuf_load_libs_once (void);
 gboolean qvdein_dmabuf_alloc (DmaBufDesc ** desc,
     const GstVideoInfo * info, gboolean ubwc);
 
+gint qvdein_dmabuf_import (DmaBufDesc ** desc,
+    const GstVideoInfo * info, gboolean ubwc, gint fd, gint meta_fd);
+
 gint qvdein_dmabuf_get_fd (const DmaBufDesc * desc);
 
 gsize qvdein_dmabuf_get_size (const DmaBufDesc * desc);

@@ -33,6 +33,39 @@ typedef struct
 #define gst_buffer_get_qvdein_meta(b) \
     ((GstQvdeinMeta *)gst_buffer_get_meta((b),GST_QVDEIN_META_API_TYPE))
 
+static GstFlowReturn
+_buffer_pool_add_buffer_to_table (GstBufferPool * pool,
+    GstBuffer * buffer, gint64 key)
+{
+  GstQvdeinPool *self = GST_QVDEIN_POOL (pool);
+  GstFlowReturn ret = GST_FLOW_OK;
+  GHashTable *buffer_table = self->buffer_table;
+
+  GST_DEBUG_OBJECT (self, "enter buf %p, key 0x%lx", buffer, key);
+
+  if (G_UNLIKELY (!buffer)) {
+    GST_ERROR_OBJECT (pool, "invalid gst buffer");
+    ret = GST_FLOW_ERROR;
+  }
+
+  if (ret == GST_FLOW_OK) {
+    gint64 *buf_key = g_malloc (sizeof (gint64));
+    if (buf_key) {
+      *buf_key = key;
+      g_hash_table_insert (buffer_table, buf_key, buffer);
+      GST_DEBUG_OBJECT (self,
+          "add a gst buf:%p fd:%d import_fd:%d ref_cnt:%d, key:0x%lx", buffer,
+          (*buf_key >> 32) & 0xFFFFFFFF, (*buf_key & 0xFFFFFFFF),
+          GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (buffer)), *buf_key);
+    } else {
+      GST_ERROR_OBJECT (self, "fail to alloc buf key");
+      ret = GST_FLOW_ERROR;
+    }
+  }
+
+  return ret;
+}
+
 static GType
 gst_qvdein_meta_api_get_type (void)
 {
@@ -189,6 +222,48 @@ _modifier_attach (GstBuffer * buffer, const DmaBufDesc * desc)
       modifier, *modifier, buffer);
 }
 
+static gboolean
+_get_custom_meta (const GstBuffer *buffer, const gchar *name,
+    gint *meta_fd, guint *metasize)
+{
+  gboolean ret = FALSE;
+
+  if (!buffer || !name || !meta_fd || !metasize) {
+    GST_ERROR ("Invalid custom meta parameters");
+    return FALSE;
+  }
+
+  GstCustomMeta *meta = gst_buffer_get_custom_meta (buffer, name);
+  if (meta) {
+    GstMemory *meta_mem = NULL;
+    GstStructure *structure =
+        gst_custom_meta_get_structure ((GstCustomMeta *) meta);
+    if (structure &&
+        gst_structure_get (structure, "meta-mem", GST_TYPE_MEMORY, &meta_mem, NULL)) {
+      if (gst_is_dmabuf_memory (meta_mem)) {
+        *meta_fd = gst_dmabuf_memory_get_fd (meta_mem);
+      } else {
+        *meta_fd = gst_fd_memory_get_fd (meta_mem);
+      }
+
+      gsize meta_offset = 0;
+      gsize meta_maxsize = 0;
+      gst_memory_get_sizes (meta_mem, &meta_offset, &meta_maxsize);
+      *metasize = meta_maxsize - meta_offset;
+      GST_DEBUG ("custom %s meta-mem %p, meta_fd %d, metasize %d, maxsize %d, offset %d",
+          name, meta_mem, *meta_fd, *metasize, meta_maxsize, meta_offset);
+
+      gst_memory_unref (meta_mem);
+
+      ret = TRUE;
+    } else {
+      GST_ERROR ("failed to get custom meta-mem");
+    }
+  }
+
+  return ret;
+}
+
 /*
 static gboolean
 gst_is_qvdein_pool_buffer(const GstBufferPool * pool, const GstBuffer * buffer)
@@ -254,6 +329,96 @@ out:
   return ubwc;
 }
 
+gint
+gst_qvdein_pool_buffer_import (const GstBufferPool * pool,
+    const GstVideoInfo * info, const GstBuffer * buffer, gboolean ubwc)
+{
+  GstQvdeinPool *self = GST_QVDEIN_POOL (pool);
+  GstFlowReturn ret = GST_FLOW_ERROR;
+
+  GstBuffer *import_buf = NULL;
+  GstMemory *import_mem = NULL;
+  GstMemory *mem = NULL;
+  GstBufferPoolAcquireParams params;
+  GHashTable *buffer_table = self->buffer_table;
+  gint fd = -1;
+  gint import_fd = -1;
+  gint meta_fd = -1;
+  guint metasize = 0;
+  gint64 key = -1;
+  gboolean found = FALSE;
+
+  if (!buffer) {
+    GST_ERROR_OBJECT (self, "pool %p, buffer %p", pool, buffer);
+    goto out;
+  }
+
+  mem = gst_buffer_peek_memory ((GstBuffer *) buffer, 0);
+  fd = gst_dmabuf_memory_get_fd (mem);
+  if (_get_custom_meta (buffer, "GstQVIDCDMeta", &meta_fd, &metasize)) {
+    key = ((gint64) fd << 32) | ((gint64) meta_fd);
+
+    import_buf = (GstBuffer *) g_hash_table_lookup (buffer_table, &key);
+    if (import_buf) {
+      GST_DEBUG_OBJECT (pool,
+          "found an import buf:%p fd:%d meta_fd:%d ref_cnt:%d", import_buf,
+          (key >> 32) & 0xFFFFFFFF, (key & 0xFFFFFFFF),
+          GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (import_buf)));
+      found = TRUE;
+    } else {
+      GST_DEBUG_OBJECT (pool, "no buffer find in table, insert new one");
+      import_buf = gst_buffer_new ();
+      if (import_buf == NULL) {
+        GST_ERROR_OBJECT (self, "buffer new error");
+        goto out;
+      }
+    }
+  }
+
+  if (import_buf) {
+    if (found) {
+      import_mem = gst_buffer_peek_memory ((GstBuffer *) import_buf, 0);
+      if (import_mem) {
+        GST_DEBUG_OBJECT (self, "import bufer already in pool");
+        fd = gst_dmabuf_memory_get_fd (import_mem);
+      }
+    } else {
+      DmaBufDesc *desc = NULL;
+      import_fd = qvdein_dmabuf_import (&desc, info, ubwc, fd, meta_fd);
+      if (import_fd < 0) {
+        GST_ERROR_OBJECT (pool, "fd %d, meta %d, import failed", fd, meta_fd);
+      } else {
+        gsize info_size = GST_VIDEO_INFO_SIZE (info);
+        import_mem = gst_dmabuf_allocator_alloc_with_flags (self->allocator,
+            import_fd, info_size,
+            GST_FD_MEMORY_FLAG_DONT_CLOSE | GST_FD_MEMORY_FLAG_KEEP_MAPPED);
+        if (import_mem) {
+          GST_DEBUG_OBJECT (self, "import dmabuf mem %p", mem);
+          gst_buffer_append_memory (import_buf, import_mem);
+          _add_qvdein_meta (import_buf, desc);
+
+          gint64 key = ((gint64) fd << 32) | ((gint64) meta_fd);
+          if (GST_FLOW_OK ==
+              _buffer_pool_add_buffer_to_table (pool, import_buf, key)) {
+            fd = import_fd;
+            goto out;
+          }
+
+          gst_memory_unref (import_mem);
+        }
+
+        GST_ERROR_OBJECT (self, "import dmabuf mem error");
+        qvdein_dmabuf_free (desc);
+        gst_buffer_unref (import_buf);
+      }
+    }
+  }
+
+out:
+  GST_DEBUG_OBJECT (self, "pool %p, buffer %p, fd %d", pool, buffer, fd);
+  return fd;
+}
+
 static inline gboolean
 do_dmabuf_alloc (GstAllocator * allocator, GstBuffer * buffer,
     DmaBufDesc ** desc, const GstVideoInfo * info, gboolean ubwc)
@@ -294,7 +459,7 @@ out:
 }
 
 static GstFlowReturn
-gst_qvdein_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
+gst_qvdein_pool_dmabuf_alloc (GstBufferPool * pool, GstBuffer ** buffer,
     GstBufferPoolAcquireParams * params)
 {
   GstQvdeinPool *self = GST_QVDEIN_POOL (pool);
@@ -344,6 +509,14 @@ out:
   return ret;
 }
 
+static GstFlowReturn
+gst_qvdein_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
+    GstBufferPoolAcquireParams * params)
+{
+  GstQvdeinPool *self = GST_QVDEIN_POOL (pool);
+  return gst_qvdein_pool_dmabuf_alloc (pool, buffer, params);
+}
+
 static inline gboolean
 do_dmabuf_free (GstBuffer * buffer)
 {
@@ -373,33 +546,76 @@ do_dmabuf_free (GstBuffer * buffer)
 static void
 gst_qvdein_pool_free (GstBufferPool * pool, GstBuffer * buffer)
 {
-  GST_DEBUG_OBJECT (pool, "buffer %p", buffer);
-
+  GstQvdeinPool *self = GST_QVDEIN_POOL (pool);
+  GST_DEBUG_OBJECT (self, "buffer %p", buffer);
   do_dmabuf_free (buffer);
 
   gst_buffer_unref (buffer);
 }
 
+static void
+destroy_gst_buffer (gpointer data)
+{
+  GstBuffer *buffer = (GstBuffer *) data;
+  if (buffer) {
+    GST_LOG ("destroy import buffer:%p ref_cnt:%d", buffer,
+        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (buffer)));
+
+    GstQvdeinMeta *meta = gst_buffer_get_qvdein_meta (buffer);
+    if (meta != NULL) {
+      DmaBufDesc *desc = (DmaBufDesc *) meta->desc;
+      if (desc != NULL) {
+        gint desc_fd = qvdein_dmabuf_get_fd (desc);
+        GST_DEBUG ("desc %p, fd %d", desc, desc_fd);
+        qvdein_dmabuf_free (desc);
+      }
+    }
+
+    gst_buffer_unref (buffer);
+  }
+}
+
 GstBufferPool *
-gst_qvdein_pool_new (gboolean ubwc)
+gst_qvdein_pool_new (gboolean ubwc, gboolean need_import)
 {
   GstQvdeinPool *pool;
 
   pool = g_object_new (GST_TYPE_QVDEIN_POOL, NULL);
   gst_object_ref_sink (pool);
 
+  pool->buffer_table = NULL;
   pool->ubwc = ubwc;
-  GST_INFO_OBJECT (pool, "pool %p, ubwc %u", pool, ubwc);
+  pool->need_import = need_import;
+
+  if (need_import) {
+    pool->buffer_table =
+        g_hash_table_new_full (g_int64_hash, g_int64_equal, g_free,
+        destroy_gst_buffer);
+  }
+
+  GST_INFO_OBJECT (pool, "pool %p, ubwc %u, need_import %u", pool, ubwc, need_import);
 
   return GST_BUFFER_POOL_CAST (pool);
+}
+
+static void
+print_gst_buf (gpointer key, gpointer value, gpointer data)
+{
+  GST_LOG ("key:0x%lx value:%p", *(gint64 *) key, value);
 }
 
 static void
 gst_qvdein_pool_finalize (GObject * object)
 {
   GstQvdeinPool *pool = GST_QVDEIN_POOL (object);
+  GHashTable *buffer_table = pool->buffer_table;
 
   GST_INFO_OBJECT (pool, "pool %p", pool);
+
+  if (buffer_table) {
+    g_hash_table_foreach (buffer_table, print_gst_buf, NULL);
+    g_hash_table_destroy (buffer_table);
+  }
 
   if (pool->allocator)
     gst_object_unref (pool->allocator);
