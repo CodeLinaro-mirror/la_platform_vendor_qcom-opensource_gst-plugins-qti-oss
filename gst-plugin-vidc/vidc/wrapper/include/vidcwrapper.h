@@ -340,6 +340,7 @@ typedef struct {
     gint32 meta_fd;
     gint32 ext_fd;
     guint32 size;
+    guint32 metasize;
     guint32 capacity; ///< Total allocation size
     guint64 timestamp;
     guint64 index;
@@ -531,7 +532,7 @@ gboolean vidc_setListener(void* const comp, void* cb_context, listener_cb callba
 guint vidc_getPlaneCount(void* const comp);
 guint vidc_getPlaneStride(void* const comp, const guint plane);
 guint vidc_getPlaneOffset(void* const comp, const guint plane);
-gboolean vidc_getAllocationCountAndSize(void* const comp, BUFFER_PORT_TYPE type, guint* count, guint* size);
+gboolean vidc_getAllocationCountAndSize(void* const comp, BUFFER_PORT_TYPE type, guint* count, guint* size, guint* metasize);
 gboolean vidc_alloc(void* const comp, BufferDescriptor* buffer);
 gboolean vidc_queue(void* const comp, BufferDescriptor* buffer);
 gboolean vidc_start(void* const comp, BUFFER_PORT_TYPE port);
@@ -539,7 +540,7 @@ gboolean vidc_stop(void* const comp, BUFFER_PORT_TYPE port);
 gboolean vidc_config(void* const comp, GPtrArray* config, BLOCK_MODE_TYPE block);
 gboolean vidc_freeOutBuffer(void* const comp, BufferDescriptor* buffer);
 gboolean vidc_delete(void* comp);
-gboolean writePlane(void* comp, uint8_t* dest, uint8_t* src);
+gboolean writePlane(void* comp, uint8_t* dest, BufferDescriptor* buffer_info);
 gboolean vidc_isEncoder(void* const comp);
 
 #ifdef __cplusplus

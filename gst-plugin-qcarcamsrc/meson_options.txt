@@ -1,1 +1,2 @@
 option('useumd', type : 'boolean', value : 'false', yield : true, description: 'Used in HGY')
+option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')

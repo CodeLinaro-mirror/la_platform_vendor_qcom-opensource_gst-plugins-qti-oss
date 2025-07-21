@@ -84,3 +84,37 @@ make_framerate_param (gfloat framerate, gboolean is_input)
 
   return param;
 }
+
+void gst_vidc_buffer_get_custom_meta(GstBuffer *buffer, const gchar *name,
+    gint *meta_fd, guint *metasize)
+{
+  if (buffer && name) {
+    GstCustomMeta *meta = gst_buffer_get_custom_meta (buffer, name);
+    if (meta) {
+      GstMemory *meta_mem = NULL;
+      GstStructure *structure =
+          gst_custom_meta_get_structure ((GstCustomMeta *) meta);
+      if (structure &&
+          gst_structure_get (structure, "meta-mem", GST_TYPE_MEMORY, &meta_mem, NULL)) {
+        if (gst_is_dmabuf_memory (meta_mem)) {
+          *meta_fd = gst_dmabuf_memory_get_fd (meta_mem);
+        } else {
+          *meta_fd = gst_fd_memory_get_fd (meta_mem);
+        }
+
+        gsize meta_offset = 0;
+        gsize meta_maxsize = 0;
+        gst_memory_get_sizes (meta_mem, &meta_offset, &meta_maxsize);
+        *metasize = meta_maxsize - meta_offset;
+        GST_DEBUG ("custom meta-mem %p, fd %d, metasize %d, maxsize %d, offset %d",
+            meta_mem, *meta_fd, *metasize, meta_maxsize, meta_offset);
+
+        gst_memory_unref (meta_mem);
+      } else {
+        GST_ERROR ("failed to get custom meta-mem");
+      }
+    }
+  } else {
+    GST_ERROR ("Invalid custom meta buffer %p, name %p", buffer, name);
+  }
+}

@@ -1139,7 +1139,7 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GstQvidcVenc *enc = GST_QVIDC_VENC (encoder);
-  guint size = 0;
+  guint size = 0, metasize = 0;
   guint min = 0, max = 0;
   GstBufferPoolInitParam param;
   GstBufferPool *pool = NULL;
@@ -1152,18 +1152,6 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
 
   GST_DEBUG_OBJECT (enc, "start config pool port %s",
       port == BUFFER_PORT_INPUT ? "in" : "out");
-
-  memset (&param, 0, sizeof (GstBufferPoolInitParam));
-
-  if (port == BUFFER_PORT_INPUT) {
-    param.info = enc->input_state->info;
-    param.info.size = size;
-    param.is_ubwc = enc->is_ubwc;
-  } else {
-    param.info = enc->output_state->info;
-    param.info.size = size;
-  }
-  param.mode = GST_QVIDC_DMABUF_HEAP_MODE;
 
   if (query) {
     gst_query_parse_allocation (query, &caps, NULL);
@@ -1218,7 +1206,7 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
         "reset use_external_buf flag to false");
   }
 
-  if (!vidc_getAllocationCountAndSize (enc->comp, port, &min, &size)) {
+  if (!vidc_getAllocationCountAndSize (enc->comp, port, &min, &size, &metasize)) {
     GST_ERROR_OBJECT (enc, "get allocation failed");
     return FALSE;
   }
@@ -1228,8 +1216,19 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
     return TRUE;
   }
 
-  param.gst_vidc_comp = gst_vidc_comp_ref (enc->gst_vidc_comp);
+  memset (&param, 0, sizeof (GstBufferPoolInitParam));
+  if (port == BUFFER_PORT_INPUT) {
+    param.info.size = size;
+    param.is_ubwc = enc->is_ubwc;
+    param.is_outport = FALSE;
+  } else {
+    param.info.size = size;
+    param.is_outport = TRUE;
+  }
+  param.mode = GST_QVIDC_DMABUF_HEAP_MODE;
 
+  param.gst_vidc_comp = gst_vidc_comp_ref (enc->gst_vidc_comp);
+  param.metasize = metasize;
   max = min;
 
   pool = gst_qvidc_buffer_pool_new (&param);
@@ -1331,22 +1330,11 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
         buf.size = maxsize - offset;
         buf.port_type = port;
 
-        if (!enc->use_external_buf) {
-          if (!vidc_alloc (enc->comp, &buf)) {
-            GST_ERROR_OBJECT (enc, "setBuffer %d failed pool: %p", buf.fd, pool);
-            gst_buffer_unref (buffer);
-            ret = GST_FLOW_NOT_NEGOTIATED;
-            goto cleanup;
-          }
-        }
-
-        if (port == BUFFER_PORT_OUTPUT) {
-          buf.size = 0;
-          if (!vidc_queue (enc->comp, &buf)) {
-            ret = GST_FLOW_NOT_NEGOTIATED;
-            gst_buffer_unref (buffer);
-            goto cleanup;
-          }
+        if (!vidc_alloc (enc->comp, &buf)) {
+          GST_ERROR_OBJECT (enc, "setBuffer %d failed pool: %p", buf.fd, pool);
+          gst_buffer_unref (buffer);
+          ret = GST_FLOW_NOT_NEGOTIATED;
+          goto cleanup;
         }
       }
 
@@ -1999,6 +1987,14 @@ gst_qvidc_venc_handle_frame (GstVideoEncoder * encoder,
     goto done;
   }
 
+  if (!enc->in_port_pool) {
+    if (!gst_qvidc_config_pool (encoder, NULL, BUFFER_PORT_INPUT)) {
+      GST_ERROR_OBJECT (enc, "failed to config pool in");
+      ret = GST_FLOW_ERROR;
+      goto done;
+    }
+  }
+
   GST_DEBUG ("Frame number : %d, pts: %" GST_TIME_FORMAT,
       frame->system_frame_number, GST_TIME_ARGS (frame->pts));
 
@@ -2163,6 +2159,11 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
     GST_ERROR_OBJECT (enc, "failed to finish frame, outbuf: %p", outbuf);
   }
 
+  if (state)
+    gst_video_codec_state_unref (state);
+
+  return ret;
+
 out:
   queue_vidc_bufferDesc (desc, encoder);
 
@@ -2211,7 +2212,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         GST_DEBUG_OBJECT (enc,
           "external buffer, release by upstream");
       } else {
-        gint64 key = ((gint64) in_buf->fd << 32);
+        gint64 key = ((gint64) in_buf->fd << 32) | ((gint64) in_buf->meta_fd);
         GstBuffer *gst_buf = gst_qvidc_buffer_pool_find_buffer (pool, key);
         if (gst_buf) {
           gst_buffer_pool_release_buffer (pool, gst_buf);
@@ -2629,6 +2630,17 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
   if (!mem_mapped) {
     GST_DEBUG_OBJECT (enc, "external buffer, no mapped, zero-copy");
+
+    /* external mode, only support metadata buffer from vidc dec now
+     * TODO: support generic metadata from upstream
+     */
+    gint meta_fd = -1;
+    guint metasize = 0;
+    gst_vidc_buffer_get_custom_meta (buf, "GstQVIDCDMeta", &meta_fd, &metasize);
+
+    inBuf.meta_fd = meta_fd;
+    inBuf.metasize = metasize;
+
     if (!vidc_queue (enc->comp, &inBuf)) {
       ret = GST_FLOW_ERROR;
       goto out;
@@ -2691,9 +2703,9 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
         GST_DEBUG_OBJECT (enc, "mem data %p, size %d, maxsize %d, ubwc_flag %d",
             info.data, info.size, info.maxsize, inBuf.ubwc_flag);
         if (inBuf.ubwc_flag) {
-          memcpy (info.data, inBuf.data, info.size);
+          memcpy (info.data, inBuf.data, inBuf.size);
         } else {
-          if (!writePlane (enc->comp, info.data, inBuf.data)) {
+          if (!writePlane (enc->comp, info.data, &inBuf)) {
             ret = GST_FLOW_ERROR;
             gst_memory_unmap (inter_mem, &info);
             gst_buffer_unref (inter_buf);
@@ -2701,11 +2713,17 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
           }
         }
 
+        gint meta_fd = -1;
+        guint metasize = 0;
+        gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCEMeta", &meta_fd, &metasize);
+
         vidcbuf.data = info.data;
         vidcbuf.capacity = info.maxsize;
         vidcbuf.size = inBuf.size;
         vidcbuf.index = enc->frame_index;
         vidcbuf.timestamp = inBuf.timestamp;
+        vidcbuf.meta_fd = meta_fd;
+        vidcbuf.metasize = metasize;
         gst_memory_unmap (inter_mem, &info);
 
         if (!vidc_queue (enc->comp, &vidcbuf)) {
@@ -3476,7 +3494,7 @@ gst_qvidc_venc_plugin_init (GstPlugin * plugin)
   static gsize res = FALSE;
   static const gchar *tags[] = { NULL };
   if (g_once_init_enter (&res)) {
-    gst_meta_register_custom ("GstQVEMeta", tags, NULL, NULL, NULL);
+    gst_meta_register_custom ("GstQVIDCEMeta", tags, NULL, NULL, NULL);
     g_once_init_leave (&res, TRUE);
   }
 

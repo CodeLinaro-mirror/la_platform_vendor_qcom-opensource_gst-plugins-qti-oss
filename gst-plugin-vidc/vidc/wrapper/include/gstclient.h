@@ -98,7 +98,7 @@ public:
 
     bool setListenercallback(std::unique_ptr<EventCallback> callback);
 
-    bool getBufferRequirement(vidc_buffer_type type, uint32* count, uint32* size, bool is_set);
+    bool getBufferRequirement(vidc_buffer_type type, uint32* count, uint32* size, uint32* metasize, bool is_set);
 
     bool freeBuffer(vidc_frame_data_type frameData);
 
@@ -109,6 +109,7 @@ public:
     int getPlaneHeight(int plane);
     int getPlaneWidth(int plane);
     int getPlaneStride(int plane);
+    PlaneInfo::color_format_type getPortColorFormat();
 
 protected:
     ConfigType mConfig; // Client config info
@@ -129,13 +130,14 @@ private:
     void eosDoneCallback(BaseClient* base);
     bool configureEncoder(ConfigType& config);
     bool configureDecoder(ConfigType& config);
+    int flattenMetaData(vidc_frame_data_type& frameData);
+    int extractMetaData(vidc_frame_data_type& frameData);
 
     std::mutex mMutexShutdown;
     ComponentIdType mCompId;
 
     std::unique_ptr<EventCallback> mCallback;
     PlaneInfo mPlaneInfo;
-    int mTag;
 };
 
 #endif // GSTCLIENT_H

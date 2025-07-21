@@ -338,8 +338,18 @@ void BaseClient::fillDone(
         // LAST_FLAG event handles the drc/drain last flag operation
         MM_DBG_MSG("BaseClient::fillDone-%s buffer LAST", mNamePtr);
     }
+    if (frameData.flags & VIDC_FRAME_FLAG_READONLY) {
+        if (frameData.data_len > 0) {
+            MM_DBG_MSG("BaseClient::fillDone-%s buffer read-only clear flag", mNamePtr);
+            frameData.flags &= ~(VIDC_FRAME_FLAG_READONLY);
+        } else {
+            // handle read-only frame in gst
+            MM_DBG_MSG("BaseClient::fillDone-%s buffer read-only", mNamePtr);
+        }
+    }
     if (frameData.data_len == 0 && // If buffer is empty and
-        (frameData.flags & VIDC_FRAME_FLAG_CODECCONFIG) == 0) //   config flag is not set
+        (frameData.flags & VIDC_FRAME_FLAG_CODECCONFIG) == 0 &&
+        (frameData.flags & VIDC_FRAME_FLAG_READONLY) == 0) // config and read-only flag is not set
     {
         // The buffer was empty, recycle it but don't notify client.
         if (!(frameData.flags & VIDC_FRAME_FLAG_EOS)) // Allow to call client callback for EOS case

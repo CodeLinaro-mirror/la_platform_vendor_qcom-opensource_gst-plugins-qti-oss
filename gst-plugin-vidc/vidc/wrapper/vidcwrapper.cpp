@@ -121,9 +121,12 @@ void CodecCallback::onBufferAvailable(
     }
 
     if (frameData.buf_type == VIDC_BUFFER_INPUT) {
-        LOG_INFO("EBD fd:%d, data_len %d, alloc_len %d, input_tag %d, timestamp %lld\n",
+        LOG_INFO("EBD fd:%d, data_len %u, alloc_len %u, input_tag %lu, "
+            "timestamp %lld, meta_fd %d, metasize %u",
             frameData.frame_handle, frameData.data_len, frameData.alloc_len,
-            frameData.input_tag, frameData.timestamp);
+            frameData.input_tag, frameData.timestamp,
+            frameData.metadata_handle, frameData.alloc_metadata_len);
+
         BufferDescriptor inBuf;
         memset(&inBuf, 0, sizeof(BufferDescriptor));
 
@@ -136,9 +139,17 @@ void CodecCallback::onBufferAvailable(
         inBuf.capacity = frameData.alloc_len;
         inBuf.size = frameData.data_len;
         inBuf.index = frameData.input_tag;
+        inBuf.meta_fd = frameData.metadata_handle;
+        inBuf.metasize = frameData.alloc_metadata_len;
 
         mCallback(mHandle, EVENT_INPUTS_DONE, &inBuf);
     } else if (frameData.buf_type == VIDC_BUFFER_OUTPUT) {
+        LOG_INFO("FBD fd:%d, data_len %u, alloc_len %u, input_tag %lu, "
+            "timestamp %lld, flags 0x%x, meta_fd %d, metasize %u",
+            frameData.frame_handle, frameData.data_len, frameData.alloc_len,
+            frameData.input_tag, frameData.timestamp, frameData.flags,
+            frameData.metadata_handle, frameData.alloc_metadata_len);
+
         BufferDescriptor outBuf;
         memset(&outBuf, 0, sizeof(BufferDescriptor));
 
@@ -151,12 +162,15 @@ void CodecCallback::onBufferAvailable(
         outBuf.capacity = frameData.alloc_len;
         outBuf.size = frameData.data_len;
         outBuf.index = frameData.input_tag;
+        outBuf.meta_fd = frameData.metadata_handle;
+        outBuf.metasize = frameData.alloc_metadata_len;
 
-        LOG_INFO("FBD fd:%d, data_len %d, alloc_len %d, input_tag %d, timestamp %lld\n",
-            frameData.frame_handle, frameData.data_len, frameData.alloc_len,
-            frameData.input_tag, frameData.timestamp);
-
-        mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
+        if (frameData.flags & VIDC_FRAME_FLAG_READONLY) {
+            outBuf.flag = FLAG_TYPE_DROP_FRAME;
+            mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
+        } else {
+            mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
+        }
     }
 }
 
@@ -271,7 +285,7 @@ gboolean vidc_setListener(void* const comp, void* cb_context,
 }
 
 gboolean vidc_getAllocationCountAndSize(void* const comp,
-    BUFFER_PORT_TYPE type, guint* count, guint* size)
+    BUFFER_PORT_TYPE type, guint* count, guint* size, guint* metasize)
 {
     gboolean rc = FALSE;
 
@@ -280,7 +294,7 @@ gboolean vidc_getAllocationCountAndSize(void* const comp,
     if (comp) {
         GstClient* client = (GstClient*)comp;
         rc = client->getBufferRequirement(type == BUFFER_PORT_INPUT ?
-            VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, count, size, true);
+            VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, count, size, metasize, true);
     }
 
     return rc;
@@ -290,7 +304,7 @@ gboolean vidc_alloc(void* const comp, BufferDescriptor* buffer)
 {
     gboolean rc = FALSE;
     if (!buffer) {
-        LOG_MESSAGE("error: buffer is null");
+        LOG_ERROR("error: buffer is null");
         return rc;
     }
 
@@ -299,6 +313,14 @@ gboolean vidc_alloc(void* const comp, BufferDescriptor* buffer)
 
     if (comp) {
         GstClient* client = (GstClient*)comp;
+        if (client->isLoaded()) {
+            rc = client->stateIdle();
+            if (!rc) {
+                LOG_ERROR("set Comp %p stateIdle failed", comp);
+                return rc;
+            }
+        }
+
         rc = client->useBuffer(buffer->port_type == BUFFER_PORT_INPUT ?
             VIDC_BUFFER_INPUT : VIDC_BUFFER_OUTPUT, buffer->fd, buffer->size);
     }
@@ -327,8 +349,9 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
         //If state is loaded, we need to put into stateIdle
         //If state is idle, we need to put int stateExecuting
         if (client->isLoaded()) {
-            LOG_MESSAGE("Comp %p stateIdle", comp);
-            rc = client->stateIdle();
+            LOG_ERROR("Comp %p stateLoaded, invalid", comp);
+            // put into stateIdle when vidc_alloc instead
+            // rc = client->stateIdle();
         }
 
         if (rc && (client->isIdle() || client->isPaused())) {
@@ -344,12 +367,13 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
             frameData.frame_handle = buffer->fd;
             frameData.input_tag = buffer->index;
             frameData.timestamp = buffer->timestamp;
-            // frameData.frame_addr = buffer->data;
+            frameData.metadata_handle = buffer->meta_fd;
+            frameData.alloc_metadata_len = buffer->metasize;
 
             if (buffer->port_type == BUFFER_PORT_INPUT) {
+                LOG_MESSAGE("Comp %p emptyBuffer handle %d, input_tag %d, meta_fd %d",
+                    comp, frameData.frame_handle, frameData.input_tag, frameData.metadata_handle);
                 frameData.buf_type = VIDC_BUFFER_INPUT;
-                LOG_MESSAGE("Comp %p emptyBuffer handle %d, input_tag %d",
-                    comp, frameData.frame_handle, frameData.input_tag);
                 if (buffer->flag == FLAG_TYPE_END_OF_STREAM) {
                     LOG_MESSAGE("Comp %p emptyBuffer handle %d, EOS",
                         comp, frameData.frame_handle);
@@ -357,8 +381,8 @@ gboolean vidc_queue(void* const comp, BufferDescriptor* buffer)
                 }
                 rc = client->emptyBuffer(frameData);
             } else {
-                LOG_MESSAGE("Comp %p fillBuffer handle %d, input_tag %d",
-                    comp, frameData.frame_handle, frameData.input_tag);
+                LOG_MESSAGE("Comp %p fillBuffer handle %d, input_tag %d, meta_fd %d",
+                    comp, frameData.frame_handle, frameData.input_tag, frameData.metadata_handle);
                 frameData.buf_type = VIDC_BUFFER_OUTPUT;
                 rc = client->fillBuffer(frameData);
             }
@@ -543,51 +567,97 @@ gboolean vidc_config(void* const comp, GPtrArray* config, BLOCK_MODE_TYPE block)
     return ret;
 }
 
-gboolean writePlane(void* const comp, uint8_t* dest, uint8_t* src)
+gboolean writePlane(void* const comp, uint8_t* dest, BufferDescriptor* buffer_info)
 {
     gboolean ret = FALSE;
-    uint8_t* dst = dest;
-    LOG_MESSAGE("%s dst %p src %p", __func__, dst, src);
 
-    if (dst == nullptr || src == nullptr) {
-        LOG_ERROR("%s: Invalid dst and src", __func__);
+    if (!dest || !buffer_info) {
+        LOG_ERROR("%s: Invalid dest(%p) or buffer_info(%p)", __func__, dest, buffer_info);
         return ret;
     }
+
+    uint8_t* dst = dest;
+    uint8_t* src = buffer_info->data;
+    LOG_MESSAGE("%s dst %p src %p", __func__, dst, src);
+
+    if (!src) {
+        LOG_ERROR("%s: Invalid src", __func__);
+        return ret;
+    }
+
+    uint32_t width = buffer_info->width;
+    uint32_t height = buffer_info->height;
+    uint32_t stride = buffer_info->stride[0];
+    uint32_t stride_uv = buffer_info->stride[1];
+
+    LOG_MESSAGE("input format %d, %ux%u, stride %u-%u, "
+        "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT ".",
+        buffer_info->format, width, height, stride, stride_uv,
+        buffer_info->offset[0], buffer_info->offset[1]);
 
     // TODO: only support NV12 now, add P010
     if (comp) {
         GstClient* client = (GstClient*)comp;
-        int read_bytes = 0;
-        int bytes = 0;
-        int cnt = client->getPlaneCount();
 
-        uint32_t y_stride = client->getPlaneStride(0);
-        uint32_t uv_stride = client->getPlaneStride(1);
-        uint32_t y_scanlines = ALIGN(client->getPlaneHeight(0), 32);
-        uint32_t width = client->getPlaneWidth(0);
-        uint32_t height = client->getPlaneHeight(0);
-        uint32_t offset = y_stride * y_scanlines;
+        PlaneInfo::color_format_type color = client->getPortColorFormat();
+        if (color == PlaneInfo::COLOR_FORMAT_NV12
+            || color == PlaneInfo::COLOR_FORMAT_NV21
+            || color == PlaneInfo::COLOR_FORMAT_P010) {
+            uint32_t read_bytes = 0;
+            uint32_t bpp = (color == PlaneInfo::COLOR_FORMAT_P010) ? 2 : 1;
+            uint32_t y_stride = client->getPlaneStride(0);
+            uint32_t uv_stride = client->getPlaneStride(1);
+            uint32_t dest_width = client->getPlaneWidth(0);
+            uint32_t dest_height = client->getPlaneHeight(0);
+            LOG_MESSAGE("%s output %ux%u, y_stride %i, uv_stride %u, bpp %u, Y planeoffset %d",
+                __func__, dest_width, dest_height, y_stride, uv_stride, bpp, client->getPlaneBytes(0));
 
-        // write Y plane
-        for (int i = 0; i < height; i++) {
-            memcpy(dst, src, width);
+            // write Y plane
+            src += buffer_info->offset[0];
+            if (stride == y_stride) {
+                // Fast path: copy entire Y plane at once if strides match
+                memcpy(dst, src, stride * height);
 
-            dst += y_stride;
-            src += width;
-            read_bytes += width;
+                dst += y_stride * height;
+                src += stride * height;
+                read_bytes += height * width * bpp;
+            } else {
+                // Slow path: copy line by line if strides differ
+                for (int i = 0; i < height; i++) {
+                    memcpy(dst, src, width * bpp);
+
+                    dst += y_stride;
+                    src += stride;
+                    read_bytes += width * bpp;
+                }
+            }
+
+            // write UV plane
+            dst = dest + client->getPlaneBytes(0);
+            if (buffer_info->offset[1] > 0) {
+                src = buffer_info->data + buffer_info->offset[1];
+            }
+            if (stride_uv == uv_stride) {
+                // Fast path: copy entire uv plane at once if strides match
+                memcpy(dst, src, stride_uv * (height >> 1));
+
+                read_bytes += (height >> 1) * width * bpp;
+            } else {
+                // Slow path: copy line by line if strides differ
+                for (int i = 0; i < height / 2; i++) {
+                    memcpy(dst, src, width * bpp);
+
+                    dst += uv_stride;
+                    src += stride_uv;
+                    read_bytes += width * bpp;
+                }
+            }
+
+            LOG_MESSAGE("%s total read %u", __func__, read_bytes);
+            ret = TRUE;
+        } else {
+            LOG_ERROR("%s color fmt 0x%x not supported", __func__, color);
         }
-
-        // write UV plane
-        dst = dest + offset;
-        for (int i = 0; i < ((height + 1) >> 1); i++) {
-            memcpy(dst, src, width);
-
-            dst += uv_stride;
-            src += width;
-            read_bytes += width;
-        }
-        LOG_MESSAGE("%s total read %d", __func__, read_bytes);
-        ret = TRUE;
     }
 
     return ret;

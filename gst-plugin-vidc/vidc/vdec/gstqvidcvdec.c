@@ -71,6 +71,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "gstqvidcvdec.h"
 #include <dlfcn.h>
@@ -542,7 +543,7 @@ gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
   GstCaps *outcaps;
   GstFlowReturn ret = GST_FLOW_OK;
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
-  guint size = 0;
+  guint size = 0, metasize = 0;
   guint min = 0, max = 0;
   GstBufferPoolInitParam param;
   GstBufferPool *pool = NULL;
@@ -573,7 +574,7 @@ gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
     use_peer_pool = dec->use_external_buf;
   }
 
-  if (!vidc_getAllocationCountAndSize (dec->comp, port, &min, &size)) {
+  if (!vidc_getAllocationCountAndSize (dec->comp, port, &min, &size, &metasize)) {
     GST_ERROR_OBJECT (dec, "get allocation failed");
     return FALSE;
   }
@@ -656,6 +657,7 @@ gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
   }
 
   param.gst_vidc_comp = gst_vidc_comp_ref (dec->gst_vidc_comp);
+  param.metasize = metasize;
 
   // adjust qvidc buffer pool count to vidc driver needs
   max = min;
@@ -1411,14 +1413,22 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
   }
 
   GST_DEBUG_OBJECT (dec,
-      "push_frame_downstream, buffer: %p, fd: %d, index %d, meta_fd: %d, timestamp: %lu",
-      decode_buf->data, decode_buf->fd, decode_buf->index, decode_buf->meta_fd,
-      decode_buf->timestamp);
+      "buffer: %p, fd: %d, index %" PRIu64
+      ", meta_fd: %d, timestamp: %" PRIu64 ", flag 0x%x",
+      decode_buf->data, decode_buf->fd, decode_buf->index,
+      decode_buf->meta_fd, decode_buf->timestamp, decode_buf->flag);
+
+  if (decode_buf->flag & FLAG_TYPE_DROP_FRAME) {
+    GST_DEBUG_OBJECT (dec, "read-only/drop frame queue to vidc");
+    queue_vidc_bufferDesc (decode_buf, decoder);
+    ret = GST_FLOW_OK;
+    goto out;
+  }
 
   frame = gst_video_decoder_get_frame (decoder, decode_buf->index);
   if (frame == NULL) {
     GST_DEBUG_OBJECT (dec,
-        "seek: can't get frame (%lu), which was released during FLUSH-STOP event",
+        "seek: can't get frame (%" PRIu64 "), which was released during FLUSH-STOP event",
         decode_buf->index);
     /* free old output buffer since of seeking */
     queue_vidc_bufferDesc (decode_buf, decoder);
@@ -1482,6 +1492,7 @@ queue_vidc_buffer (GstBuffer * buffer, gpointer user_data)
   GstVideoDecoder *decoder = (GstVideoDecoder *) user_data;
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
   GstMemory *memory = NULL;
+
   GST_LOG_OBJECT (dec, "queue_vidc_buffer, buffer=%p", buffer);
 
   memory = gst_buffer_peek_memory (buffer, 0);
@@ -1496,6 +1507,10 @@ queue_vidc_buffer (GstBuffer * buffer, gpointer user_data)
     gsize maxsize = 0;
     gst_memory_get_sizes (memory, &offset, &maxsize);
 
+    gint meta_fd = -1;
+    guint metasize = 0;
+    gst_vidc_buffer_get_custom_meta (buffer, "GstQVIDCDMeta", &meta_fd, &metasize);
+
     /* Attach the fd to vidc */
     BufferDescriptor outbuf;
     memset (&outbuf, 0, sizeof (BufferDescriptor));
@@ -1503,6 +1518,8 @@ queue_vidc_buffer (GstBuffer * buffer, gpointer user_data)
     outbuf.capacity = maxsize - offset;
     outbuf.size = 0;
     outbuf.port_type = BUFFER_PORT_OUTPUT;
+    outbuf.meta_fd = meta_fd;
+    outbuf.metasize = metasize;
 
     GST_DEBUG_OBJECT (dec, "mem fd %d, offset %d, maxsize %d",
         fd, offset, maxsize);
@@ -1519,9 +1536,9 @@ queue_vidc_bufferDesc (BufferDescriptor * buffer, gpointer user_data)
   GstVideoDecoder *decoder = (GstVideoDecoder *) user_data;
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
   GST_DEBUG_OBJECT (dec,
-      "buffer=%p, mem fd %d, capacity %d, size %d, port %d, index %d",
+      "buffer=%p, mem fd %d, capacity %d, size %d, port %d, meta fd %d, index %" PRIu64,
       buffer, buffer->fd, buffer->capacity, buffer->size, buffer->port_type,
-      buffer->index);
+      buffer->meta_fd, buffer->index);
 
   buffer->size = 0;
 
@@ -1545,10 +1562,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       BufferDescriptor *in_buf = (BufferDescriptor *) data;
       GstBufferPool *pool = dec->in_port_pool;
       GST_DEBUG_OBJECT (dec,
-          "EVENT_INPUTS_DONE buffer fd %d, index %d to pool %p", in_buf->fd,
-          in_buf->index, pool);
+          "EVENT_INPUTS_DONE buffer fd %d, index %" PRIu64 " to pool %p",
+          in_buf->fd, in_buf->index, pool);
 
-      gint64 key = ((gint64) in_buf->fd << 32);
+      gint64 key = ((gint64) in_buf->fd << 32) | ((gint64) in_buf->meta_fd);
       GstBuffer *gst_buf = gst_qvidc_buffer_pool_find_buffer (pool, key);
       if (gst_buf) {
         gst_buffer_pool_release_buffer (pool, gst_buf);
@@ -1706,6 +1723,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
 
       break;
     }
+    case EVENT_DROP_FRAME: {
+      BufferDescriptor *out_buf = (BufferDescriptor *) data;
+      if (out_buf) {
+        GST_DEBUG_OBJECT (dec, "drop frame %" PRIu64 ", fd %d",
+            out_buf->index, out_buf->fd);
+        GstFlowReturn ret = push_frame_downstream (decoder, out_buf);
+      }
+      break;
+    }
 
     default:{
       GST_ERROR_OBJECT (dec, "Invalid Event(%d)", type);
@@ -1799,6 +1825,10 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
       gst_memory_get_sizes (inter_mem, &offset, &maxsize);
       GST_DEBUG_OBJECT (dec, "mem offset %d, maxsize %d", offset, maxsize);
 
+      gint meta_fd = -1;
+      guint metasize = 0;
+      gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCDMeta", &meta_fd, &metasize);
+
       BufferDescriptor vidcbuf;
       memset (&vidcbuf, 0, sizeof (BufferDescriptor));
       vidcbuf.fd = fd;
@@ -1810,13 +1840,15 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
       if (inBuf.data) {
-          memcpy (info.data, inBuf.data, inBuf.size);
+        memcpy (info.data, inBuf.data, inBuf.size);
       }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;
       vidcbuf.size = inBuf.size;
       vidcbuf.index = dec->frame_index;
       vidcbuf.timestamp = inBuf.timestamp / 1000;
+      vidcbuf.meta_fd = meta_fd;
+      vidcbuf.metasize = metasize;
       gst_memory_unmap (inter_mem, &info);
 
       if (!vidc_queue (dec->comp, &vidcbuf)) {
@@ -2089,7 +2121,7 @@ gst_qvidc_vdec_plugin_init (GstPlugin * plugin)
   static gsize res = FALSE;
   static const gchar *tags[] = { NULL };
   if (g_once_init_enter (&res)) {
-    gst_meta_register_custom ("GstQVDMeta", tags, NULL, NULL, NULL);
+    gst_meta_register_custom ("GstQVIDCDMeta", tags, NULL, NULL, NULL);
     g_once_init_leave (&res, TRUE);
   }
 
