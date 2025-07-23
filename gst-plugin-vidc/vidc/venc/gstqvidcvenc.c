@@ -1802,6 +1802,7 @@ gst_qvidc_venc_open (GstVideoEncoder * encoder)
   enc->input_setup = FALSE;
   enc->output_setup = FALSE;
   enc->eos_reached = FALSE;
+  enc->error_detected = FALSE;
   enc->input_state = NULL;
   enc->output_state = NULL;
   enc->in_port_pool = NULL;
@@ -2328,6 +2329,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     case EVENT_ERROR:{
+      g_mutex_lock (&enc->pending_lock);
+      enc->error_detected = TRUE;
+      g_mutex_unlock (&enc->pending_lock);
+
       GST_ERROR_OBJECT (enc, "EVENT_ERROR(%d)", *(gint32 *) data);
       GST_ELEMENT_ERROR (enc, STREAM, ENCODE, ("Encoder posts an error"),
           (NULL));
@@ -2642,6 +2647,7 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   gboolean mem_mapped = FALSE;
   gboolean status = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
+  guint try_cnt = 0;
 
   GST_DEBUG_OBJECT (enc, "enter");
 
@@ -2698,6 +2704,16 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
   GST_DEBUG_OBJECT (enc, "acquire_inter_buffer");
   do {
+    g_mutex_lock (&enc->pending_lock);
+    if (try_cnt > MAX_TRY_CNT || enc->error_detected) {
+      GST_ERROR_OBJECT (enc, "reach max try %u or error detected %u",
+          try_cnt, (guint) enc->error_detected);
+      g_mutex_unlock (&enc->pending_lock);
+      ret = GST_FLOW_ERROR;
+      break;
+    }
+    g_mutex_unlock (&enc->pending_lock);
+
     GstBufferPoolAcquireParamsExt params_ext;
     memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
     params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
@@ -2720,6 +2736,7 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       GST_ERROR_OBJECT (enc, "Timed out on wait");
     }
     g_mutex_unlock (&(enc->pending_lock));
+    try_cnt++;
     GST_DEBUG_OBJECT (enc, "acquire_inter_buffer pending_lock done");
   } while (enc->input_setup);
 

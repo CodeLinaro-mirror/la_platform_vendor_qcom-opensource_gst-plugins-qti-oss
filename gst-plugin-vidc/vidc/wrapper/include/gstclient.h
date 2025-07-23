@@ -136,6 +136,7 @@ private:
     void FilledCallback(BaseClient* base, vidc_frame_data_type& frameData);
     void outputReconfigureCallback(BaseClient* base);
     void eosDoneCallback(BaseClient* base);
+    void ErrorCallback(BaseClient* base, uint32 errorCode);
     bool configureEncoder(ConfigType& config);
     bool configureDecoder(ConfigType& config);
     int flattenMetaData(vidc_frame_data_type& frameData);

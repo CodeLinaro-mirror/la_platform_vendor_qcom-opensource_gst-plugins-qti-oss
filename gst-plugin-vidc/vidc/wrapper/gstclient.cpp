@@ -69,6 +69,7 @@ GstClient::GstClient(ComponentIdType id)
     BufferCallbackType filledCallbackFcn = {};
     ReconfigureCallbackType reconfigureCallbackFcn = {};
     EOSDoneCallbackType eosDoneCallbackFcn = {};
+    ErrorCallbackType errorCallbackFcn = {};
 
     emptyCallbackFcn = [this](BaseClient* base, vidc_frame_data_type& frameData) {
         return EmptyCallback(base, frameData);
@@ -82,9 +83,12 @@ GstClient::GstClient(ComponentIdType id)
     eosDoneCallbackFcn = [this](BaseClient* base) {
         return eosDoneCallback(base);
     };
+    errorCallbackFcn = [this](BaseClient* base, uint32 errorCode) {
+        return ErrorCallback(base, errorCode);
+    };
 
     registerCallback(emptyCallbackFcn, filledCallbackFcn,
-        reconfigureCallbackFcn, eosDoneCallbackFcn);
+        reconfigureCallbackFcn, eosDoneCallbackFcn, errorCallbackFcn);
 
     memset(&mConfig, 0, sizeof(mConfig));
 
@@ -766,7 +770,7 @@ bool GstClient::stateLoaded()
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_IDLE || mState == VIDC_STATE_UNLOADED) // If in the idle state
+    if (mState == VIDC_STATE_IDLE || mState == VIDC_STATE_UNLOADED || mState == VIDC_STATE_LOADED) // If in the idle state
     {
         mState = VIDC_STATE_LOADED;
     } else {
@@ -1180,7 +1184,7 @@ void GstClient::EmptyCallback(BaseClient* base, vidc_frame_data_type& frameData)
 
     InterlaceInfo interlaceInfo = {INTERLACE_MODE_PROGRESSIVE, true};
 
-    if (mCallback != nullptr) {
+    if (mCallback) {
         mCallback->onBufferAvailable(frameData, interlaceInfo);
     }
 }
@@ -1225,7 +1229,7 @@ void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData
         }
     }
 
-    if (mCallback != nullptr) {
+    if (mCallback) {
         mCallback->onBufferAvailable(frameData, interlaceInfo);
     }
 }
@@ -1234,7 +1238,7 @@ void GstClient::outputReconfigureCallback(BaseClient* base)
 {
     MM_DBG_MSG("GstClient::outputReconfigureCallback-%s", mNamePtr);
 
-    if (mCallback != nullptr) {
+    if (mCallback) {
         mCallback->onReconfig(mOutputStarted);
     }
 
@@ -1244,6 +1248,14 @@ void GstClient::outputReconfigureCallback(BaseClient* base)
 void GstClient::eosDoneCallback(BaseClient* base)
 {
     MM_DBG_MSG("GstClient::eosDoneCallback-%s", mNamePtr);
+}
+
+void GstClient::ErrorCallback(BaseClient* base, uint32 errorCode)
+{
+    MM_DBG_MSG("GstClient::ErrorCallback-%s", mNamePtr);
+    if (mCallback) {
+        mCallback->onError(errorCode);
+    }
 }
 
 int GstClient::getPlaneCount()

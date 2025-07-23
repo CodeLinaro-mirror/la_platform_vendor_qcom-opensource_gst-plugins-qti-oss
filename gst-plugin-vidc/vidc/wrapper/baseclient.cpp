@@ -242,6 +242,14 @@ int BaseClient::event // Common event handling for all components
         mQueueCommand.push(COMMAND_LAST_FLAG);
     } break;
 
+    case VIDC_EVT_ERR_HWFATAL:
+    case VIDC_EVT_ERR_CLIENTFATAL:
+    {
+        MM_ERROR_MSG("BaseClient::event-%s fatal error 0x%x received",
+            mNamePtr, info.event_type);
+        mQueueCommand.push(COMMAND_ERROR);
+    } break;
+
     default: {
         MM_ERROR_MSG("BaseClient::event-%s UNKNOWN type=0x%x",
             mNamePtr, info.event_type);
@@ -379,17 +387,27 @@ void BaseClient::fillDone(
     }
 }
 
+void BaseClient::onError(uint32 errorCode)
+{
+    MM_DBG_MSG("BaseClient::mErrorCallback-%s errorCode=0x%x", mNamePtr, errorCode);
+    if (mErrorCallback) {
+        mErrorCallback(this, errorCode);
+    }
+}
+
 void BaseClient::registerCallback(
     BufferCallbackType emptyCallback,
     BufferCallbackType filledCallback,
     ReconfigureCallbackType reconfigureCallback,
-    EOSDoneCallbackType eosDoneCallback)
+    EOSDoneCallbackType eosDoneCallback,
+    ErrorCallbackType errorCallback)
 {
     MM_DBG_MSG("BaseClient::registerCallback-%s", mNamePtr);
     mEmptyCallback = emptyCallback;
     mFilledCallback = filledCallback;
     mReconfigureCallback = reconfigureCallback;
     mEosDoneCallback = eosDoneCallback;
+    mErrorCallback = errorCallback;
 }
 
 void BaseClient::resetPort(vidc_buffer_type buffer, const char* namePtr)
@@ -525,6 +543,11 @@ void BaseClient::threadMain()
         case COMMAND_LAST_FLAG:
             MM_DBG_MSG("BaseClient::threadMain receive COMMAND_LAST_FLAG mWaitLastFlagToReconfig=%d",
                 mWaitLastFlagToReconfig);
+            break;
+        case COMMAND_ERROR:
+            MM_DBG_MSG("BaseClient::threadMain receive COMMAND_ERROR");
+            onError(VIDC_EVT_ERR_HWFATAL);
+            exit = true;
             break;
         default:
             break;
