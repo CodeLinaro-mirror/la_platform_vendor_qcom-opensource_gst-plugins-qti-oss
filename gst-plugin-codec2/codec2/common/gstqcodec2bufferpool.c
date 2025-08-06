@@ -184,7 +184,7 @@ destroy_gst_buffer (gpointer data)
   GstBuffer *gst_buf = (GstBuffer *) data;
   if (gst_buf) {
     GST_LOG ("destroy gst buffer:%p ref_cnt:%d", gst_buf,
-        GST_OBJECT_REFCOUNT (gst_buf));
+        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)));
     gst_buffer_unref (gst_buf);
   }
 }
@@ -417,7 +417,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GST_DEBUG_OBJECT (bpool,
         "found a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d", gst_buf,
         param_ext->fd, param_ext->meta_fd, param_ext->index,
-        GST_OBJECT_REFCOUNT (gst_buf));
+        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)));
     /*replace buffer index with current one */
     structure =
         gst_mini_object_get_qdata (GST_MINI_OBJECT (gst_buf),
@@ -503,7 +503,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GST_DEBUG_OBJECT (bpool,
         "add a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d, key:0x%lx", gst_buf,
         param_ext->fd, param_ext->meta_fd, param_ext->index,
-        GST_OBJECT_REFCOUNT (gst_buf), key);
+        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)), key);
 
     structure = gst_structure_new_empty ("BUFFER");
     g_value_set_uint64 (&new_index, param_ext->index);
