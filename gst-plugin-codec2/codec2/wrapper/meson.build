@@ -15,7 +15,7 @@ if use_agl_c2service
   codec2wrapper_dep_others += codec2_client_dep
 endif
 
-codec2wrapper_args = ['-D_AGL_LINUX_' , '-DG_LOG_DOMAIN="codec2wrapper"' , '-std=c++17']
+codec2wrapper_args = ['-D_AGL_LINUX_' , '-DG_LOG_DOMAIN="codec2wrapper"' , '-std=c++20']
 codec2wrapper_args += color_fmt_args + agl_c2service_args
 use_dmaheap = get_option('usedmaheap')
 if use_dmaheap
