@@ -654,45 +654,40 @@ bool GstClient::getBufferRequirement(
     } else {
         MM_DBG_MSG("GstClient::getBufferRequirement: min_count=%d, actual_count=%d, min_size=0x%x",
             bufreq.min_count, bufreq.actual_count, bufreq.size);
-        if (bufreq.actual_count == 0) {
-            if (type == VIDC_BUFFER_OUTPUT) {
-                MM_DBG_MSG("GstClient::getBufferRequirement: NUM_OF_BACKBUFFER_OUT %d",
-                    NUM_OF_BACKBUFFER_OUT);
-                bufreq.actual_count = bufreq.min_count + NUM_OF_BACKBUFFER_OUT;
-            } else {
-                MM_DBG_MSG("GstClient::getBufferRequirement: NUM_OF_BACKBUFFER_IN %d",
-                NUM_OF_BACKBUFFER_IN);
-                bufreq.actual_count = bufreq.min_count + NUM_OF_BACKBUFFER_IN;
-            }
 
-            meta_bufreq.buf_type = type == VIDC_BUFFER_OUTPUT ?
-                VIDC_BUFFER_METADATA_OUTPUT : VIDC_BUFFER_METADATA_INPUT;
-            rc = getParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
-            meta_bufreq.actual_count = bufreq.actual_count;
+        if (type == VIDC_BUFFER_OUTPUT) {
+            bufreq.actual_count = bufreq.min_count + NUM_OF_BACKBUFFER_OUT;
+        } else {
+            bufreq.actual_count = bufreq.min_count + NUM_OF_BACKBUFFER_IN;
+        }
 
-            if (true != rc) {
-                MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to get metabuffer requirement");
-                return rc;
-            } else {
-                MM_DBG_MSG("GstClient::getBufferRequirement:"
+        meta_bufreq.buf_type = type == VIDC_BUFFER_OUTPUT ?
+            VIDC_BUFFER_METADATA_OUTPUT : VIDC_BUFFER_METADATA_INPUT;
+        rc = getParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
+        meta_bufreq.actual_count = bufreq.actual_count;
+
+        if (true != rc) {
+            MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to get metabuffer requirement");
+            return rc;
+        } else {
+            MM_DBG_MSG("GstClient::getBufferRequirement:"
+                "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
+                bufreq.min_count, bufreq.actual_count, bufreq.size, is_set);
+            if (is_set) {
+                rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &bufreq, sizeof(bufreq));
+                if (true != rc) {
+                    MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set buffer requirement");
+                    return rc;
+                }
+
+                MM_DBG_MSG("GstClient::getBufferRequirement:metadata"
                     "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
-                    bufreq.min_count, bufreq.actual_count, bufreq.size, is_set);
-                if (is_set) {
-                    rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &bufreq, sizeof(bufreq));
-                    if (true != rc) {
-                        MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set buffer requirement");
-                        return rc;
-                    }
+                    meta_bufreq.min_count, meta_bufreq.actual_count, meta_bufreq.size, is_set);
 
-                    MM_DBG_MSG("GstClient::getBufferRequirement:metadata"
-                        "min_count=%d, actual_count=%d, min_size=0x%x, is_set %d",
-                        meta_bufreq.min_count, meta_bufreq.actual_count, meta_bufreq.size, is_set);
-
-                    rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
-                    if (true != rc) {
-                        MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set metabuffer requirement");
-                        return rc;
-                    }
+                rc = setParameter(VIDC_I_BUFFER_REQUIREMENTS, &meta_bufreq, sizeof(meta_bufreq));
+                if (true != rc) {
+                    MM_ERROR_MSG("GstClient::getBufferRequirement Error failed to set metabuffer requirement");
+                    return rc;
                 }
             }
         }

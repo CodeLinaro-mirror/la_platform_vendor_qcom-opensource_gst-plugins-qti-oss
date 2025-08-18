@@ -1141,6 +1141,8 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
   GstQvidcVenc *enc = GST_QVIDC_VENC (encoder);
   guint size = 0, metasize = 0;
   guint min = 0, max = 0;
+  guint size_ext = 0;
+  guint min_ext = 0, max_ext = 0;
   GstBufferPoolInitParam param;
   GstBufferPool *pool = NULL;
   GstStructure *config;
@@ -1176,6 +1178,7 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
         GST_INFO_OBJECT (enc,
             "peer component does not support dmabuf feature: %" GST_PTR_FORMAT,
             caps);
+        enc->use_external_buf = FALSE;
       }
     }
 
@@ -1186,10 +1189,8 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
 
     if (gst_query_get_n_allocation_pools (query) > 0) {
       GST_DEBUG_OBJECT (enc, "peer query has pool");
+      enc->use_external_buf = TRUE;
       update = TRUE;
-      guint size_ext = 0;
-      guint min_ext = 0, max_ext = 0;
-      GstStructure *config_ext;
 
       gst_query_parse_nth_allocation_pool (query, 0, &pool, &size_ext, &min_ext,
           &max_ext);
@@ -1204,6 +1205,7 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
   } else {
     GST_WARNING_OBJECT (enc, "peer does not propose buffer pool, "
         "reset use_external_buf flag to false");
+    enc->use_external_buf = FALSE;
   }
 
   if (!vidc_getAllocationCountAndSize (enc->comp, port, &min, &size, &metasize)) {
@@ -1211,16 +1213,19 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
     return FALSE;
   }
 
-  if (enc->use_external_buf && port == BUFFER_PORT_INPUT) {
-    GST_ERROR_OBJECT (enc, "external buffer mode for input");
-    return TRUE;
-  }
+  min = MAX (min, min_ext);
+  size = MAX (size, size_ext);
+  max = min;
 
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
   if (port == BUFFER_PORT_INPUT) {
     param.info.size = size;
     param.is_ubwc = enc->is_ubwc;
     param.is_outport = FALSE;
+    if (enc->use_external_buf) {
+      GST_DEBUG_OBJECT (enc, "ext pool for in port");
+      param.is_ext_pool = TRUE;
+    }
   } else {
     param.info.size = size;
     param.is_outport = TRUE;
@@ -1292,6 +1297,12 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
   GST_DEBUG_OBJECT (enc, "activate pool %" GST_PTR_FORMAT, pool);
   gst_buffer_pool_set_active (pool, TRUE);
 
+  if (enc->use_external_buf && port == BUFFER_PORT_INPUT) {
+    GST_DEBUG_OBJECT (enc,
+        "external input pool %" GST_PTR_FORMAT " skip acquire", pool);
+    goto out;
+  }
+
   for (gint i = 0; i < min; i++) {
     GstBuffer *buffer = NULL;
     GstMemory *memory = NULL;
@@ -1346,6 +1357,7 @@ gst_qvidc_config_pool (GstVideoEncoder * encoder, GstQuery * query,
     }
   }
 
+out:
   if (port == BUFFER_PORT_INPUT) {
     if (enc->in_port_pool) {
       gst_object_unref (enc->in_port_pool);
@@ -1966,6 +1978,59 @@ gst_qvidc_venc_handle_dynamic_config (GstVideoEncoder * encoder)
   }
 }
 
+static GstFlowReturn
+gst_qvidc_update_pool (GstVideoEncoder * encoder, GstBufferPool * peer_pool)
+{
+  GstQvidcVenc *enc = GST_QVIDC_VENC (encoder);
+  GstFlowReturn ret = GST_FLOW_OK;
+  GstBufferPool *pool = enc->in_port_pool;
+
+  if (peer_pool) {
+    gint size, min, max;
+    GstStructure *config = gst_buffer_pool_get_config (peer_pool);
+    if (!gst_buffer_pool_config_get_params (config, NULL, &size, &min, &max)) {
+      GST_ERROR_OBJECT (enc, "Can't get buffer pool config param");
+    } else {
+      GST_DEBUG_OBJECT (enc, "peer pool min %u, max %u, size %u",
+          min, max, size);
+      GstCaps *caps = gst_pad_get_current_caps (GST_VIDEO_DECODER_SINK_PAD (encoder));
+      GST_DEBUG_OBJECT (enc, "caps: %" GST_PTR_FORMAT, caps);
+
+      if (pool) {
+        gint in_size, in_min, in_max;
+        GstStructure *in_config = gst_buffer_pool_get_config (pool);
+        if (gst_buffer_pool_config_get_params (in_config, NULL,
+            &in_size, &in_min, &in_max)) {
+          GST_DEBUG_OBJECT (enc, "in pool min %u, max %u, size %u",
+              in_min, in_max, in_size);
+          if (size != in_size || min != in_min) {
+            GST_DEBUG_OBJECT (enc, "peer pool diffs, reconfig in pool");
+            GstQuery *query = gst_query_new_allocation (caps, TRUE);
+            gst_query_add_allocation_pool (query, peer_pool, size, min, max);
+
+            if (!gst_qvidc_config_pool (encoder, query, BUFFER_PORT_INPUT)) {
+              GST_ERROR_OBJECT (enc, "failed to config in pool");
+              ret = GST_FLOW_ERROR;
+            }
+
+            gst_query_unref (query);
+          }
+        }
+
+        gst_structure_free (in_config);
+      }
+    }
+  } else if (!enc->in_port_pool) {
+    GST_DEBUG_OBJECT (enc, "no peer pool, config internal pool");
+    if (!gst_qvidc_config_pool (encoder, NULL, BUFFER_PORT_INPUT)) {
+      GST_ERROR_OBJECT (enc, "failed to config in pool");
+      ret = GST_FLOW_ERROR;
+    }
+  }
+
+  return ret;
+}
+
 /* Called whenever a input frame from the upstream is sent to encoder */
 static GstFlowReturn
 gst_qvidc_venc_handle_frame (GstVideoEncoder * encoder,
@@ -1987,12 +2052,12 @@ gst_qvidc_venc_handle_frame (GstVideoEncoder * encoder,
     goto done;
   }
 
-  if (!enc->in_port_pool) {
-    if (!gst_qvidc_config_pool (encoder, NULL, BUFFER_PORT_INPUT)) {
-      GST_ERROR_OBJECT (enc, "failed to config pool in");
-      ret = GST_FLOW_ERROR;
-      goto done;
-    }
+  GstBufferPool *peer_pool =
+      frame->input_buffer ? frame->input_buffer->pool : NULL;
+  ret = gst_qvidc_update_pool (encoder, peer_pool);
+  if (ret != GST_FLOW_OK) {
+    GST_DEBUG_OBJECT (enc, "failed reconfig peer input pool");
+    goto done;
   }
 
   GST_DEBUG ("Frame number : %d, pts: %" GST_TIME_FORMAT,
@@ -2208,16 +2273,19 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           "EVENT_INPUTS_DONE buffer fd %d, index %d to pool %p", in_buf->fd,
           in_buf->index, pool);
 
+      gint64 key = ((gint64) in_buf->fd << 32) | ((gint64) in_buf->meta_fd);
       if (enc->use_external_buf) {
+        key = ((gint64) in_buf->fd << 32);
         GST_DEBUG_OBJECT (enc,
-          "external buffer, release by upstream");
-      } else {
-        gint64 key = ((gint64) in_buf->fd << 32) | ((gint64) in_buf->meta_fd);
-        GstBuffer *gst_buf = gst_qvidc_buffer_pool_find_buffer (pool, key);
-        if (gst_buf) {
-          gst_buffer_pool_release_buffer (pool, gst_buf);
-        }
+            "external buffer fd:%d, meta fd:%d key:0x%lx",
+            ((key << 32) & 0xFFFFFFFF), (key & 0xFFFFFFFF), key);
       }
+
+      GstBuffer *gst_buf = gst_qvidc_buffer_pool_find_buffer (pool, key);
+      if (gst_buf) {
+        gst_buffer_pool_release_buffer (pool, gst_buf);
+      }
+
       GST_DEBUG_OBJECT (enc,
           "EVENT_INPUTS_DONE pending_lock buffer fd %d, index %d to pool %p",
           in_buf->fd, in_buf->index, pool);
@@ -2628,15 +2696,50 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   GstBuffer *inter_buf = NULL;
   GstMemory *inter_mem = NULL;
 
+  GST_DEBUG_OBJECT (enc, "acquire_inter_buffer");
+  do {
+    GstBufferPoolAcquireParamsExt params_ext;
+    memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
+    params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
+    if (inBuf.fd > 0)
+      params_ext.fd = inBuf.fd;
+    ret =
+        gst_buffer_pool_acquire_buffer (enc->in_port_pool, &inter_buf,
+            &params_ext);
+    if (ret == GST_FLOW_OK) {
+      break;
+    } else {
+      GST_DEBUG_OBJECT (enc, "acquire_inter_buffer failed");
+    }
+
+    GST_DEBUG_OBJECT (enc, "try wait and acquire again");
+    guint64 end_time =
+        g_get_monotonic_time () + (ACQUIRE_TIMEOUT * G_TIME_SPAN_MILLISECOND);
+    g_mutex_lock (&(enc->pending_lock));
+    if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
+      GST_ERROR_OBJECT (enc, "Timed out on wait");
+    }
+    g_mutex_unlock (&(enc->pending_lock));
+    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer pending_lock done");
+  } while (enc->input_setup);
+
+  if (ret != GST_FLOW_OK || inter_buf == NULL) {
+    GST_ERROR_OBJECT (enc, "Failed to acquire_buffer downstream");
+    if (inter_buf) {
+      gst_buffer_unref (inter_buf);
+    }
+    ret = GST_FLOW_ERROR;
+    goto out;
+  }
+
   if (!mem_mapped) {
     GST_DEBUG_OBJECT (enc, "external buffer, no mapped, zero-copy");
-
-    /* external mode, only support metadata buffer from vidc dec now
-     * TODO: support generic metadata from upstream
-     */
     gint meta_fd = -1;
     guint metasize = 0;
-    gst_vidc_buffer_get_custom_meta (buf, "GstQVIDCDMeta", &meta_fd, &metasize);
+    gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCEMeta",
+        &meta_fd, &metasize);
+    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer metadata %u, %u",
+        meta_fd, metasize);
 
     inBuf.meta_fd = meta_fd;
     inBuf.metasize = metasize;
@@ -2646,91 +2749,61 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       goto out;
     }
   } else {
-    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer");
-    do {
-      GstBufferPoolAcquireParamsExt params_ext;
-      memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
-      params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-      ret =
-          gst_buffer_pool_acquire_buffer (enc->in_port_pool, &inter_buf,
-              &params_ext);
-      if (ret == GST_FLOW_OK) {
-        break;
+    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer done");
+    inter_mem = gst_buffer_peek_memory (inter_buf, 0);
+    if (inter_mem) {
+      gint fd;
+      if (gst_is_dmabuf_memory (inter_mem)) {
+        fd = gst_dmabuf_memory_get_fd (inter_mem);
       } else {
-        GST_DEBUG_OBJECT (enc, "acquire_inter_buffer failed");
+        fd = gst_fd_memory_get_fd (inter_mem);
       }
+      GST_DEBUG_OBJECT (enc,
+          "Acquired internal buffer fd: %d in buffer: %p mem %p from pool: %p",
+          fd, inter_buf, inter_mem, enc->in_port_pool);
+      gsize offset = 0;
+      gsize maxsize = 0;
+      gst_memory_get_sizes (inter_mem, &offset, &maxsize);
+      GST_DEBUG_OBJECT (enc, "mem offset %d, maxsize %d", offset, maxsize);
 
-      GST_DEBUG_OBJECT (enc, "try wait and acquire again");
-      guint64 end_time =
-          g_get_monotonic_time () + (ACQUIRE_TIMEOUT * G_TIME_SPAN_MILLISECOND);
-      g_mutex_lock (&(enc->pending_lock));
-      if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
-        GST_ERROR_OBJECT (enc, "Timed out on wait");
-      }
-      g_mutex_unlock (&(enc->pending_lock));
-      GST_DEBUG_OBJECT (enc, "acquire_inter_buffer pending_lock done");
-    } while (enc->input_setup);
+      BufferDescriptor vidcbuf;
+      memset (&vidcbuf, 0, sizeof (BufferDescriptor));
+      vidcbuf.fd = fd;
+      vidcbuf.port_type = BUFFER_PORT_INPUT;
 
-    if (ret != GST_FLOW_OK || inter_buf == NULL) {
-      GST_ERROR_OBJECT (enc, "Failed to acquire_buffer downstream");
-      ret = GST_FLOW_NOT_NEGOTIATED;
-      goto out;
-    } else {
-      GST_DEBUG_OBJECT (enc, "acquire_inter_buffer done");
-      inter_mem = gst_buffer_peek_memory (inter_buf, 0);
-      if (inter_mem) {
-        gint fd;
-        if (gst_is_dmabuf_memory (inter_mem)) {
-          fd = gst_dmabuf_memory_get_fd (inter_mem);
-        } else {
-          fd = gst_fd_memory_get_fd (inter_mem);
-        }
-        GST_DEBUG_OBJECT (enc,
-            "Acquired internal buffer fd: %d in buffer: %p mem %p from pool: %p",
-            fd, inter_buf, inter_mem, enc->in_port_pool);
-        gsize offset = 0;
-        gsize maxsize = 0;
-        gst_memory_get_sizes (inter_mem, &offset, &maxsize);
-        GST_DEBUG_OBJECT (enc, "mem offset %d, maxsize %d", offset, maxsize);
-
-        BufferDescriptor vidcbuf;
-        memset (&vidcbuf, 0, sizeof (BufferDescriptor));
-        vidcbuf.fd = fd;
-        vidcbuf.port_type = BUFFER_PORT_INPUT;
-
-        GstMapInfo info;
-        gst_memory_map (inter_mem, &info, GST_MAP_WRITE);
-        GST_DEBUG_OBJECT (enc, "mem data %p, size %d, maxsize %d, ubwc_flag %d",
-            info.data, info.size, info.maxsize, inBuf.ubwc_flag);
-        if (inBuf.ubwc_flag) {
-          memcpy (info.data, inBuf.data, inBuf.size);
-        } else {
-          if (!writePlane (enc->comp, info.data, &inBuf)) {
-            ret = GST_FLOW_ERROR;
-            gst_memory_unmap (inter_mem, &info);
-            gst_buffer_unref (inter_buf);
-            goto out;
-          }
-        }
-
-        gint meta_fd = -1;
-        guint metasize = 0;
-        gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCEMeta", &meta_fd, &metasize);
-
-        vidcbuf.data = info.data;
-        vidcbuf.capacity = info.maxsize;
-        vidcbuf.size = inBuf.size;
-        vidcbuf.index = enc->frame_index;
-        vidcbuf.timestamp = inBuf.timestamp;
-        vidcbuf.meta_fd = meta_fd;
-        vidcbuf.metasize = metasize;
-        gst_memory_unmap (inter_mem, &info);
-
-        if (!vidc_queue (enc->comp, &vidcbuf)) {
+      GstMapInfo info;
+      gst_memory_map (inter_mem, &info, GST_MAP_WRITE);
+      GST_DEBUG_OBJECT (enc, "mem data %p, size %d, maxsize %d, ubwc_flag %d",
+          info.data, info.size, info.maxsize, inBuf.ubwc_flag);
+      if (inBuf.ubwc_flag) {
+        memcpy (info.data, inBuf.data, inBuf.size);
+      } else {
+        if (!writePlane (enc->comp, info.data, &inBuf)) {
           ret = GST_FLOW_ERROR;
+          gst_memory_unmap (inter_mem, &info);
           gst_buffer_unref (inter_buf);
           goto out;
         }
+      }
+
+      gint meta_fd = -1;
+      guint metasize = 0;
+      gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCEMeta",
+          &meta_fd, &metasize);
+
+      vidcbuf.data = info.data;
+      vidcbuf.capacity = info.maxsize;
+      vidcbuf.size = inBuf.size;
+      vidcbuf.index = enc->frame_index;
+      vidcbuf.timestamp = inBuf.timestamp;
+      vidcbuf.meta_fd = meta_fd;
+      vidcbuf.metasize = metasize;
+      gst_memory_unmap (inter_mem, &info);
+
+      if (!vidc_queue (enc->comp, &vidcbuf)) {
+        ret = GST_FLOW_ERROR;
+        gst_buffer_unref (inter_buf);
+        goto out;
       }
     }
   }
@@ -3473,7 +3546,6 @@ gst_qvidc_venc_init (GstQvidcVenc * enc)
   enc->ratio_size = 0;
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
-  enc->is_input_dmabuf = FALSE;
   enc->use_external_buf = DEFAULT_USE_EXTERNAL_POOL;
 
   enc->max_input_buffers = 0;
