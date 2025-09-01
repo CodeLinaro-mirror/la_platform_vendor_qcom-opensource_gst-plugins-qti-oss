@@ -413,6 +413,7 @@ dec_set_vidc_pixel_format (GstQvidcVdec * decoder, GstVideoCodecState * state)
   GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
   ConfigParams pixelformat;
   gboolean ret = TRUE;
+  gboolean is_10bit = FALSE;
 
   GST_DEBUG_OBJECT (dec, "dec set format");
 
@@ -426,7 +427,20 @@ dec_set_vidc_pixel_format (GstQvidcVdec * decoder, GstVideoCodecState * state)
     s = gst_caps_get_structure (state->caps, 0);
     if (s && gst_structure_get_uint (s, "bit-depth-luma", &bit_depth_luma) &&
         gst_structure_get_uint (s, "bit-depth-chroma", &bit_depth_chroma)) {
-      if (bit_depth_luma == 10 && bit_depth_chroma == 10) {
+      if (bit_depth_luma == 10) {
+        if (GST_IS_QVIDC_H265_DEC (dec)) {
+          /* For H.265, the Main 10 profile supports a chroma bit depth of 8 to 10.*/
+          if (bit_depth_chroma >= 8 && bit_depth_chroma <= 10) {
+            is_10bit = TRUE;
+          }
+        } else {
+          if (bit_depth_chroma == 10) {
+            is_10bit = TRUE;
+          }
+        }
+      }
+
+      if (is_10bit) {
         if (dec->is_ubwc) {
           output_format = GST_VIDEO_FORMAT_NV12_10LE32;
         } else {
@@ -435,8 +449,9 @@ dec_set_vidc_pixel_format (GstQvidcVdec * decoder, GstVideoCodecState * state)
 
         GST_LOG_OBJECT (dec, "set 10bit format: %d (%s)", output_format,
             gst_video_format_to_string (output_format));
-      } else if (bit_depth_luma == 12 && bit_depth_chroma == 12) {
-        GST_ERROR_OBJECT (dec, "bitdepth 12, not supported yet");
+      } else if (bit_depth_luma != 8 || bit_depth_chroma != 8) {
+        GST_ERROR_OBJECT (dec, "bitdepth %u,%u not supported yet",
+            bit_depth_luma, bit_depth_chroma);
         ret = FALSE;
         goto done;
       }
