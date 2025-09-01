@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -154,6 +154,16 @@ gst_ml_tensor_compare_values (GstMLType mltype, gpointer data, guint l_idx,
   return 0;
 }
 
+gboolean
+gst_ml_structure_has_source_dimensions (const GstStructure * structure)
+{
+  if (gst_structure_has_field (structure, "input-tensor-width") &&
+      gst_structure_has_field (structure, "input-tensor-height"))
+    return TRUE;
+
+  return FALSE;
+}
+
 void
 gst_ml_structure_set_source_dimensions (GstStructure * structure,
     guint width, guint height)
@@ -168,6 +178,18 @@ gst_ml_structure_get_source_dimensions (const GstStructure * structure,
 {
   gst_structure_get_uint (structure, "input-tensor-width", width);
   gst_structure_get_uint (structure, "input-tensor-height", height);
+}
+
+gboolean
+gst_ml_structure_has_source_region (const GstStructure * structure)
+{
+  if (gst_structure_has_field (structure, "input-region-x") &&
+      gst_structure_has_field (structure, "input-region-y") &&
+      gst_structure_has_field (structure, "input-region-width") &&
+      gst_structure_has_field (structure, "input-region-height"))
+    return TRUE;
+
+  return FALSE;
 }
 
 void
@@ -190,4 +212,16 @@ gst_ml_structure_get_source_region (const GstStructure * structure,
   gst_structure_get_int (structure, "input-region-y", &(region->y));
   gst_structure_get_int (structure, "input-region-width", &(region->w));
   gst_structure_get_int (structure, "input-region-height", &(region->h));
+}
+
+gfloat
+gst_ml_clamp_value (gfloat value, gfloat min, gfloat max)
+{
+  if (value < min)
+    return min;
+
+  if (value > max)
+    return max;
+
+  return value;
 }
