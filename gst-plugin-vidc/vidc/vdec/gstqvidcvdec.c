@@ -567,6 +567,14 @@ gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
 
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
 
+  /* round up input buffer size with 1M alignment to get nearly optimal
+   * balance of dec input buffer size.
+   */
+  if (port == BUFFER_PORT_INPUT) {
+    GST_DEBUG_OBJECT (dec, "original %d, resize input with 1M alignment", size);
+    size = GST_ROUND_UP_N (size, 1024 * 1024);
+  }
+
   if (query) {
     GST_DEBUG_OBJECT (dec, "allocation params: %" GST_PTR_FORMAT, query);
 
@@ -1865,7 +1873,18 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
       if (inBuf.data) {
-        memcpy (info.data, inBuf.data, inBuf.size);
+        /* FIXME: WA to fix coredump if input frame size bigger than buffer's
+         * This will lead to potential frame drop.
+         */
+        if (inBuf.size > info.maxsize) {
+          GST_ERROR_OBJECT (dec, "ignore: input size %u exceeds buffer size %u",
+              inBuf.size, info.maxsize);
+          gst_memory_unmap (inter_mem, &info);
+          gst_buffer_pool_release_buffer (dec->in_port_pool, inter_buf);
+          goto out;
+        } else {
+          memcpy (info.data, inBuf.data, inBuf.size);
+        }
       }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;
