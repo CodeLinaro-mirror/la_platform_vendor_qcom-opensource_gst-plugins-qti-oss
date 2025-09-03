@@ -79,15 +79,15 @@ static void s_releaseExtBuf (void *comp, int32_t extFd)
 }
 
 C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp) :
-    mStore(), mInPendingBuffer(),mOutPendingBuffer(),mTrackBuffers(),
-    mLock(),mLockOut(),mPendingWorkCond()
+    mStore(), mCallbackLock(), mInPendingBuffer(), mOutPendingBuffer(),
+    mTrackBuffers(), mLock(), mLockOut(), mPendingWorkCond()
 {
     LOG_MESSAGE("Component(%p) created", this);
 
     mComp = std::move(comp);
     mIntf = nullptr;
     mListener = nullptr;
-    mCallback.store(nullptr);
+    mCallback = nullptr;
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
     mNumPendingWorks = 0;
@@ -114,7 +114,7 @@ C2ComponentAdapter::~C2ComponentAdapter()
     mComp = nullptr;
     mIntf = nullptr;
     mListener = nullptr;
-    mCallback.store(nullptr);
+    resetCallback();
 
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
@@ -139,7 +139,7 @@ c2_status_t C2ComponentAdapter::setListenercallback(std::shared_ptr<EventCallbac
     }
 
     if (result == C2_OK) {
-        mCallback.store(std::move(callback));
+        setCallback(callback);
     }
 
     return result;
@@ -1401,6 +1401,24 @@ do_exit:
     return result;
 }
 
+void C2ComponentAdapter::resetCallback(void)
+{
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    mCallback = nullptr;
+}
+
+void C2ComponentAdapter::setCallback(std::shared_ptr<EventCallback>& callback)
+{
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    mCallback = std::move(callback);
+}
+
+std::shared_ptr<EventCallback> C2ComponentAdapter::getCallback(void)
+{
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    return mCallback;
+}
+
 void C2ComponentAdapter::onOutputBufferAvailable(
     const std::shared_ptr<C2Buffer>& buffer,
     uint64_t index,
@@ -1409,7 +1427,7 @@ void C2ComponentAdapter::onOutputBufferAvailable(
     uint32_t frameQp,
     C2FrameData::flags_t flag)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onOutputBufferAvailable(buffer, index, timestamp, interlaceInfo, frameQp, flag);
     } else {
@@ -1419,7 +1437,7 @@ void C2ComponentAdapter::onOutputBufferAvailable(
 
 void C2ComponentAdapter::onTripped(uint32_t errorCode)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onTripped(errorCode);
     } else {
@@ -1429,7 +1447,7 @@ void C2ComponentAdapter::onTripped(uint32_t errorCode)
 
 void C2ComponentAdapter::onError(uint32_t errorCode)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onError(errorCode);
     } else {
@@ -1439,7 +1457,7 @@ void C2ComponentAdapter::onError(uint32_t errorCode)
 
 void C2ComponentAdapter::updateMaxBufCount(uint32_t outputDelay)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onUpdateMaxBufCount(outputDelay);
     } else {
@@ -1449,7 +1467,7 @@ void C2ComponentAdapter::updateMaxBufCount(uint32_t outputDelay)
 
 void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC2D)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onAcquireExtBuffer(width, height, isC2D);
     } else {
@@ -1462,11 +1480,10 @@ void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC
 // are called from C2 thread, while 2) can be called from C2 thread (enc input
 // & dec output buffer done and QC2Client::~ComponentListener) and GST thread
 // (C2ComponentAdapter::queue and ~C2ComponentAdapter).
-// To avoid data race & crash, use std::atomic<std::shared_ptr<EventCallback>>
-// to read/write mCallback in all thread contexts.
+// To avoid data race & crash, need exclusive access of mCallback in all threads.
 void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onReleaseExtBuffer(extFd);
     } else {
@@ -1476,7 +1493,7 @@ void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 
 void C2ComponentAdapter::releaseInputBuf(uint64_t index)
 {
-    std::shared_ptr<EventCallback> callback = mCallback.load();
+    std::shared_ptr<EventCallback> callback = getCallback();
     if (callback) {
         callback->onReleaseInputBuffer(index);
     } else {
