@@ -157,8 +157,16 @@ private:
     std::shared_ptr<C2Component> mComp;
     std::shared_ptr<C2ComponentInterfaceAdapter> mIntf;
     std::shared_ptr<C2Component::Listener> mListener;
-    // Use atomic to avoid data race & crash as it can be accessed in GST & C2 threads
-    std::atomic<std::shared_ptr<EventCallback>> mCallback;
+
+    // The mCallback can be accessed in GST & C2 threads.
+    // Use std::shared_ptr + std::mutex to mimic C++20 std::atomic<std::shared_ptr> which
+    // is not supported in old GCC11.
+    std::shared_ptr<EventCallback> mCallback;
+    std::mutex mCallbackLock;
+    inline void resetCallback(void);
+    inline void setCallback(std::shared_ptr<EventCallback>& callback);
+    // MUST get a copy of shared_ptr to hold the ref to avoid null dereference
+    inline std::shared_ptr<EventCallback> getCallback(void);
 
     struct TrackBuffer {
         C2ComponentAdapter* adapter;
