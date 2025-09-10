@@ -1,0 +1,61 @@
+WHAT IT IS
+----------
+
+- gstqvconv plugin is a video processing plugin to transform raw yuv data from one
+  format/resolution to another.
+
+FEATURES:
+- Color converision: for now, only support UYVY->NV12.
+- Scaling: support resolution up/down scaling.
+- Flipping: support horizontal and vertical flipping.
+- More features(buffer blending, buffer sharing with H/W encoder) might get added later on.
+
+Note:
+-By default qvconv will not do resolution scaling and flip, if you want to scale the image, please specify the input and output caps and property.
+-If the input and output caps are equal, qvconv will enable passthrough mode, which means the input buffer will be pushed to down stream directly.
+
+HOW TO USE/TEST IT
+-------------
+
+- videotestsrc->c2d->waylandsink
+  1. down scaling:
+  gst-launch-1.0 videotestsrc ! video/x-raw, format=NV12, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=640,height=480 ! waylandsink
+  1. converision + horizontal fliping:
+  gst-launch-1.0 videotestsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv method=1 ! video/x-raw, format=NV12, width=1280,height=720 ! waylandsink
+  2. conversion + up scaling:
+  gst-launch-1.0 videotestsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1920,height=1080 ! waylandsink
+
+- qcarcamsrc->c2d->waylandsink
+  1. down scaling:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=NV12, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=640,height=480 ! waylandsink
+  2. converision + vertical fliping:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv method=2 ! video/x-raw, format=NV12, width=1280,height=720 ! waylandsink
+  3. conversion + up scaling:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1920,height=1080 ! waylandsink
+
+- qcarcamsrc->c2d->omxh264enc->filesrc
+  1. converision:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1280,height=720 ! omxh264enc ! \
+  filesink location  =/data/test.264
+  2. conversion + up scaling:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1920,height=1080 ! omxh264enc ! \
+  filesink location  =/data/test.264
+  3. conversion + down scaling:
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=640,height=480 ! omxh264enc ! \
+  filesink location  =/data/test.264
+
+- qcarcamsrc->filesrc->decodebin->qvconv->waylandsink
+  gst-launch-1.0 filesrc location=”test.mp4” ! decodebin ! qvconv method=1 ! video/x-raw, format=NV12, width=640, height=480 ! waylandsink
+
+- multi-instance:
+  1. multi-process (preview + encode):
+  gst-launch-1.0 videotestsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1280,height=720 ! waylandsink & \
+  gst-launch-1.0 qcarcamsrc ! video/x-raw, format=UYVY, width=1280,height=720 ! qvconv ! video/x-raw, format=NV12, width=1920,height=1080 ! omxh264enc ! \
+  filesink location=/data/test.264
+
+  2. multi-thread (preview + dump + encode)
+  gst-launch-1.0 -v tee name=t \
+  qcarcamsrc ! video/x-raw,format=UYVY,width=1280,height=720 ! t. \
+  t.src_0 ! queue ! qvconv ! video/x-raw,format=NV12,width=1280,height=720 ! waylandsink \
+  t.src_1 ! queue ! qvconv ! video/x-raw,format=NV12,width=1280,height=720 ! filesink location=test.yuv \
+  t.src_2 ! queue ! qvconv ! video/x-raw,format=NV12,width=1280,height=720 ! omxh264enc ! filesink location=test.264
