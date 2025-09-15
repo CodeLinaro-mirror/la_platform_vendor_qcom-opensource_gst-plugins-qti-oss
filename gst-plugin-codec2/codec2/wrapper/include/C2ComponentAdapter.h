@@ -109,15 +109,27 @@ public:
     void handleError(std::weak_ptr<C2Component> component, uint32_t errorCode);
 
     /* This class methods */
-    c2_status_t setListenercallback(std::unique_ptr<EventCallback> callback, c2_blocking_t mayBlock);
+    c2_status_t setListenercallback(std::shared_ptr<EventCallback> callback, c2_blocking_t mayBlock);
     c2_status_t setDataCopyFunc(void* func, void* param);
     c2_status_t setCompStore(std::weak_ptr<C2ComponentStore> store);
     c2_status_t freeOutputBuffer(uint64_t bufferIdx);
     c2_status_t attachExternalFd(BUFFER_POOL_TYPE type, int fd);
     c2_status_t setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal);
+
+    void onOutputBufferAvailable(
+        const std::shared_ptr<C2Buffer>& buffer,
+        uint64_t index,
+        uint64_t timestamp,
+        InterlaceInfo &interlaceInfo,
+        uint32_t frameQp,
+        C2FrameData::flags_t flag);
+    void onTripped(uint32_t errorCode);
+    void onError(uint32_t errorCode);
+    void updateMaxBufCount(uint32_t outputDelay);
     void acquireExtBuf(uint32_t width, uint32_t height, bool isC2D);
     void releaseExtBuf(int32_t extFd);
     void releaseInputBuf(uint64_t index);
+
     void cancelPendingWork();
 
     c2_status_t setMaxAllocationCount(uint32_t max, BUFFER_POOL_TYPE type);
@@ -145,7 +157,16 @@ private:
     std::shared_ptr<C2Component> mComp;
     std::shared_ptr<C2ComponentInterfaceAdapter> mIntf;
     std::shared_ptr<C2Component::Listener> mListener;
-    std::unique_ptr<EventCallback> mCallback;
+
+    // The mCallback can be accessed in GST & C2 threads.
+    // Use std::shared_ptr + std::mutex to mimic C++20 std::atomic<std::shared_ptr> which
+    // is not supported in old GCC11.
+    std::shared_ptr<EventCallback> mCallback;
+    std::mutex mCallbackLock;
+    inline void resetCallback(void);
+    inline void setCallback(std::shared_ptr<EventCallback>& callback);
+    // MUST get a copy of shared_ptr to hold the ref to avoid null dereference
+    inline std::shared_ptr<EventCallback> getCallback(void);
 
     struct TrackBuffer {
         C2ComponentAdapter* adapter;

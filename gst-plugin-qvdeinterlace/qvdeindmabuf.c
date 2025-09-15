@@ -59,6 +59,8 @@ static struct gbm_device *(*_gbm_create_device) (int fd);
 static void (*_gbm_device_destroy) (struct gbm_device *gbm_dev);
 static struct gbm_bo *(*_gbm_bo_create) (struct gbm_device *gbm_dev,
         uint32_t width, uint32_t height, uint32_t format, uint32_t usage);
+static struct gbm_bo *(*_gbm_bo_import) (struct gbm_device *gbm_dev,
+        uint32_t type, void *buffer, uint32_t usage);
 static int (*_gbm_perform) (int operation, ...);
 static int (*_gbm_bo_get_fd) (struct gbm_bo *bo);
 static uint32_t (*_gbm_bo_get_width) (struct gbm_bo *bo);
@@ -98,6 +100,7 @@ static gpointer _do_load_lib_symbols (gpointer data)
   LOAD_SYMBOL (handle_gbm, gbm_create_device);
   LOAD_SYMBOL (handle_gbm, gbm_device_destroy);
   LOAD_SYMBOL (handle_gbm, gbm_bo_create);
+  LOAD_SYMBOL (handle_gbm, gbm_bo_import);
   LOAD_SYMBOL (handle_gbm, gbm_perform);
   LOAD_SYMBOL (handle_gbm, gbm_bo_get_fd);
   LOAD_SYMBOL (handle_gbm, gbm_bo_get_width);
@@ -128,6 +131,7 @@ gboolean qvdein_dmabuf_load_libs_once (void)
 #define gbm_create_device _gbm_create_device
 #define gbm_device_destroy _gbm_device_destroy
 #define gbm_bo_create _gbm_bo_create
+#define gbm_bo_import _gbm_bo_import
 #define gbm_perform _gbm_perform
 #define gbm_bo_get_fd _gbm_bo_get_fd
 #define gbm_bo_get_width _gbm_bo_get_width
@@ -323,6 +327,40 @@ gbm_dmabuf_free (DmaBufDesc * desc)
   }
 }
 
+static gint
+gbm_dmabuf_import (DmaBufDesc * desc)
+{
+  uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+  struct gbm_bo *bo;
+  struct gbm_buf_info buf_info;
+  gint gbm_bo_fd = -1;
+
+  GST_DEBUG ("import gbm bo for fd %d, meta %d, format 0x%x, width %d, height %d",
+      desc->fd, desc->meta_fd, desc->format, desc->width, desc->height);
+
+#ifdef QTI_PLATFORM
+  if (desc->ubwc)
+    flags |= GBM_BO_USAGE_UBWC_ALIGNED_QTI;
+#endif
+
+  buf_info.fd = desc->fd;
+  buf_info.metadata_fd = desc->meta_fd;
+  buf_info.width = desc->width;
+  buf_info.height = desc->height;
+  buf_info.format = desc->format;
+
+  bo = gbm_bo_import(gbm_dev, GBM_BO_IMPORT_GBM_BUF_TYPE,
+      &buf_info, flags);
+  if (bo) {
+    gbm_bo_fd = gbm_bo_get_fd(bo);
+    desc->bo = bo;
+    desc->fd = gbm_bo_fd;
+    gbm_perform (GBM_PERFORM_GET_METADATA_ION_FD, bo, &desc->meta_fd);
+  }
+
+  GST_DEBUG ("import gbm_bo_fd %d, meta_fd %d", desc->fd, desc->meta_fd);
+  return gbm_bo_fd;
+}
 #else /* USE_GBM */
 
 static inline gboolean
@@ -387,6 +425,17 @@ linux_dmabuf_heap_free (DmaBufDesc * desc)
   qvdein_close_fd (desc->fd);
 
   desc->fd = -1;
+}
+
+static gint
+linux_dmabuf_heap_import (DmaBufDesc * desc)
+{
+  GST_DEBUG ("desc %p, fd %d", desc, desc ? desc->fd : -1);
+
+  if (!desc || desc->fd < 0)
+    return -1;
+
+  return desc->fd;
 }
 #endif /* USE_GBM */
 
@@ -489,6 +538,16 @@ _qvdein_dmabuf_alloc (DmaBufDesc * desc)
 #endif
 }
 
+static inline gint
+_qvdein_dmabuf_import (DmaBufDesc * desc)
+{
+#ifdef USE_GBM
+  return gbm_dmabuf_import (desc);
+#else
+  return linux_dmabuf_heap_import (desc);
+#endif
+}
+
 static inline void
 _qvdein_dmabuf_free (DmaBufDesc * desc)
 {
@@ -540,6 +599,45 @@ desc_free:
   *desc = NULL;
 
   return FALSE;
+}
+
+gint
+qvdein_dmabuf_import (DmaBufDesc ** desc,
+    const GstVideoInfo * info, gboolean ubwc, gint fd, gint meta_fd)
+{
+  gint gbm_bo_fd = -1;
+
+  *desc = g_new0 (DmaBufDesc, 1);
+  if (NULL == *desc) {
+    GST_ERROR ("no memory");
+    return gbm_bo_fd;
+  }
+
+  if (!_qvdein_dmabuf_fill_desc (*desc, info, ubwc))
+    goto desc_free;
+
+  if (!_qvdein_dmabuf_open ()) {
+    GST_ERROR ("open error");
+    goto desc_free;
+  }
+
+  (*desc)->fd = fd;
+  (*desc)->meta_fd = meta_fd;
+  gbm_bo_fd = _qvdein_dmabuf_import (*desc);
+  if (gbm_bo_fd < 0) {
+    goto dmabuf_close;
+  }
+
+  return gbm_bo_fd;
+
+dmabuf_close:
+  _qvdein_dmabuf_close ();
+
+desc_free:
+  g_free (*desc);
+  *desc = NULL;
+
+  return gbm_bo_fd;
 }
 
 gint

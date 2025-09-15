@@ -73,6 +73,8 @@ struct _GstQvdeinterlace {
 
   gboolean in_ubwc;
   gboolean out_ubwc;
+
+  GstBufferPool *in_pool;
 };
 
 G_END_DECLS

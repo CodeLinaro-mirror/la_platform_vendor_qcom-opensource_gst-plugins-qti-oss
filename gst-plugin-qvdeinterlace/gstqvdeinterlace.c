@@ -544,7 +544,7 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     gst_object_unref (pool);
 
   /* always use its own pool at this time */
-  pool = gst_qvdein_pool_new (self->out_ubwc);
+  pool = gst_qvdein_pool_new (self->out_ubwc, FALSE);
   if (!pool) {
     GST_ERROR_OBJECT (self, "pool new error");
     return FALSE;
@@ -588,12 +588,65 @@ gst_qvdeinterlace_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 #endif
 }
 
+static gint
+gst_qvdeinterlace_gpudi_import_buffer (GstQvdeinterlace * self,
+    const GstVideoInfo * info, const GstBuffer * buffer, gboolean ubwc)
+{
+  GstBufferPool *pool = self->in_pool;
+  GstStructure *config;
+  gint fd = -1;
+
+  if (NULL == pool) {
+    GST_DEBUG_OBJECT (self, "no in pool, create new pool");
+    pool = gst_qvdein_pool_new (ubwc, TRUE);
+    GstAllocator *allocator = gst_dmabuf_allocator_new ();
+    if (!allocator) {
+      GST_ERROR_OBJECT (self, "in pool new allocator error");
+      gst_object_unref (pool);
+      pool = NULL;
+    } else {
+      guint size = 0;
+      guint min = 0, max = 0;
+      GstCaps *caps = gst_video_info_to_caps (info);
+      config = gst_buffer_pool_get_config (buffer->pool);
+      if (!gst_buffer_pool_config_get_params (config, NULL, &size, &min, &max)) {
+        GST_ERROR_OBJECT (self, "Can't get buffer pool config param");
+        gst_structure_free (config);
+        gst_object_unref (allocator);
+        gst_object_unref (pool);
+        goto out;
+      }
+      gst_structure_free (config);
+
+      GST_DEBUG_OBJECT (self, "setting pool with size %d, min: %d, max: %d",
+          size, min, max);
+      config = gst_buffer_pool_get_config (pool);
+      gst_buffer_pool_config_set_params (config, caps, size, min, max);
+      gst_buffer_pool_config_set_allocator (config, allocator, NULL);
+      gst_buffer_pool_set_config (pool, config);
+      self->in_pool = pool;
+    }
+  }
+
+  if (pool) {
+    fd = gst_qvdein_pool_buffer_import (pool, info, buffer, ubwc);
+    GST_DEBUG_OBJECT (self, "import buffer fd %d", fd);
+  }
+
+out:
+  return fd;
+}
+
 static void
-gst_qvdeinterlace_gpudi_fill_desc (GpudiBufDesc * desc,
+gst_qvdeinterlace_gpudi_fill_desc (GstQvdeinterlace * self, GpudiBufDesc * desc,
     const GstVideoInfo * info, const GstBuffer * buffer, GpudiScanMethod scan)
 {
   gint fd = gst_qvdein_pool_buffer_get_fd (buffer->pool, buffer);
   gboolean ubwc = gst_qvdein_pool_buffer_get_ubwc (buffer->pool, buffer);
+
+  if (gst_buffer_get_custom_meta (buffer, "GstQVIDCDMeta") != NULL) {
+    fd = gst_qvdeinterlace_gpudi_import_buffer (self, info, buffer, ubwc);
+  }
 
   gpu_deinterlace_fill_desc (desc, info, fd, ubwc, scan);
 
@@ -797,17 +850,17 @@ gst_qvdeinterlace_do_transform (GstQvdeinterlace * self,
   if (!self->active) {
     gst_qvdeinterlace_align_info (self, inbuf, outbuf);
 
-    gst_qvdeinterlace_gpudi_fill_desc (&in_desc, &self->in_info, inbuf,
+    gst_qvdeinterlace_gpudi_fill_desc (self, &in_desc, &self->in_info, inbuf,
         in_scan);
-    gst_qvdeinterlace_gpudi_fill_desc (&out_desc, &self->out_info, outbuf,
+    gst_qvdeinterlace_gpudi_fill_desc (self, &out_desc, &self->out_info, outbuf,
         GPUDI_SCAN_METHOD_PROGRESSIVE);
 
     if (!gst_qvdeinterlace_gpudi_open (self, &out_desc, &in_desc))
       return FALSE;
   } else {
-    gst_qvdeinterlace_gpudi_fill_desc (&in_desc, &self->in_info, inbuf,
+    gst_qvdeinterlace_gpudi_fill_desc (self, &in_desc, &self->in_info, inbuf,
         in_scan);
-    gst_qvdeinterlace_gpudi_fill_desc (&out_desc, &self->out_info, outbuf,
+    gst_qvdeinterlace_gpudi_fill_desc (self, &out_desc, &self->out_info, outbuf,
         GPUDI_SCAN_METHOD_PROGRESSIVE);
   }
 
@@ -879,6 +932,13 @@ gst_qvdeinterlace_stop (GstBaseTransform * trans)
 
   gst_qvdeinterlace_gpudi_close (self);
   gst_qvdeinterlace_reference_buffer_free (self);
+
+  if (self->in_pool) {
+    GST_DEBUG_OBJECT (self, "in pool ref cnt:%d",
+        GST_OBJECT_REFCOUNT (self->in_pool));
+    gst_object_unref (self->in_pool);
+    self->in_pool = NULL;
+  }
 
   GST_DEBUG_OBJECT (self, "done");
 
@@ -971,6 +1031,7 @@ gst_qvdeinterlace_init (GstQvdeinterlace * self)
   self->out_dmabuf = FALSE;
   self->in_ubwc = FALSE;
   self->out_ubwc = FALSE;
+  self->in_pool = NULL;
 
   GST_INFO_OBJECT (self, "done");
 }

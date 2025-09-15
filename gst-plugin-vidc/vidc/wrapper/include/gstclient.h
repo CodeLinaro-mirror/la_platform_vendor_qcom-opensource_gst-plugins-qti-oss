@@ -45,6 +45,12 @@ typedef enum {
     COMPONENT_ENCODER
 } ComponentIdType;
 
+typedef struct
+{
+    vidc_qmetapayload_header_type header;
+    void* payload;
+} MetaInfo;
+
 class GstClient : public BaseClient {
 public:
     typedef struct
@@ -104,6 +110,8 @@ public:
 
     bool isEncoder();
 
+    bool isProgressive();
+
     int getPlaneCount();
     int getPlaneBytes(int plane);
     int getPlaneHeight(int plane);
@@ -131,7 +139,8 @@ private:
     bool configureEncoder(ConfigType& config);
     bool configureDecoder(ConfigType& config);
     int flattenMetaData(vidc_frame_data_type& frameData);
-    int extractMetaData(vidc_frame_data_type& frameData);
+    int extractMetaData(vidc_frame_data_type& frameData,
+        std::vector<std::shared_ptr<MetaInfo>> *infos);
 
     std::mutex mMutexShutdown;
     ComponentIdType mCompId;

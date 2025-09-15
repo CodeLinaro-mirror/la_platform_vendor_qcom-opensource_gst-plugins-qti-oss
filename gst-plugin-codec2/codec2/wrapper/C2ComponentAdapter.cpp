@@ -73,14 +73,15 @@ namespace QTI {
 
 static void s_releaseExtBuf (void *comp, int32_t extFd)
 {
-    reinterpret_cast<C2ComponentAdapter*>(comp)->releaseExtBuf(extFd);
+    if (comp) {
+        reinterpret_cast<C2ComponentAdapter*>(comp)->releaseExtBuf(extFd);
+    }
 }
 
-C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp):mStore(),
-mInPendingBuffer(),mOutPendingBuffer(),mTrackBuffers(),
-mLock(),mLockOut(),mPendingWorkCond()
+C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp) :
+    mStore(), mCallbackLock(), mInPendingBuffer(), mOutPendingBuffer(),
+    mTrackBuffers(), mLock(), mLockOut(), mPendingWorkCond()
 {
-
     LOG_MESSAGE("Component(%p) created", this);
 
     mComp = std::move(comp);
@@ -104,16 +105,17 @@ mLock(),mLockOut(),mPendingWorkCond()
 
 C2ComponentAdapter::~C2ComponentAdapter()
 {
-
     LOG_MESSAGE("Component(%p) destroyed", this);
+
+    mInPendingBuffer.clear();
+    mOutPendingBuffer.clear();
+    mTrackBuffers.clear();
 
     mComp = nullptr;
     mIntf = nullptr;
     mListener = nullptr;
-    mCallback = nullptr;
-    mInPendingBuffer.clear();
-    mOutPendingBuffer.clear();
-    mTrackBuffers.clear();
+    resetCallback();
+
     mLinearPool = nullptr;
     mGraphicPool = nullptr;
     mC2AllocatorGBM = nullptr;
@@ -123,7 +125,7 @@ C2ComponentAdapter::~C2ComponentAdapter()
     mC2LinearAllocator = nullptr;
 }
 
-c2_status_t C2ComponentAdapter::setListenercallback(std::unique_ptr<EventCallback> callback,
+c2_status_t C2ComponentAdapter::setListenercallback(std::shared_ptr<EventCallback> callback,
     c2_blocking_t mayBlock)
 {
 
@@ -137,7 +139,7 @@ c2_status_t C2ComponentAdapter::setListenercallback(std::unique_ptr<EventCallbac
     }
 
     if (result == C2_OK) {
-        mCallback = std::move(callback);
+        setCallback(callback);
     }
 
     return result;
@@ -658,7 +660,7 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     }
                     /* ref the buffer and store it. When the fd is queued,
                      * we can find the graphic block with the input fd */
-                    mInPendingBuffer[fd] = graphicBlock;
+                    mInPendingBuffer[fd] = std::move(graphicBlock);
                     buffer->fd = fd;
 
                     guint32 stride = 0;
@@ -1144,7 +1146,7 @@ void C2ComponentAdapter::handleWorkDone(
                             if (interlaceMode != INTERLACE_MODE_PROGRESSIVE) {
                                 maxBufCnt += MAX_EXT_BUF_CNT_EXTENSION;
                             }
-                            mCallback->onUpdateMaxBufCount(maxBufCnt);
+                            updateMaxBufCount(maxBufCnt);
                         } else {
                             setMaxAllocationCount(outputDelay.value, BUFFER_POOL_BASIC_GRAPHIC);
                         }
@@ -1175,20 +1177,12 @@ void C2ComponentAdapter::handleWorkDone(
                     mOutPendingBuffer[bufferIdx] = buffer;
                 }
 
-                if (mCallback) {
-                    mCallback->onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
-                } else {
-                    LOG_ERROR("mCallback is null, not expected!");
-                }
+                onOutputBufferAvailable(buffer, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             }
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
                 LOG_MESSAGE("Component(%p) reached EOS on output", this);
-                if (mCallback) {
-                    mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
-                } else {
-                    LOG_ERROR("mCallback is null when EOS, not expected!");
-                }
+                onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
                 LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
@@ -1206,11 +1200,7 @@ void C2ComponentAdapter::handleWorkDone(
 
                 LOG_MESSAGE("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
                     this, bufferIdx, timestamp);
-                if (mCallback) {
-                    mCallback->onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
-                } else {
-                    LOG_ERROR("mCallback is null during drop frame, not expected!");
-                }
+                onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else {
                 LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
@@ -1229,7 +1219,7 @@ void C2ComponentAdapter::handleTripped(
     UNUSED(component);
 
     for (auto& f : settingResult) {
-        mCallback->onTripped(static_cast<uint32_t>(f->failure));
+        onTripped(static_cast<uint32_t>(f->failure));
     }
 }
 
@@ -1238,7 +1228,7 @@ void C2ComponentAdapter::handleError(std::weak_ptr<C2Component> component, uint3
     LOG_MESSAGE("Component(%p) posts an error", this);
 
     UNUSED(component);
-    mCallback->onError(errorCode);
+    onError(errorCode);
 }
 
 c2_status_t C2ComponentAdapter::setCompStore(std::weak_ptr<C2ComponentStore> store)
@@ -1411,24 +1401,103 @@ do_exit:
     return result;
 }
 
-void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC2D)
+void C2ComponentAdapter::resetCallback(void)
 {
-    if (mCallback) {
-        mCallback->onAcquireExtBuffer(width, height, isC2D);
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    mCallback = nullptr;
+}
+
+void C2ComponentAdapter::setCallback(std::shared_ptr<EventCallback>& callback)
+{
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    mCallback = std::move(callback);
+}
+
+std::shared_ptr<EventCallback> C2ComponentAdapter::getCallback(void)
+{
+    std::lock_guard<std::mutex> lock(mCallbackLock);
+    return mCallback;
+}
+
+void C2ComponentAdapter::onOutputBufferAvailable(
+    const std::shared_ptr<C2Buffer>& buffer,
+    uint64_t index,
+    uint64_t timestamp,
+    InterlaceInfo &interlaceInfo,
+    uint32_t frameQp,
+    C2FrameData::flags_t flag)
+{
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onOutputBufferAvailable(buffer, index, timestamp, interlaceInfo, frameQp, flag);
+    } else {
+        LOG_WARNING("mCallback is null");
     }
 }
 
+void C2ComponentAdapter::onTripped(uint32_t errorCode)
+{
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onTripped(errorCode);
+    } else {
+        LOG_WARNING("mCallback is null");
+    }
+}
+
+void C2ComponentAdapter::onError(uint32_t errorCode)
+{
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onError(errorCode);
+    } else {
+        LOG_WARNING("mCallback is null");
+    }
+}
+
+void C2ComponentAdapter::updateMaxBufCount(uint32_t outputDelay)
+{
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onUpdateMaxBufCount(outputDelay);
+    } else {
+        LOG_WARNING("mCallback is null");
+    }
+}
+
+void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC2D)
+{
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onAcquireExtBuffer(width, height, isC2D);
+    } else {
+        LOG_WARNING("mCallback is null");
+    }
+}
+
+// 1)acquireExtBuf(), 2)releaseExtBuf(), 3)releaseInputBuf() all use mCallback
+// that shall be set null in 4)~C2ComponentAdapter() when closing, and 1) & 3)
+// are called from C2 thread, while 2) can be called from C2 thread (enc input
+// & dec output buffer done and QC2Client::~ComponentListener) and GST thread
+// (C2ComponentAdapter::queue and ~C2ComponentAdapter).
+// To avoid data race & crash, need exclusive access of mCallback in all threads.
 void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
 {
-    if (mCallback) {
-        mCallback->onReleaseExtBuffer(extFd);
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onReleaseExtBuffer(extFd);
+    } else {
+        LOG_WARNING("mCallback is null");
     }
 }
 
 void C2ComponentAdapter::releaseInputBuf(uint64_t index)
 {
-    if (mCallback) {
-        mCallback->onReleaseInputBuffer(index);
+    std::shared_ptr<EventCallback> callback = getCallback();
+    if (callback) {
+        callback->onReleaseInputBuffer(index);
+    } else {
+        LOG_WARNING("mCallback is null");
     }
 }
 

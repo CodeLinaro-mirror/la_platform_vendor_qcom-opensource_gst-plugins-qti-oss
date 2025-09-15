@@ -542,6 +542,7 @@ gboolean vidc_freeOutBuffer(void* const comp, BufferDescriptor* buffer);
 gboolean vidc_delete(void* comp);
 gboolean writePlane(void* comp, uint8_t* dest, BufferDescriptor* buffer_info);
 gboolean vidc_isEncoder(void* const comp);
+gboolean vidc_isProgressive(void* const comp);
 
 #ifdef __cplusplus
 }
