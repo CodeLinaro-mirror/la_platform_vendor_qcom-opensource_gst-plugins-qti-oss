@@ -29,7 +29,6 @@
  */
 
 #include <stdio.h>
-#include <string.h>
 #include "gstqeavbtssrc.h"
 
 GST_DEBUG_CATEGORY_STATIC (qeavbtssrc_debug);
@@ -191,7 +190,7 @@ gst_qeavb_ts_src_change_state (GstElement * element,
   kpi_place_marker(tips);
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
-      gst_qeavb_ts_src_stop(GST_BASE_SRC (src));
+      gst_qeavb_ts_src_stop(GST_BASE_SRC (src));//due to some history reason, call _stop() here, parent will call _stop() again.
     break;
     default:
     break;
@@ -226,8 +225,9 @@ gst_qeavb_ts_src_start (GstBaseSrc * basesrc)
     GST_ERROR_OBJECT (qeavbtssrc,"open eavb fd error, exit!");
     return FALSE;
   }
+  GST_INFO_OBJECT(qeavbtssrc,"qeavb ts src start: open eavb node fd %d", qeavbtssrc->eavb_fd);
 
-  snprintf(tips, sizeof(tips), "M - qeavbts st:will create<%d>", qeavbtssrc->eavb_fd);
+  snprintf(tips, sizeof(tips), "M - qeavbts st:will create<fd %d>", qeavbtssrc->eavb_fd);
   kpi_place_marker(tips);
   err = qeavb_create_stream_remote(qeavbtssrc->eavb_fd, qeavbtssrc->config_file, &(qeavbtssrc->hdr));
   if (0 != err) {
@@ -292,12 +292,12 @@ error_destroy:
     }
 error_close:
   if (qeavbtssrc->eavb_fd >= 0) {
-    int r = close(qeavbtssrc->eavb_fd);
-    if (r != 0) {
-      int e = errno;
-      snprintf(tips, sizeof(tips), "M - qeavbts st:cl err<%d,%d,%d>", qeavbtssrc->eavb_fd, r, e);
+    err = close(qeavbtssrc->eavb_fd);
+    int err_no = errno;
+    if (err) {
+      snprintf(tips, sizeof(tips), "M - qeavbts st:close(%d)err %d(%d)!", qeavbtssrc->eavb_fd, err, err_no);
       kpi_place_marker(tips);
-      GST_ERROR_OBJECT (qeavbtssrc, "close eavb_fd %d fail, ret %d, error tips(%d) %s", qeavbtssrc->eavb_fd, r, e, strerror(e));
+      GST_ERROR_OBJECT (qeavbtssrc,"close(%d) error %d, errno %d!", qeavbtssrc->eavb_fd, err, err_no);
     }
     qeavbtssrc->eavb_fd = -1;
   }
@@ -341,14 +341,16 @@ gst_qeavb_ts_src_stop (GstBaseSrc * basesrc)
     snprintf(tips, sizeof(tips), "M - qeavbts sp:close fd<%d>", qeavbtssrc->eavb_fd);
     kpi_place_marker(tips);
     err = close(qeavbtssrc->eavb_fd);
-    if (err != 0) {
-      int e = errno;
-      snprintf(tips, sizeof(tips), "M - qeavbts sp:cl err<%d,%d,%d>", qeavbtssrc->eavb_fd, err, e);
+    int err_no = errno;
+    snprintf(tips, sizeof(tips), "M - qeavbts sp:close fd ret %d.", err);
+    kpi_place_marker(tips);
+    GST_INFO_OBJECT (qeavbtssrc, "QEAVB ts source stopped, closed(%d) ret %d", qeavbtssrc->eavb_fd, err);
+    if (err) {
+      snprintf(tips, sizeof(tips), "M - qeavbts st:close(%d)err %d(%d)!", qeavbtssrc->eavb_fd, err, err_no);
       kpi_place_marker(tips);
-      GST_ERROR_OBJECT (qeavbtssrc, "close eavb_fd %d fail, ret %d, error tips(%d) %s", qeavbtssrc->eavb_fd, err, e, strerror(e));
+      GST_ERROR_OBJECT (qeavbtssrc, "qeavb ts src stop: close eavb_fd fail, close(%d)err %d(%d)!", qeavbtssrc->eavb_fd, err, err_no);
     }
     qeavbtssrc->eavb_fd = -1;
-    GST_DEBUG_OBJECT (qeavbtssrc, "QEAVB ts source stopped");
   }
   qeavbtssrc->started = FALSE;
   g_mutex_unlock(&qeavbtssrc->lock);
@@ -388,7 +390,7 @@ gst_qeavb_ts_src_fill (GstPushSrc * pushsrc, GstBuffer * buffer)
 
   payload_size = qeavbtssrc->stream_info.max_buffer_size * qeavbtssrc->stream_info.pkts_per_wake;
 
-  GST_DEBUG_OBJECT (qeavbtssrc, "pkts_per_wake %d, payload_size %u, wakeup_period_us %d, src_fill_idx %u", qeavbtssrc->stream_info.pkts_per_wake, payload_size, qeavbtssrc->stream_info.wakeup_period_us, qeavbtssrc->src_fill_idx);
+  GST_DEBUG_OBJECT (qeavbtssrc, "fd %d, pkts_per_wake %d, payload_size %u, wakeup_period_us %d, src_fill_idx %u", qeavbtssrc->eavb_fd, qeavbtssrc->stream_info.pkts_per_wake, payload_size, qeavbtssrc->stream_info.wakeup_period_us, qeavbtssrc->src_fill_idx);
   qeavbtssrc->src_fill_idx ++;  //this idx is used to indicate whether log is missed. If log missed, above src_fill_idx log will have discontinuity
 
   if (qeavbtssrc->is_first_tspacket) {
@@ -478,7 +480,7 @@ retry:
 finish_handle:
   g_mutex_unlock(&qeavbtssrc->lock);
   if (need_show_log) {
-    snprintf(tips, sizeof(tips), "M - qeavbts fill<0x%x,%d>", error, recv_len);
+    snprintf(tips, sizeof(tips), "M - qeavbts fill<%d,0x%x,%d>", qeavbtssrc->eavb_fd,  error, recv_len);
     kpi_place_marker(tips);
   }
   return error;
