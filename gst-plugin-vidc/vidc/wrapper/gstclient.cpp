@@ -108,6 +108,7 @@ GstClient::GstClient(ComponentIdType id)
 GstClient::~GstClient()
 {
     MM_DBG_MSG("GstClient::~GstClient");
+    mCallback.reset();
 }
 
 int GstClient::flattenMetaData(vidc_frame_data_type& frameData)
@@ -1179,7 +1180,9 @@ void GstClient::EmptyCallback(BaseClient* base, vidc_frame_data_type& frameData)
 
     InterlaceInfo interlaceInfo = {INTERLACE_MODE_PROGRESSIVE, true};
 
-    mCallback->onBufferAvailable(frameData, interlaceInfo);
+    if (mCallback != nullptr) {
+        mCallback->onBufferAvailable(frameData, interlaceInfo);
+    }
 }
 
 void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData)
@@ -1222,14 +1225,18 @@ void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData
         }
     }
 
-    mCallback->onBufferAvailable(frameData, interlaceInfo);
+    if (mCallback != nullptr) {
+        mCallback->onBufferAvailable(frameData, interlaceInfo);
+    }
 }
 
 void GstClient::outputReconfigureCallback(BaseClient* base)
 {
     MM_DBG_MSG("GstClient::outputReconfigureCallback-%s", mNamePtr);
 
-    mCallback->onReconfig(mOutputStarted);
+    if (mCallback != nullptr) {
+        mCallback->onReconfig(mOutputStarted);
+    }
 
     MM_DBG_MSG("GstClient::outputReconfigureCallback-%s done", mNamePtr);
 }

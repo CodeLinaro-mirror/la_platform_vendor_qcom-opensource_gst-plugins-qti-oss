@@ -541,15 +541,16 @@ void BaseClient::threadBufferEBD()
     MM_HIGH_MSG("BaseClient::threadBufferEBD-%s Enter bufThread...", mNamePtr);
     while (true) {
         uLock.lock();
+
+        MM_DBG_MSG("BaseClient::threadBufferEBD-%s wait", mNamePtr);
+        mCondVarEBD.wait(uLock, [this] { return (
+                                             false == mQueueEBD.isEmpty() || true == mDone); });
+
         if (mDone) {
             MM_DBG_MSG("BaseClient::threadBufferEBD-%s quit mDone", mNamePtr);
             uLock.unlock();
             break;
         }
-
-        MM_DBG_MSG("BaseClient::threadBufferEBD-%s wait", mNamePtr);
-        mCondVarEBD.wait(uLock, [this] { return (
-                                             false == mQueueEBD.isEmpty() || true == mDone); });
 
         if (false == mQueueEBD.isEmpty()) {
             vidc_frame_data_type buffer = mQueueEBD.pop();
@@ -572,15 +573,16 @@ void BaseClient::threadBufferFBD()
     MM_HIGH_MSG("BaseClient::threadBufferFBD-%s Enter bufThreadFBD...", mNamePtr);
     while (true) {
         uLock.lock();
+
+        MM_DBG_MSG("BaseClient::threadBufferFBD-%s wait", mNamePtr);
+        mCondVarFBD.wait(uLock, [this] { return (false == mQueueFBD.isEmpty()
+                                             || true == mDone); });
+
         if (mDone) {
             MM_DBG_MSG("BaseClient::threadBufferFBD-%s quit mDone", mNamePtr);
             uLock.unlock();
             break;
         }
-
-        MM_DBG_MSG("BaseClient::threadBufferFBD-%s wait", mNamePtr);
-        mCondVarFBD.wait(uLock, [this] { return (false == mQueueFBD.isEmpty()
-                                             || true == mDone); });
 
         if (false == mQueueFBD.isEmpty()) {
             vidc_frame_data_type buffer = mQueueFBD.pop();
