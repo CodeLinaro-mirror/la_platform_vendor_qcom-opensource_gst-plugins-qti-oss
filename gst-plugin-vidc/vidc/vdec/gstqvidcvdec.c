@@ -478,21 +478,27 @@ gst_qvidc_vdec_create_component (GstVideoDecoder * decoder)
   GST_DEBUG_OBJECT (dec, "create component");
 
   if (dec->comp_store) {
-    ret =
-        vidcStore_createComponent (dec->comp_store, dec->comp_name,
-        &dec->comp, &dec->cb);
-    if (ret == TRUE) {
-      GST_DEBUG_OBJECT (dec, "set listerner to %s component", dec->comp_name);
+    if (!dec->comp) {
       ret =
-          vidc_setListener (dec->comp, decoder, handle_video_event,
-          BLOCK_MODE_MAY_BLOCK);
+          vidcStore_createComponent (dec->comp_store, dec->comp_name,
+          &dec->comp, &dec->cb);
+
       if (ret == TRUE) {
-        GST_ERROR_OBJECT (dec, "set listerner done");
+        GST_DEBUG_OBJECT (dec, "set listerner to %s component", dec->comp_name);
+        ret =
+            vidc_setListener (dec->comp, decoder, handle_video_event,
+            BLOCK_MODE_MAY_BLOCK);
+        if (ret == TRUE) {
+          GST_DEBUG_OBJECT (dec, "set listerner done");
+        } else {
+          GST_ERROR_OBJECT (dec, "Failed to set listerner");
+        }
       } else {
-        GST_ERROR_OBJECT (dec, "Failed to set listerner");
+        GST_ERROR_OBJECT (dec, "Failed to create component");
       }
     } else {
-      GST_ERROR_OBJECT (dec, "Failed to create component");
+      GST_WARNING_OBJECT (dec, "already created %s component", dec->comp_name);
+      return TRUE;
     }
   } else {
     GST_ERROR_OBJECT (dec, "Component store is Null");
@@ -1032,8 +1038,6 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
   if (!gst_qvidc_vdec_create_component (decoder)) {
     goto error_set_format;
-  } else {
-    dec->comp_started = TRUE;
   }
 
   if (dec_class->set_format) {
@@ -1099,6 +1103,7 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
 done:
   GST_DEBUG_OBJECT (dec, "done");
+  dec->comp_started = TRUE;
   return TRUE;
 
   /* Errors */
