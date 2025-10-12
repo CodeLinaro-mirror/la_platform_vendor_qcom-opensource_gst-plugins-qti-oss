@@ -74,6 +74,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
@@ -2603,6 +2604,7 @@ static void gst_qcodec2_venc_check_gl_memory (GstBuffer *buf) {
       // for better performance.
       //gst_gl_memory_pbo_download_transfer ((GstGLMemoryPBO *) mem); // used in gldownload
     } else {
+      syslog (LOG_ERR, "gst-c2: " "Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
       GST_ERROR ("Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
     }
   }
@@ -2635,6 +2637,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     if (frame->system_frame_number == 0) {
       enc->is_input_dmabuf = TRUE;
     } else if (!enc->is_input_dmabuf) {
+      syslog (LOG_ERR, "gst-c2:" "Fatal error: input buf feature changed from need copy to zero copy");
       GST_ERROR_OBJECT (enc,
           "Fatal error: input buf feature changed from need copy to zero copy");
     }
@@ -2651,6 +2654,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     if (frame->system_frame_number == 0) {
       enc->is_input_dmabuf = FALSE;
     } else if (enc->is_input_dmabuf) {
+      syslog (LOG_ERR, "gst-c2: " "Fatal error: input buf feature changed from zero copy to need copy");
       GST_ERROR_OBJECT (enc,
           "Fatal error: input buf feature changed from zero copy to need copy");
     }
