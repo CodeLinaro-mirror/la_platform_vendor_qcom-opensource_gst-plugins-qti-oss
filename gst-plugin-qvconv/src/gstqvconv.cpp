@@ -389,13 +389,13 @@ gst_qvconv_init (GstQvconv *qvconv)
   SG_INFO_LITE ("qvconv info: %s", VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO));
 
   if (!qvconv_load_libs_once ()) {
-    SG_ERR_OBJ_LITE (qvconv, "failed to load libs");
+    SG_ERR_OBJ (qvconv, "failed to load libs, inst %" GST_PTR_FORMAT "@%p", qvconv, qvconv);
     return;
   }
 
   c2d = new C2dConverter();
   if (!c2d) {
-    SG_ERR_OBJ_LITE (qvconv, "failed to instantiate c2d object");
+    SG_ERR_OBJ (qvconv, "failed to instantiate c2d object, inst %" GST_PTR_FORMAT "@%p", qvconv, qvconv);
     return;
   }
 
@@ -635,11 +635,11 @@ copy_colorimetry_from_input (GstQvconv * qvconv, GstCaps * in_caps,
 
   GstVideoInfo in_info, out_info;
   if (!gst_video_info_from_caps (&in_info, in_caps)) {
-    SG_ERR_OBJ (qvconv, "info_from_caps error, in_caps: %" GST_PTR_FORMAT, in_caps);
+    SG_ERR_OBJ (qvconv, "info_from_caps error, in_caps: %" GST_PTR_FORMAT ", inst %" GST_PTR_FORMAT "@%p", in_caps, qvconv, qvconv);
     return;
   }
   if (!gst_video_info_from_caps (&out_info, out_caps)) {
-    SG_ERR_OBJ (qvconv, "info_from_caps error, out_caps: %" GST_PTR_FORMAT, out_caps);
+    SG_ERR_OBJ (qvconv, "info_from_caps error, out_caps: %" GST_PTR_FORMAT ", inst %" GST_PTR_FORMAT "@%p", out_caps, qvconv, qvconv);
     return;
   }
 
@@ -735,13 +735,13 @@ static gboolean gst_qvconv_configure_c2d (GstQvconv * qvconv)
 
   C2dConverter *c2d = qvconv->c2d_hndl;
   if (G_UNLIKELY (!c2d)) {
-    SG_ERR_OBJ_LITE (qvconv, "no c2d instance");
+    SG_ERR_OBJ (qvconv, "no c2d instance, inst %" GST_PTR_FORMAT "@%p", qvconv, qvconv);
     return FALSE;
   }
 
   /* Currently no need to reconfigure C2D. Maybe it's needed in future, like multiple resolution case*/
   if (priv->active) {
-    SG_ERR_OBJ_LITE (qvconv, "already configured c2d");
+    SG_ERR_OBJ (qvconv, "already configured c2d, inst %" GST_PTR_FORMAT "@%p", qvconv, qvconv);
     return TRUE;
   }
 
@@ -756,19 +756,19 @@ static gboolean gst_qvconv_configure_c2d (GstQvconv * qvconv)
   dst.stride = GST_VIDEO_INFO_PLANE_STRIDE (dst_info, 0);
 
   if (!src.width || !src.height || !dst.width || !dst.height) {
-    SG_ERR_OBJ_LITE (qvconv, "width height must not be zero");
+    SG_ERR_OBJ_LITE (qvconv, "width height must not be zero, inst %p", qvconv);
     return FALSE;
   }
 
   if (!gst_qvconv_match_color_type (qvconv, src_format, &src.format, priv->input_buffer.ubwc_flags) ||
       !gst_qvconv_match_color_type (qvconv, dst_format, &dst.format, priv->outubwc)) {
-    SG_ERR_OBJ_LITE (qvconv, "gst_qvconv_match_color_type() fail!");
+    SG_ERR_OBJ_LITE (qvconv, "gst_qvconv_match_color_type() fail, inst %p!", qvconv);
     return FALSE;
   }
 
   SG_INFO_OBJ_LITE (qvconv, "allocate c2d candidate input buffer");
   if (!gst_qvconv_alloc_c2d_buf (c2d, &priv->input_buffer, src_info, priv->input_buffer.ubwc_flags)) {
-    SG_ERR_OBJ_LITE (qvconv, "gst_qvconv_alloc_c2d_buf() fail!");
+    SG_ERR_OBJ_LITE (qvconv, "gst_qvconv_alloc_c2d_buf() fail, inst %p!", qvconv);
     return FALSE;
   }
 
@@ -824,13 +824,13 @@ static gboolean gst_qvconv_configure_c2d (GstQvconv * qvconv)
     }
     SG_INFO_OBJ_LITE (qvconv, "configure c2d converter");
     if (!c2d->configure (&src, &dst, &param)) {
-      SG_ERR_OBJ_LITE (qvconv, "c2d configure error");
+      SG_ERR_OBJ_LITE (qvconv, "c2d configure error, inst %p", qvconv);
       goto free_c2d_buf;
     }
   }
 
   if (flip && !c2d->setFlip(flip))
-    SG_ERR_OBJ_LITE (qvconv, "c2d setFlip error");
+    SG_ERR_OBJ_LITE (qvconv, "c2d setFlip error, inst %p", qvconv);
 
   c2d->setSrcCrop(priv->crop.x, priv->crop.y, priv->crop.width, priv->crop.height);
 
@@ -915,7 +915,7 @@ gst_qvconv_dump_c2d (GstQvconv * qvconv)
     }
 
     if (!c2d->dumpSurface (priv->dump_fd_src, true)) {
-      SG_ERR_OBJ_LITE(qvconv, "dump input error");
+      SG_ERR_OBJ_LITE(qvconv, "dump input error, inst %p", qvconv);
       priv->dump_error = TRUE;
     }
   }
@@ -932,7 +932,7 @@ gst_qvconv_dump_c2d (GstQvconv * qvconv)
     }
 
     if (!c2d->dumpSurface (priv->dump_fd_dst, false)) {
-      SG_ERR_OBJ_LITE(qvconv, "dump output error");
+      SG_ERR_OBJ_LITE(qvconv, "dump output error, inst %p", qvconv);
       priv->dump_error = TRUE;
     }
   }
@@ -1051,7 +1051,7 @@ gst_qvconv_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
     /* configure own pool */
     if (!gst_buffer_pool_set_config (pool, config)) {
-      SG_ERR_OBJ_LITE (qvconv, "configure our own buffer pool failed");
+      SG_ERR_OBJ_LITE (qvconv, "configure our own buffer pool failed, inst %p", qvconv);
       goto cleanup;
     }
 
@@ -1076,13 +1076,13 @@ gst_qvconv_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     gst_query_add_allocation_pool (query, pool, size, min, max);
 
   if (!GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans, query)) {
-    SG_ERR_OBJ_LITE (qvconv, "failed in parent decide_allocation");
+    SG_ERR_OBJ_LITE (qvconv, "failed in parent decide_allocation, inst %p", qvconv);
     goto cleanup;
   }
 
   if (!gst_buffer_pool_set_active (pool, TRUE)) {
     SG_ERR_OBJ (qvconv, "failed to start buffer pool:%"
-        GST_PTR_FORMAT, pool);
+        GST_PTR_FORMAT ", inst %" GST_PTR_FORMAT "@%p", pool, qvconv, qvconv);
     goto cleanup;
   }
 
@@ -1140,7 +1140,7 @@ gst_qvconv_finalize (GObject * object)
   }
 
   if (priv == NULL) {
-    SG_ERR_OBJ_LITE (qvconv, "priv is NULL in finalize()!");
+    SG_ERR_OBJ_LITE (qvconv, "priv is NULL in finalize(), inst %p!", qvconv);
     goto PARENT_FINALIZE;
   }
 
@@ -1392,7 +1392,7 @@ gst_qvconv_align_info (GstQvconv * qvconv, GstVideoInfo * info, const GstVideoMe
             GST_VIDEO_INFO_PLANE_OFFSET (info, 1), GST_VIDEO_INFO_SIZE (info));
     break;
     default:
-      SG_ERR_OBJ_LITE (qvconv, "unsupport format when calculate gst video info layout %d(%s)", format, GST_VIDEO_INFO_NAME(info));
+      SG_ERR_OBJ_LITE (qvconv, "unsupport format when calculate gst video info layout %d(%s), inst %p", format, GST_VIDEO_INFO_NAME(info), qvconv);
       return FALSE;
   }
 
@@ -1436,7 +1436,7 @@ gst_qvconv_match_color_type (const GstQvconv *qvconv, GstVideoFormat format,
         break;
     default:
         SG_ERR_OBJ_LITE (qvconv, "cannot find match c2d color type \
-            for %s", gst_video_format_to_string (format));
+            for %s, inst %p", gst_video_format_to_string (format), qvconv);
         return FALSE;
   }
 
@@ -1531,8 +1531,8 @@ gst_qvconv_do_buffer_copy (GstBaseTransform * trans, C2DBuffer * c2d_input_buffe
         }
       break;
     default:
-      SG_ERR_OBJ_LITE (qvconv, "unsupport format %s when copy plugin's input gst buf to c2d input buf",
-          gst_video_format_to_string (input_format));
+      SG_ERR_OBJ_LITE (qvconv, "unsupport format %s when copy plugin's input gst buf to c2d input buf, inst %p",
+          gst_video_format_to_string (input_format), qvconv);
       return FALSE;
   }
 
@@ -1615,13 +1615,13 @@ gst_qvconv_set_caps (GstBaseTransform * trans, GstCaps * incaps,
   /* ERRORS */
 invalid_caps:
   {
-    SG_ERR_OBJ_LITE (qvconv, "invalid caps");
+    SG_ERR_OBJ_LITE (qvconv, "invalid caps, inst %p", qvconv);
     g_warn_if_fail (FALSE && "invalid caps");
     return FALSE;
   }
 invalid_crop:
   {
-    SG_ERR_OBJ_LITE (qvconv, "invalid crop");
+    SG_ERR_OBJ_LITE (qvconv, "invalid crop, inst %p", qvconv);
     g_warn_if_fail (FALSE && "invalid crop");
     return FALSE;
   }
@@ -1647,7 +1647,7 @@ gst_qvconv_set_info (GstVideoFilter * filter, GstCaps * incaps,
       SG_INFO_OBJ_LITE (qvconv, "input is interlace(mode %d) nv12 ubwc, output isn't interlace(mode %d), will do deinterlace!", in_info->interlace_mode, out_info->interlace_mode);
       if (priv->crop.x | priv->crop.y | priv->crop.width | priv->crop.height) {
         g_warn_if_fail(FALSE && "deinterlace couldn't work with crop !!!");
-        SG_ERR_OBJ_LITE (qvconv, "Not support deinterlace with crop!");
+        SG_ERR_OBJ_LITE (qvconv, "Not support deinterlace with crop, inst %p!", qvconv);
         return FALSE;
       }
     }else{
@@ -1682,7 +1682,7 @@ gst_qvconv_set_info (GstVideoFilter * filter, GstCaps * incaps,
   /* ERRORS */
 format_mismatch:
   {
-    SG_ERR_OBJ_LITE (qvconv, "input and output formats do not match");
+    SG_ERR_OBJ_LITE (qvconv, "input and output formats do not match, inst %p", qvconv);
     return FALSE;
   }
 }
@@ -1772,7 +1772,7 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
      * Then, needn't update src_info for copy case.*/
     if (QGVMeta && !need_copy)
       if (!gst_qvconv_align_info (qvconv, src_info, QGVMeta, priv->input_buffer.ubwc_flags)) {
-        SG_ERR_OBJ_LITE (qvconv, "align src info and meta error");
+        SG_ERR_OBJ_LITE (qvconv, "align src info and meta error, inst %p", qvconv);
         goto exit;
       }
 
@@ -1780,14 +1780,14 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
       priv->input_buf_internal = TRUE;
 
     if (!gst_qvconv_configure_c2d (qvconv)) {
-      SG_ERR_OBJ_LITE (qvconv, "configure c2d error");
+      SG_ERR_OBJ_LITE (qvconv, "configure c2d error, inst %p", qvconv);
       goto exit;
     }
   } else {
     /* Input buffer type MUST NOT change. */
     if (need_copy != priv->input_buf_internal) {
-      SG_ERR_OBJ_LITE (qvconv, "Fatal error: Can NOT handle input buffer changed from %s",
-          need_copy ? "dmabuf to non-dmabuf" : "non-dmabuf to dmabuf");
+      SG_ERR_OBJ (qvconv, "Fatal error: Can NOT handle input buffer changed from %s, inst %" GST_PTR_FORMAT "@%p",
+          need_copy ? "dmabuf to non-dmabuf" : "non-dmabuf to dmabuf", qvconv, qvconv);
       goto exit;
     }
   }

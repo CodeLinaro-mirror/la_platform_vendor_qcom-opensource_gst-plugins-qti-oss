@@ -338,7 +338,7 @@ gst_qvconv_buffer_pool_alloc (GstBufferPool * pool,
   C2DBuffer *c2d_buf=NULL;
   guint64* p_modifier = g_slice_new (guint64);
   if (!p_modifier) {
-    SG_ERR_OBJ_LITE(pool, "g_slice_new() for gbm modifier failed!");
+    SG_ERR_OBJ_LITE(pool, "g_slice_new() for gbm modifier failed, pool inst %p!", pool);
     goto no_buf;
   }
 
@@ -400,7 +400,7 @@ gst_qvconv_buffer_pool_alloc (GstBufferPool * pool,
     SG_INFO_OBJ_LITE (pool, "Attaching modifier quark %p, value:0x%lx on gstbuf %p", p_modifier, *p_modifier, buf);
     gst_mini_object_set_qdata (GST_MINI_OBJECT_CAST (buf), gst_fbuf_modifier_qdata_quark(), p_modifier, modifier_free);
   }else{
-    SG_ERR_OBJ_LITE (pool, "c2d_buf(%p) not correct or gbm_bo is NULL, code should not reach here!", c2d_buf);
+    SG_ERR_OBJ_LITE (pool, "c2d_buf(%p) not correct or gbm_bo is NULL, code should not reach here, pool inst %p!", c2d_buf, pool);
     goto no_buf;
   }
 
