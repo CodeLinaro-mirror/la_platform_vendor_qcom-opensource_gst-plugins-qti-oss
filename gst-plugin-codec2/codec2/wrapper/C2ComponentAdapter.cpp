@@ -382,7 +382,10 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                         dim_y = static_cast<uint32_t>(GST_ROUND_UP_N(dim_y, 512));
                     }
                 }
-                C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
+
+                // enable CSC by vulkan
+                C2MemoryUsage c2CscUsage { c2Usage.expected | kVulkanCscUsage };
+                C2MemoryUsageGBM c2GbmUsage(c2CscUsage, gbmUsage);
 
                 err = mGraphicPool->fetchGraphicBlock(dim_x, dim_y,
                     gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphic_block);

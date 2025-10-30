@@ -46,6 +46,8 @@
 #include <condition_variable>
 #include <C2Buffer.h>
 
+#include <QC2Constants.h>
+
 #ifdef USE_AGL_C2SERVICE
 #include "QC2ClientGBMAllocator.h"
 #endif
@@ -136,6 +138,13 @@ public:
     uint32_t    getMaxAllocationCount(BUFFER_POOL_TYPE type);
 
 private:
+    // To enable CSC by vulkan, have to add vulkan usage flags as GPU texture, otherwise
+    // vulkan CSC not works (see QC2ImageConverter::process). Compared to LA gralloc usage,
+    // on Linux, remove MemoryUsage::HW_CODEC (for gralloc only) in MemoryUsage::VULKAN_USAGE
+    // to avoid high 32bit conflict to GBM usage bits stored in C2MemoryUsageGBM high 32bit.
+    static constexpr uint64_t  kVulkanCscUsage =
+            qc2::MemoryUsage::HW_TEXTURE | qc2::MemoryUsage::HW_RENDER;
+
     c2_status_t prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf, BufferDescriptor* buffer);
     c2_status_t writePlane(uint8_t* dest, BufferDescriptor* buffer_info);
     c2_status_t waitForProgressOrStateChange(
