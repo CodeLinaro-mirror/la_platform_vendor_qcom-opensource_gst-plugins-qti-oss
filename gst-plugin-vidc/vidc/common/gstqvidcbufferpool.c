@@ -424,14 +424,22 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
              * These internal buffers are overheads and not necessary if using external
              * buffer. Need to refine implementation not to allocate internal buffer.
              */
-            key = ((gint64) param_ext->fd << 32);
-            GST_DEBUG_OBJECT (pool, "no ext pool, add buffer to table key 0x%lx, fd %d",
-                key, (key >> 32) & 0xFFFFFFFF);
+            if (param_ext) {
+              key = ((gint64) param_ext->fd << 32);
 
-            ret = _buffer_pool_add_buffer_to_table (bpool, gst_buf, key);
-            if (ret != GST_FLOW_OK) {
+              GST_DEBUG_OBJECT (pool, "no ext pool, add buffer to table key 0x%lx, fd %d",
+                  key, (key >> 32) & 0xFFFFFFFF);
+
+              ret = _buffer_pool_add_buffer_to_table (bpool, gst_buf, key);
+              if (ret != GST_FLOW_OK) {
+                gst_buffer_unref (gst_buf);
+                gst_buf = NULL;
+              }
+            } else {
+              GST_ERROR_OBJECT (pool, "param_ext is NULL in external pool mode without ext_pool");
               gst_buffer_unref (gst_buf);
               gst_buf = NULL;
+              ret = GST_FLOW_ERROR;
             }
           }
         } else {
