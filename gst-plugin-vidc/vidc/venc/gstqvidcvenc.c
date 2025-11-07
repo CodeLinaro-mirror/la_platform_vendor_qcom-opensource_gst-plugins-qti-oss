@@ -2333,6 +2333,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       enc->error_detected = TRUE;
       g_mutex_unlock (&enc->pending_lock);
 
+      gst_buffer_pool_set_flushing (enc->in_port_pool, TRUE);
+
       GST_ERROR_OBJECT (enc, "EVENT_ERROR(%d)", *(gint32 *) data);
       GST_ELEMENT_ERROR (enc, STREAM, ENCODE, ("Encoder posts an error"),
           (NULL));
