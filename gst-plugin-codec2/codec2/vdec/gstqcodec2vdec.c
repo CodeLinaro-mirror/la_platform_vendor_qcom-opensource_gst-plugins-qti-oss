@@ -221,7 +221,7 @@ modifier_free (gpointer p_modifier)
     GST_DEBUG ("modifier_free(%p) val 0x%lx called", p_modifier,
         *(guint64 *) p_modifier);
   } else {
-    GST_ERROR ("invalid modifier");
+    SG_ERR ("invalid modifier");
   }
 
   return;
@@ -373,7 +373,7 @@ get_c2_comp_name (GstVideoDecoder * decoder, GstStructure * s,
         g_free (str);
       str = concat_str;
     } else {
-      GST_ERROR_OBJECT (dec,
+      SG_ERR_OBJ (dec,
           "selected component %s is not supported, use %s instead!", concat_str, str);
       g_warn_if_fail (FALSE && "selected component is not supported!");
       g_free (concat_str);
@@ -470,7 +470,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
         GST_LOG_OBJECT (dec, "set 10bit format: %d (%s)", output_format,
             gst_video_format_to_string (output_format));
       } else if (bit_depth_luma != 8 || bit_depth_chroma != 8) {
-        GST_ERROR_OBJECT (dec, "bitdepth %u,%u not supported yet",
+        SG_ERR_OBJ (dec, "bitdepth %u,%u not supported yet",
             bit_depth_luma, bit_depth_chroma);
         ret = FALSE;
         goto done;
@@ -491,7 +491,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
       g_ptr_array_add (config, &pixelformat);
       if (!c2componentInterface_config (dec->comp_intf,
               config, BLOCK_MODE_MAY_BLOCK)) {
-        GST_ERROR_OBJECT (dec, "Failed to set config");
+        SG_ERR_OBJ (dec, "Failed to set config");
         ret = FALSE;
       }
       g_ptr_array_free (config, TRUE);
@@ -527,19 +527,19 @@ gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
           ret =
               c2component_createBlockpool (dec->comp, BUFFER_POOL_BASIC_LINEAR);
           if (ret == FALSE) {
-            GST_ERROR_OBJECT (dec, "Failed to create linear pool");
+            SG_ERR_OBJ (dec, "Failed to create linear pool");
           }
         } else {
-          GST_ERROR_OBJECT (dec, "Failed to set event handler");
+          SG_ERR_OBJ (dec, "Failed to set event handler");
         }
       } else {
-        GST_ERROR_OBJECT (dec, "Failed to create interface");
+        SG_ERR_OBJ (dec, "Failed to create interface");
       }
     } else {
-      GST_ERROR_OBJECT (dec, "Failed to create component");
+      SG_ERR_OBJ (dec, "Failed to create component");
     }
   } else {
-    GST_ERROR_OBJECT (dec, "Component store is Null");
+    SG_ERR_OBJ (dec, "Component store is Null");
   }
 
   if (TRUE == ret) {
@@ -551,13 +551,13 @@ gst_qcodec2_vdec_create_component (GstVideoDecoder * decoder)
     dec->gst_c2_comp = gst_c2_comp_create (dec->comp);
     if (!dec->gst_c2_comp) {
       ret = FALSE;
-      GST_ERROR_OBJECT (dec, "failed to create gst c2 comp");
+      SG_ERR_OBJ (dec, "failed to create gst c2 comp");
     }
   } else {
     if (dec->comp) {
       c2component_delete (dec->comp);
       dec->comp = NULL;
-      GST_ERROR_OBJECT (dec, "clean up c2 comp adapter since error happened");
+      SG_ERR_OBJ (dec, "clean up c2 comp adapter since error happened");
     }
   }
 
@@ -575,7 +575,7 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
   /* Start decoder */
   ret = c2component_start (dec->comp);
   if (ret == FALSE) {
-    GST_ERROR_OBJECT (dec, "Failed to start component");
+    SG_ERR_OBJ (dec, "Failed to start component");
     return FALSE;
   }
 
@@ -584,14 +584,14 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
    * started and before buffer queued. */
   ret = c2component_createBlockpool (dec->comp, BUFFER_POOL_BASIC_GRAPHIC);
   if (ret == FALSE) {
-    GST_ERROR_OBJECT (dec, "Failed to create graphic pool");
+    SG_ERR_OBJ (dec, "Failed to create graphic pool");
     return FALSE;
   }
 
   /* let C2 component use graphic block pool created by client */
   ret = c2component_configBlockpool (dec->comp, BUFFER_POOL_BASIC_GRAPHIC);
   if (ret == FALSE) {
-    GST_ERROR_OBJECT (dec,
+    SG_ERR_OBJ (dec,
         "Failed to let component use graphic pool created by client");
     return FALSE;
   }
@@ -602,7 +602,7 @@ gst_qcodec2_vdec_start_comp_and_config_pool (GstQcodec2Vdec * decoder)
     ret = c2component_setUseExternalBuffer (dec->comp,
         BUFFER_POOL_BASIC_GRAPHIC, TRUE);
     if (ret == FALSE) {
-      GST_ERROR_OBJECT (dec, "Failed to set component use external buffer");
+      SG_ERR_OBJ (dec, "Failed to set component use external buffer");
       return FALSE;
     }
   }
@@ -647,7 +647,7 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 
   if (gst_caps_is_empty (intersection)) {
     gst_caps_unref (intersection);
-    GST_ERROR_OBJECT (dec, "Empty caps");
+    SG_ERR_OBJ (dec, "Empty caps");
     goto error_setup_output;
   }
 
@@ -667,7 +667,7 @@ gst_qcodec2_vdec_setup_output (GstVideoDecoder * decoder)
 
   if (!format_str || (output_format = gst_video_format_from_string (format_str))
       == GST_VIDEO_FORMAT_UNKNOWN) {
-    GST_ERROR_OBJECT (dec, "Invalid caps: %" GST_PTR_FORMAT, intersection);
+    SG_ERR_OBJ (dec, "Invalid caps: %" GST_PTR_FORMAT, intersection);
     gst_caps_unref (intersection);
     goto error_setup_output;
   }
@@ -751,7 +751,7 @@ gst_qcodec2_vdec_finish (GstVideoDecoder * decoder)
     GST_DEBUG_OBJECT (dec, "wait until EOS signal is triggered");
 
     if (!g_cond_wait_until (&dec->pending_cond, &dec->pending_lock, end_time)) {
-      GST_ERROR_OBJECT (dec, "Timed out on wait, exiting!");
+      SG_ERR_OBJ (dec, "Timed out on wait, exiting!");
       break;
     }
   }
@@ -842,7 +842,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   structure = gst_caps_get_structure (state->caps, 0);
   comp_name = get_c2_comp_name (decoder, structure, dec->low_latency_mode);
   if (!comp_name) {
-    GST_ERROR_OBJECT (dec, "Failed to get relevant component name, caps:%"
+    SG_ERR_OBJ (dec, "Failed to get relevant component name, caps:%"
         GST_PTR_FORMAT, state->caps);
     return FALSE;
   }
@@ -891,7 +891,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
       goto error_set_format;
     } else if (dec->use_external_buf) {
       if (!gst_video_decoder_negotiate (decoder)) {
-        GST_ERROR_OBJECT (dec, "Failed to negotiate");
+        SG_ERR_OBJ (dec, "Failed to negotiate");
         goto error_set_format;
       }
       gst_pad_check_reconfigure (decoder->srcpad);
@@ -988,7 +988,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   if (dec_class->set_format) {
     GST_DEBUG_OBJECT (dec, "Subclass set format");
     if (!dec_class->set_format (dec, state)) {
-      GST_ERROR_OBJECT (dec, "Subclass failed to set format");
+      SG_ERR_OBJ (dec, "Subclass failed to set format");
       goto error_set_format;
     }
   }
@@ -996,7 +996,7 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   if (!dec->delay_start) {
     ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
     if (ret == FALSE) {
-      GST_ERROR_OBJECT (dec, "failed to start component");
+      SG_ERR_OBJ (dec, "failed to start component");
       goto error_set_format;
     }
   }
@@ -1008,12 +1008,12 @@ done:
   /* Errors */
 error_res:
   {
-    GST_ERROR_OBJECT (dec, "Unable to get width/height value");
+    SG_ERR_OBJ (dec, "Unable to get width/height value");
     return FALSE;
   }
 error_set_format:
   {
-    GST_ERROR_OBJECT (dec, "failed to setup input");
+    SG_ERR_OBJ (dec, "failed to setup input");
     return FALSE;
   }
 
@@ -1060,7 +1060,7 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   if (dec_class->open) {
     GST_DEBUG_OBJECT (dec, "Subclass open");
     if (!dec_class->open (dec)) {
-      GST_ERROR_OBJECT (dec, "Subclass failed to open");
+      SG_ERR_OBJ (dec, "Subclass failed to open");
       ret = FALSE;
     }
   }
@@ -1150,7 +1150,7 @@ insert_external_buf_to_hashtable (GstVideoDecoder * decoder, gint fd,
   GstBuffer *gst_buf = NULL;
 
   if (!buf_table) {
-    GST_ERROR_OBJECT (dec, "Buffer hash table is NULL");
+    SG_ERR_OBJ (dec, "Buffer hash table is NULL");
     return;
   }
   gst_buf = (GstBuffer *) g_hash_table_lookup (buf_table, &key);
@@ -1178,7 +1178,7 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
   gint fd = -1;
 
   if (!dec->out_port_pool) {
-    GST_ERROR_OBJECT (dec, "External pool is NULL");
+    SG_ERR_OBJ (dec, "External pool is NULL");
     return;
   }
   ret = gst_buffer_pool_acquire_buffer (dec->out_port_pool, &buffer, NULL);
@@ -1193,7 +1193,7 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
       /* Attach the fd to c2component */
       if (!c2component_attachExternalFd (dec->comp,
               BUFFER_POOL_BASIC_GRAPHIC, fd)) {
-        GST_ERROR_OBJECT (dec, "Failed to attach fd to Codec2");
+        SG_ERR_OBJ (dec, "Failed to attach fd to Codec2");
       }
       /* Insert the corresponding gstbuffer to hashtable */
       g_mutex_lock (&dec->external_buf_lock);
@@ -1205,7 +1205,7 @@ acquire_external_buf_callback (GstVideoDecoder * decoder)
     if (GST_FLOW_FLUSHING == ret) {
       GST_DEBUG_OBJECT (dec, "Failed to acquire buffer since pool is flushing");
     } else {
-      GST_ERROR_OBJECT (dec,
+      SG_ERR_OBJ (dec,
           "Failed to acquire buffer from pool: %p with ret=%d",
           dec->out_port_pool, ret);
     }
@@ -1241,7 +1241,7 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   if (dec_class->handle_frame) {
     ret = dec_class->handle_frame (dec, frame);
     if (ret != GST_FLOW_OK) {
-      GST_ERROR_OBJECT (dec, "Subclass failed to handle format");
+      SG_ERR_OBJ (dec, "Subclass failed to handle format");
       goto done;
     }
   }
@@ -1395,7 +1395,7 @@ gst_qcodec2_vdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
 
     /* configure own pool */
     if (!gst_buffer_pool_set_config (pool, config)) {
-      GST_ERROR_OBJECT (dec, "configure our own buffer pool failed");
+      SG_ERR_OBJ (dec, "configure our own buffer pool failed");
       goto cleanup;
     }
 
@@ -1495,7 +1495,7 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
 
   state = gst_video_decoder_get_output_state (decoder);
   if (!state) {
-    GST_ERROR_OBJECT (dec, "Failed to get decoder output state");
+    SG_ERR_OBJ (dec, "Failed to get decoder output state");
     return NULL;
   }
 
@@ -1528,7 +1528,7 @@ gst_qcodec2_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
   }
 
   if (!out_buf) {
-    GST_ERROR_OBJECT (dec, "Fail to allocate output gst buffer");
+    SG_ERR_OBJ (dec, "Fail to allocate output gst buffer");
     goto fail;
   }
 
@@ -1584,7 +1584,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     vinfo = &state->info;
   } else {
     if (dec->output_setup) {
-      GST_ERROR_OBJECT (dec, "video codec state is NULL, unexpected!");
+      SG_ERR_OBJ (dec, "video codec state is NULL, unexpected!");
     } else {
       GST_FIXME_OBJECT (dec, "code reach here is unexpected");
     }
@@ -1607,7 +1607,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     } else {
       /* free old output buffer since of seeking */
       if (!c2component_freeOutBuffer (dec->comp, decode_buf->index)) {
-        GST_ERROR_OBJECT (dec, "Failed to release the buffer (%lu)",
+        SG_ERR_OBJ (dec, "Failed to release the buffer (%lu)",
             decode_buf->index);
       }
     }
@@ -1651,7 +1651,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
   } else if (ret == GST_FLOW_EOS) {
     GST_DEBUG_OBJECT (dec, "downstream is in eos");
   } else if (ret != GST_FLOW_OK) {
-    GST_ERROR_OBJECT (dec, "Failed(%d) to push frame downstream", ret);
+    SG_ERR_OBJ (dec, "Failed(%d) to push frame downstream", ret);
   }
 
 out:
@@ -1729,7 +1729,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
               dec->output_format, interlace_mode, dec->width, dec->height,
               dec->input_state);
           if (!output_state) {
-            GST_ERROR_OBJECT (dec, "Failed to set output state");
+            SG_ERR_OBJ (dec, "Failed to set output state");
             break;
           }
 
@@ -1765,7 +1765,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           }
           dec->output_state = output_state;
           if (!gst_video_decoder_negotiate (decoder)) {
-            GST_ERROR_OBJECT (dec, "Failed to negotiate");
+            SG_ERR_OBJ (dec, "Failed to negotiate");
             break;
           }
           gst_pad_check_reconfigure (decoder->srcpad);
@@ -1823,12 +1823,12 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     case EVENT_TRIPPED:{
-      GST_ERROR_OBJECT (dec, "Failed to apply configuration setting(%d)",
+      SG_ERR_OBJ (dec, "Failed to apply configuration setting(%d)",
           *(gint32 *) data);
       break;
     }
     case EVENT_ERROR:{
-      GST_ERROR_OBJECT (dec, "Something un-expected happened(%d)",
+      SG_ERR_OBJ (dec, "Something un-expected happened(%d)",
           *(gint32 *) data);
       GST_ELEMENT_ERROR (dec, STREAM, DECODE, ("Decoder posts an error"),
           (NULL));
@@ -1909,7 +1909,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
             gst_video_decoder_set_output_state (decoder,
             dec->output_format, dec->width, dec->height, dec->input_state);
         if (!output_state) {
-          GST_ERROR_OBJECT (dec, "Failed to set output state");
+          SG_ERR_OBJ (dec, "Failed to set output state");
           break;
         }
         output_state->caps = gst_video_info_to_caps (&output_state->info);
@@ -1933,7 +1933,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         }
         dec->output_state = output_state;
         if (!gst_video_decoder_negotiate (decoder)) {
-          GST_ERROR_OBJECT (dec, "Failed to negotiate");
+          SG_ERR_OBJ (dec, "Failed to negotiate");
           break;
         }
       }
@@ -1954,7 +1954,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     default:{
-      GST_ERROR_OBJECT (dec, "Invalid Event(%d)", type);
+      SG_ERR_OBJ (dec, "Invalid Event(%d)", type);
       break;
     }
   }
@@ -2003,7 +2003,7 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   status = c2component_queue (dec->comp, &inBuf);
   gst_buffer_unmap (buf, &mapinfo);
   if (!status) {
-    GST_ERROR_OBJECT (dec, "failed to queue input frame to Codec2");
+    SG_ERR_OBJ (dec, "failed to queue input frame to Codec2");
     ret = GST_FLOW_ERROR;
     goto out;
   }
@@ -2318,13 +2318,13 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->gbm_lib = dlopen ("libgbm.so", RTLD_NOW);
   GST_INFO_OBJECT (dec, "open gbm lib:%p", dec->gbm_lib);
   if (dec->gbm_lib == NULL) {
-    GST_ERROR ("dlopen libgbm.so failed");
+    SG_ERR ("dlopen libgbm.so failed");
     return;
   }
 
   dec->gbm_api_bo_get_modifier = dlsym (dec->gbm_lib, "gbm_bo_get_modifier");
   if (!dec->gbm_api_bo_get_modifier) {
-    GST_ERROR_OBJECT (dec, "Failed as a gbm API is null");
+    SG_ERR_OBJ (dec, "Failed as a gbm API is null");
     dlclose (dec->gbm_lib);
     dec->gbm_lib = NULL;
     return;
@@ -2353,7 +2353,7 @@ gst_qcodec2_vdec_plugin_init (GstPlugin * plugin)
       count++;
       GST_INFO ("register element %s", kDECODER_ELEMENTS[i].element);
     } else {
-      GST_ERROR ("failed to register element %s", kDECODER_ELEMENTS[i].element);
+      SG_ERR ("failed to register element %s", kDECODER_ELEMENTS[i].element);
     }
   }
 

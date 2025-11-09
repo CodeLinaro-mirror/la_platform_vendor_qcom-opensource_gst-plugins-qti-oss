@@ -34,8 +34,8 @@
 
 #include <gst/gst.h>
 #include "gst/gstinfo.h"
-#include "gstqcodec2bufferpool.h"
 #include "codec2wrapper.h"
+#include "gstqcodec2bufferpool.h"
 
 #ifdef USE_AGL_C2SERVICE // for fstat to get inode
 #include <sys/stat.h>
@@ -128,12 +128,12 @@ gst_qcodec2_buffer_pool_set_config (GstBufferPool * bpool,
   GstQcodec2BufferPool *pool = GST_QCODEC2_BUFFER_POOL_CAST (bpool);
 
   if (NULL == config) {
-    GST_ERROR_OBJECT (pool, "null config");
+    SG_ERR_OBJ (pool, "null config");
     return FALSE;
   }
 
   if (!gst_buffer_pool_config_get_params (config, &caps, &size, &min, &max)) {
-    GST_ERROR_OBJECT (pool, "invalid config");
+    SG_ERR_OBJ (pool, "invalid config");
     return FALSE;
   }
 
@@ -228,7 +228,7 @@ _gst_qcodec2_alloc_buf (GstBufferPool * bpool)
   buffer.pool_type = BUFFER_POOL_BASIC_GRAPHIC;
 
   if (!c2component_alloc (c2_comp, &buffer)) {
-    GST_ERROR_OBJECT (bpool, "Failed to allocate graphic buffer, format: %u",
+    SG_ERR_OBJ (bpool, "Failed to allocate graphic buffer, format: %u",
         format);
   } else {
     GST_DEBUG_OBJECT (bpool, "Allocated buffer fd: %d, size: %d format: %u",
@@ -243,7 +243,7 @@ _gst_qcodec2_alloc_buf (GstBufferPool * bpool)
       gst_fd_allocator_alloc (alloc, buffer.fd,
           buffer.capacity, GST_FD_MEMORY_FLAG_DONT_CLOSE);
     } else {
-      GST_ERROR_OBJECT (bpool, "mode %d is not support to allocate buffer",
+      SG_ERR_OBJ (bpool, "mode %d is not support to allocate buffer",
           mode);
       gst_buf = NULL;
     }
@@ -326,7 +326,7 @@ gst_qcodec2_buffer_pool_acquire_buffer (GstBufferPool * bpool,
       if (ret == GST_FLOW_OK) {
         GST_DEBUG_OBJECT (bpool, "call default acquire buffer function succeed");
       } else {
-        GST_ERROR_OBJECT (bpool, "call default acquire buffer function failed");
+        SG_ERR_OBJ (bpool, "call default acquire buffer function failed");
       }
       break;
     case DMABUF_WRAP_MODE:
@@ -372,7 +372,7 @@ static inline int _get_inode (int fd, ino_t *i)
     GST_DEBUG ("fd=%d, dev 0x%lx, inode 0x%lx, rdev 0x%lx",
         fd, sb.st_dev, sb.st_ino, sb.st_rdev);
   } else {
-    GST_ERROR ("fd=%d, fstat error: %s", fd, strerror(errno));
+    SG_ERR ("fd=%d, fstat error: %s", fd, strerror(errno));
   }
 
   return ret;
@@ -457,7 +457,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GstFdMemoryFlags flags = GST_FD_MEMORY_FLAG_KEEP_MAPPED;
     int fd = dup(param_ext->fd);
     if (fd < 0) {
-      GST_ERROR_OBJECT (bpool, "param_ext->fd=%d, dup error: %s",
+      SG_ERR_OBJ (bpool, "param_ext->fd=%d, dup error: %s",
           param_ext->fd, strerror(errno));
       return GST_FLOW_ERROR;
     }
@@ -472,7 +472,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
           param_ext->size, flags);
     }
     if (G_UNLIKELY (!mem)) {
-      GST_ERROR_OBJECT (bpool, "failed to allocate gst memory");
+      SG_ERR_OBJ (bpool, "failed to allocate gst memory");
       gst_buffer_unref (gst_buf);
       gst_buf = NULL;
       ret = GST_FLOW_ERROR;
@@ -552,10 +552,10 @@ _buffer_pool_release_buffer_wrap (GstBufferPool * bpool, GstBuffer * buffer)
     if (c2_comp) {
       GST_DEBUG_OBJECT (bpool, "release output buffer index: %ld", index);
       if (!c2component_freeOutBuffer (c2_comp, index)) {
-        GST_ERROR_OBJECT (bpool, "Failed to release buffer: %lu", index);
+        SG_ERR_OBJ (bpool, "Failed to release buffer: %lu", index);
       }
     } else {
-      GST_ERROR_OBJECT (bpool, "invalid c2 component");
+      SG_ERR_OBJ (bpool, "invalid c2 component");
     }
   } else {
     /* If buffer don't have this quark, means it's allocated in pre-allocation stage
@@ -612,14 +612,14 @@ gst_qcodec2_buffer_pool_new (GstBufferPoolInitParam * param)
   GHashTable *buffer_table = NULL;
 
   if (!param) {
-    GST_ERROR ("invalid input parameter");
+    SG_ERR ("invalid input parameter");
     return NULL;
   }
 
   pool = (GstQcodec2BufferPool *)
       g_object_new (GST_TYPE_QCODEC2_BUFFER_POOL, NULL);
   if (!pool) {
-    GST_ERROR ("failed to create buffer pool");
+    SG_ERR ("failed to create buffer pool");
     return NULL;
   }
 
@@ -649,7 +649,7 @@ gst_qcodec2_buffer_pool_new (GstBufferPoolInitParam * param)
       pool->buffer_table = buffer_table;
       break;
     default:
-      GST_ERROR_OBJECT (pool, "pool mode %d is not supported", param->mode);
+      SG_ERR_OBJ (pool, "pool mode %d is not supported", param->mode);
   }
 
   GST_INFO_OBJECT (pool,

@@ -85,7 +85,7 @@ uint32_t toC2InterlaceType(INTERLACE_MODE_TYPE interlace_type)
         break;
     }
     default: {
-        LOG_ERROR("Invalid Type");
+        SG_ERR("Invalid Type");
         break;
     }
     }
@@ -108,7 +108,7 @@ C2BlockPool::local_id_t toC2BufferPoolType(BUFFER_POOL_TYPE pool_type)
         break;
     }
     default: {
-        LOG_ERROR("Invalid Type");
+        SG_ERR("Invalid Type");
         break;
     }
     }
@@ -131,7 +131,7 @@ c2_blocking_t toC2BlocingType(BLOCK_MODE_TYPE block_type)
         break;
     }
     default: {
-        LOG_ERROR("Invalid Type");
+        SG_ERR("Invalid Type");
         break;
     }
     }
@@ -158,7 +158,7 @@ C2Component::drain_mode_t toC2DrainMode(DRAIN_MODE_TYPE mode)
         break;
     }
     default: {
-        LOG_ERROR("Invalid Type");
+        SG_ERR("Invalid Type");
         break;
     }
     }
@@ -181,7 +181,7 @@ C2Component::flush_mode_t toC2FlushMode(FLUSH_MODE_TYPE mode)
         break;
     }
     default: {
-        LOG_ERROR("Invalid Mode");
+        SG_ERR("Invalid Mode");
     }
     }
 
@@ -218,7 +218,7 @@ uint32_t toC2RateControlMode(RC_MODE_TYPE mode)
         break;
     }
     default: {
-        LOG_ERROR("Invalid RC Mode: %d", mode);
+        SG_ERR("Invalid RC Mode: %d", mode);
     }
     }
 
@@ -299,7 +299,7 @@ uint32_t toC2PixelFormat(PIXEL_FORMAT_TYPE pixel)
         break;
     }
     default: {
-        LOG_ERROR("unsupported pixel format!");
+        SG_ERR("unsupported pixel format!");
         break;
     }
     }
@@ -323,7 +323,7 @@ gst_to_c2_gbmformat(GstVideoFormat format)
         result = GBM_FORMAT_YCbCr_420_TP10_UBWC;
         break;
     default:
-        LOG_WARNING("unsupported video format:%s", gst_video_format_to_string(format));
+        GST_WARNING("unsupported video format:%s", gst_video_format_to_string(format));
         break;
     }
 
@@ -350,7 +350,7 @@ gbmformat_to_colorformat(guint32 format, guint64 usage)
         result = COLOR_FMT_NV12_BPP10_UBWC;
         break;
     default:
-        LOG_WARNING("unsupported video format:%d", format);
+        GST_WARNING("unsupported video format:%d", format);
         break;
     }
 
@@ -514,7 +514,7 @@ C2Config::profile_t toC2Profile(C2W_PROFILE_T profile)
         ret = C2Config::profile_t::PROFILE_HEVC_MAIN_STILL;
         break;
     default:
-        LOG_WARNING("Unsupported profile %d!", profile);
+        GST_WARNING("Unsupported profile %d!", profile);
         break;
     }
     return ret;
@@ -648,7 +648,7 @@ C2Config::level_t toC2Level(C2W_LEVEL_T level)
         ret = C2Config::level_t::LEVEL_HEVC_HIGH_6_2;
         break;
     default:
-        LOG_WARNING("Unsupported level %d!", level);
+        GST_WARNING("Unsupported level %d!", level);
         break;
     }
     return ret;

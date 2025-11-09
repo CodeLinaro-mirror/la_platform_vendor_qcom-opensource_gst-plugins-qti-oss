@@ -28,10 +28,10 @@ plugin_init (GstPlugin * plugin)
   gboolean ret = TRUE;
 
   if (!gst_qcodec2_vdec_plugin_init (plugin)) {
-    GST_ERROR ("qcodec2vdec plugin init error");
+    SG_ERR ("qcodec2vdec plugin init error");
     ret = FALSE;
   } else if (!gst_qcodec2_venc_plugin_init (plugin)) {
-    GST_ERROR ("qcodec2venc plugin init error");
+    SG_ERR ("qcodec2venc plugin init error");
     ret = FALSE;
   }
 

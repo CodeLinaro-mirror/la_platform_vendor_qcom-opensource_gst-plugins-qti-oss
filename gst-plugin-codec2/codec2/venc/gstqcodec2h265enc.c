@@ -189,7 +189,7 @@ gst_qcodec2_h265_enc_set_format (GstQcodec2Venc * encoder,
     GST_INFO_OBJECT (enc, "output state caps: %" GST_PTR_FORMAT, output_caps);
     GstStructure *s;
     if (gst_caps_is_empty (output_caps)) {
-      GST_ERROR_OBJECT (enc, "Empty caps");
+      SG_ERR_OBJ (enc, "Empty caps");
       return FALSE;
     }
     s = gst_caps_get_structure (output_caps, 0);
@@ -245,10 +245,10 @@ gst_qcodec2_h265_enc_set_format (GstQcodec2Venc * encoder,
   return TRUE;
 
 unsupported_profile:
-  GST_ERROR_OBJECT (enc, "Unsupported profile %s", profile_string);
+  SG_ERR_OBJ (enc, "Unsupported profile %s", profile_string);
   return FALSE;
 
 unsupported_level:
-  GST_ERROR_OBJECT (enc, "Unsupported level %s", level_string);
+  SG_ERR_OBJ (enc, "Unsupported level %s", level_string);
   return FALSE;
 }

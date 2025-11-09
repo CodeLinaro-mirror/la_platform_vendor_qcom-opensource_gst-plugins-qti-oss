@@ -72,7 +72,6 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
@@ -797,7 +796,7 @@ gst_to_c2_pixelformat (GstVideoEncoder * encoder, GstVideoFormat format)
       if (enc->is_ubwc) {
         result = PIXEL_FORMAT_TP10_UBWC;
       } else {
-        GST_ERROR_OBJECT (enc, "unsupported format Linear NV12_10LE32 yet");
+        SG_ERR_OBJ (enc, "unsupported format Linear NV12_10LE32 yet");
       }
       break;
     default:
@@ -1070,7 +1069,7 @@ parse_roi (GstVideoEncoder * encoder, xmlNodePtr pDynProp)
       nFrameNum = strtol ((const char *) cur->children->content, NULL, 10);
     } else if (!xmlStrcmp (cur->name, (const xmlChar *) "ROI")) {
       if (nFrameNum < 0 || (nFrameNum == G_MAXINT64 && errno == ERANGE)) {
-        GST_ERROR_OBJECT (enc, "FrameNum out of range or invalid");
+        SG_ERR_OBJ (enc, "FrameNum out of range or invalid");
         break;
       }
 
@@ -1113,7 +1112,7 @@ parse_roi (GstVideoEncoder * encoder, xmlNodePtr pDynProp)
           id++;
         }
       } else {
-        GST_ERROR_OBJECT (enc, "meta pattern mismatched");
+        SG_ERR_OBJ (enc, "meta pattern mismatched");
       }
     }
     cur = cur->next;
@@ -1139,14 +1138,14 @@ gst_qcodec2_venc_build_roi_array (GstVideoEncoder * encoder,
   g_free (roi_xml);
 
   if (doc == NULL) {
-    GST_ERROR_OBJECT (enc, "roi document not parsed failed.");
+    SG_ERR_OBJ (enc, "roi document not parsed failed.");
     return;
   }
 
   cur = xmlDocGetRootElement (doc);
 
   if (cur == NULL) {
-    GST_ERROR_OBJECT (enc, "empty roi document");
+    SG_ERR_OBJ (enc, "empty roi document");
     xmlFreeDoc (doc);
     return;
   }
@@ -1200,7 +1199,7 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
 
     ret = c2component_createBlockpool (enc->comp, BUFFER_POOL_BASIC_GRAPHIC);
     if (ret == FALSE) {
-      GST_ERROR_OBJECT (enc, "Failed to create graphics pool");
+      SG_ERR_OBJ (enc, "Failed to create graphics pool");
     } else {
       enc->max_input_buffers = c2component_getMaxAllocationCount (enc->comp,
           BUFFER_POOL_BASIC_GRAPHIC);
@@ -1217,13 +1216,13 @@ gst_qcodec2_venc_create_component (GstVideoEncoder * encoder)
     enc->gst_c2_comp = gst_c2_comp_create (enc->comp);
     if (!enc->gst_c2_comp) {
       ret = FALSE;
-      GST_ERROR_OBJECT (enc, "failed to create gst c2 comp");
+      SG_ERR_OBJ (enc, "failed to create gst c2 comp");
     }
   } else {
     if (enc->comp) {
       c2component_delete (enc->comp);
       enc->comp = NULL;
-      GST_ERROR_OBJECT (enc, "clean up c2 comp adapter since error happened");
+      SG_ERR_OBJ (enc, "clean up c2 comp adapter since error happened");
     }
   }
 
@@ -1251,7 +1250,7 @@ gst_qcodec2_venc_setup_output (GstVideoEncoder * encoder,
 
     if (gst_caps_is_empty (outcaps)) {
       gst_caps_unref (outcaps);
-      GST_ERROR_OBJECT (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
+      SG_ERR_OBJ (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
           outcaps);
       return GST_FLOW_ERROR;
     }
@@ -1281,7 +1280,7 @@ gst_qcodec2_venc_setup_output (GstVideoEncoder * encoder,
 
     comp_name = get_c2_comp_name (structure);
     if (!comp_name) {
-      GST_ERROR_OBJECT (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
+      SG_ERR_OBJ (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
           outcaps);
       gst_caps_unref (outcaps);
       return GST_FLOW_ERROR;
@@ -1291,7 +1290,7 @@ gst_qcodec2_venc_setup_output (GstVideoEncoder * encoder,
     enc->output_state =
         gst_video_encoder_set_output_state (encoder, outcaps, state);
     if (!enc->output_state) {
-      GST_ERROR_OBJECT (enc, "set output state error");
+      SG_ERR_OBJ (enc, "set output state error");
       gst_caps_unref (outcaps);
       g_free (comp_name);
       return GST_FLOW_ERROR;
@@ -1362,7 +1361,7 @@ gst_qcodec2_venc_finish (GstVideoEncoder * encoder)
     GST_DEBUG_OBJECT (enc, "wait until EOS signal is triggered");
 
     if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
-      GST_ERROR_OBJECT (enc, "Timed out on wait, exiting!");
+      SG_ERR_OBJ (enc, "Timed out on wait, exiting!");
       break;
     }
   }
@@ -1498,7 +1497,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   enc->input_format = input_format;
 
   if (GST_FLOW_OK != gst_qcodec2_venc_setup_output (encoder, state)) {
-    GST_ERROR_OBJECT (enc, "fail to setup output");
+    SG_ERR_OBJ (enc, "fail to setup output");
     goto error_output;
   }
 
@@ -1507,7 +1506,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   }
 
   if (!gst_video_encoder_negotiate (encoder)) {
-    GST_ERROR_OBJECT (enc, "Failed to negotiate with downstream");
+    SG_ERR_OBJ (enc, "Failed to negotiate with downstream");
     goto error_output;
   }
 
@@ -1729,7 +1728,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   /* Create component */
   if (!gst_qcodec2_venc_create_component (encoder)) {
-    GST_ERROR_OBJECT (enc, "Failed to create component");
+    SG_ERR_OBJ (enc, "Failed to create component");
   }
 
   GST_DEBUG_OBJECT (enc,
@@ -1758,7 +1757,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   if (enc_class->set_format) {
     if (!enc_class->set_format (enc, state)) {
-      GST_ERROR_OBJECT (enc, "Subclass failed to set the new format");
+      SG_ERR_OBJ (enc, "Subclass failed to set the new format");
       return FALSE;
     }
   }
@@ -1777,23 +1776,23 @@ done:
   /* Errors */
 error_format:
   {
-    GST_ERROR_OBJECT (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
+    SG_ERR_OBJ (enc, "Unsupported format in caps: %" GST_PTR_FORMAT,
         state->caps);
     return FALSE;
   }
 error_res:
   {
-    GST_ERROR_OBJECT (enc, "Unable to get width/height value");
+    SG_ERR_OBJ (enc, "Unable to get width/height value");
     return FALSE;
   }
 error_output:
   {
-    GST_ERROR_OBJECT (enc, "Unable to set output state");
+    SG_ERR_OBJ (enc, "Unable to set output state");
     return FALSE;
   }
 error_config:
   {
-    GST_ERROR_OBJECT (enc, "Unable to configure the component");
+    SG_ERR_OBJ (enc, "Unable to configure the component");
     return FALSE;
   }
 
@@ -2004,7 +2003,7 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
   if (GST_VIDEO_CODEC_FRAME_IS_FORCE_KEYFRAME (frame)) {
     GST_INFO_OBJECT (enc, "Forcing key frame");
     if (GST_FLOW_OK != gst_qcodec2_venc_force_idr (enc)) {
-      GST_ERROR_OBJECT (enc, "Failed to force key frame");
+      SG_ERR_OBJ (enc, "Failed to force key frame");
     }
   }
 
@@ -2063,7 +2062,7 @@ gst_qcodec2_venc_propose_allocation (GstVideoEncoder * encoder,
 
       if (!gst_buffer_pool_config_get_allocator (config, &allocator, NULL)) {
         gst_structure_free (config);
-        GST_ERROR_OBJECT (enc, "failed to get allocator from pool");
+        SG_ERR_OBJ (enc, "failed to get allocator from pool");
         goto cleanup;
       } else {
         gst_query_add_allocation_param (query, allocator, &params);
@@ -2111,7 +2110,7 @@ fill_output_buffer (GstQcodec2Venc * enc, GstVideoInfo * vinfo,
 
   buf = gst_buffer_new_and_alloc (size);
   if (NULL == buf) {
-    GST_ERROR_OBJECT (enc, "buffer alloc error");
+    SG_ERR_OBJ (enc, "buffer alloc error");
     goto out;
   }
 
@@ -2161,7 +2160,7 @@ free_output_c2buffer (GstQcodec2Venc * enc, guint64 index)
   if (ret) {
     GST_LOG_OBJECT (enc, "released pending buffer %lu", index);
   } else {
-    GST_ERROR_OBJECT (enc, "failed to release the buffer %lu", index);
+    SG_ERR_OBJ (enc, "failed to release the buffer %lu", index);
   }
 
   return ret;
@@ -2182,13 +2181,13 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
 
   state = gst_video_encoder_get_output_state (encoder);
   if (NULL == state) {
-    GST_ERROR_OBJECT (enc, "video codec state is NULL, unexpected!");
+    SG_ERR_OBJ (enc, "video codec state is NULL, unexpected!");
     goto out;
   }
 
   frame = gst_video_encoder_get_frame (encoder, desc->index);
   if (frame == NULL) {
-    GST_ERROR_OBJECT (enc, "failed to get frame by index: %lu", desc->index);
+    SG_ERR_OBJ (enc, "failed to get frame by index: %lu", desc->index);
     goto out;
   }
 
@@ -2196,7 +2195,7 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   c2buffer_freed = free_output_c2buffer (enc, desc->index);
   frame->output_buffer = outbuf;
   if (NULL == outbuf) {
-    GST_ERROR_OBJECT (enc, "failed to create outbuf");
+    SG_ERR_OBJ (enc, "failed to create outbuf");
     if (desc->flag & FLAG_TYPE_INCOMPLETE) {
       ret = gst_video_encoder_finish_subframe (encoder, frame);
     } else {
@@ -2213,7 +2212,7 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   if (ret == GST_FLOW_FLUSHING) {
     GST_WARNING_OBJECT (enc, "downstream is flushing");
   } else if (ret != GST_FLOW_OK) {
-    GST_ERROR_OBJECT (enc, "failed to finish frame, outbuf: %p", outbuf);
+    SG_ERR_OBJ (enc, "failed to finish frame, outbuf: %p", outbuf);
   }
 
 out:
@@ -2250,7 +2249,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       if (outBuffer->fd > 0 || outBuffer->size > 0) {
         ret = push_frame_downstream (encoder, outBuffer);
         if (ret != GST_FLOW_FLUSHING && ret != GST_FLOW_OK) {
-          GST_ERROR_OBJECT (enc, "Failed to push frame downstream");
+          SG_ERR_OBJ (enc, "Failed to push frame downstream");
         }
 
         enc->num_output_done++;
@@ -2262,16 +2261,16 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
         g_cond_signal (&enc->pending_cond);
         g_mutex_unlock (&enc->pending_lock);
       } else {
-        GST_ERROR_OBJECT (enc, "Invalid output buffer");
+        SG_ERR_OBJ (enc, "Invalid output buffer");
       }
       break;
     }
     case EVENT_TRIPPED:{
-      GST_ERROR_OBJECT (enc, "EVENT_TRIPPED(%d)", *(gint32 *) data);
+      SG_ERR_OBJ (enc, "EVENT_TRIPPED(%d)", *(gint32 *) data);
       break;
     }
     case EVENT_ERROR:{
-      GST_ERROR_OBJECT (enc, "EVENT_ERROR(%d)", *(gint32 *) data);
+      SG_ERR_OBJ (enc, "EVENT_ERROR(%d)", *(gint32 *) data);
       GST_ELEMENT_ERROR (enc, STREAM, ENCODE, ("Encoder posts an error"),
           (NULL));
       break;
@@ -2293,7 +2292,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     default:{
-      GST_ERROR_OBJECT (enc, "Invalid Event(%d)", type);
+      SG_ERR_OBJ (enc, "Invalid Event(%d)", type);
     }
   }
 }
@@ -2330,7 +2329,7 @@ _allocate_roi_struct (GstQcodec2Venc * enc)
 
   if (!enc->roi_type || !enc->roi_rect_payload || !enc->roi_rect_payload_ext) {
     _free_roi_struct (enc);
-    GST_ERROR_OBJECT (enc, "Failed to allocate ROI structure");
+    SG_ERR_OBJ (enc, "Failed to allocate ROI structure");
     ret = FALSE;
   }
 
@@ -2604,8 +2603,7 @@ static void gst_qcodec2_venc_check_gl_memory (GstBuffer *buf) {
       // for better performance.
       //gst_gl_memory_pbo_download_transfer ((GstGLMemoryPBO *) mem); // used in gldownload
     } else {
-      syslog (LOG_ERR, "gst-c2: " "Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
-      GST_ERROR ("Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
+      SG_ERR ("Fatal error: mem %p is not GLMemory but has GLMemory feature", mem);
     }
   }
 }
@@ -2638,8 +2636,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       GST_INFO_OBJECT (enc, "Not need copy input frame as input is dmabuf");
       enc->is_input_zerocopy = TRUE;
     } else if (!enc->is_input_zerocopy) {
-      syslog (LOG_ERR, "gst-c2:" "Fatal error: input buf feature changed from non-dmabuf to dmabuf at idx %u", frame->system_frame_number);
-      GST_ERROR_OBJECT (enc,
+      SG_ERR_OBJ (enc,
           "Fatal error: input buf feature changed from non-dmabuf to dmabuf at idx %u", frame->system_frame_number);
     }
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
@@ -2656,8 +2653,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
       GST_INFO_OBJECT (enc, "Need copy input frame as inputcopy(%d) prop. or input is non-dma(%d)", (int)enc->force_inputcopy, (int)(!gst_is_dmabuf_memory (mem)));
       enc->is_input_zerocopy = FALSE;
     } else if (enc->is_input_zerocopy) {
-      syslog (LOG_ERR, "gst-c2: " "Fatal error: input buf feature changed from dmabuf to non-dmabuf at idx %u", frame->system_frame_number);
-      GST_ERROR_OBJECT (enc,
+      SG_ERR_OBJ (enc,
           "Fatal error: input buf feature changed from dmabuf to non-dmabuf at idx %u", frame->system_frame_number);
     }
     if (enc->input_glmem_feature) {
@@ -2701,7 +2697,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
     if (inBuf.stride[0] != y_stride || inBuf.stride[1] != uv_stride) {
       chk_result |= 1;
-      GST_ERROR_OBJECT (enc,
+      SG_ERR_OBJ (enc,
           "The input buffer stride<%u, %u> does not meet the "
           "requirements of encoder <%u, %u>", inBuf.stride[0], inBuf.stride[1],
           y_stride, uv_stride);
@@ -2709,7 +2705,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
 
     if (inBuf.offset[0] != 0 || inBuf.offset[1] != offset) {
       chk_result |= 2;
-      GST_ERROR_OBJECT (enc,
+      SG_ERR_OBJ (enc,
           "The input buffer offset<%" G_GSIZE_FORMAT ", %" G_GSIZE_FORMAT ">"
           " does not meet the requirements of encoder <0, %u>", inBuf.offset[0],
           inBuf.offset[1], offset);
@@ -2732,7 +2728,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   status = c2component_queue (enc->comp, &inBuf);
 
   if (!status) {
-    GST_ERROR_OBJECT (enc, "failed to queue input frame to Codec2");
+    SG_ERR_OBJ (enc, "failed to queue input frame to Codec2");
     ret = GST_FLOW_ERROR;
     goto out;
   }
@@ -3538,7 +3534,7 @@ gst_qcodec2_venc_plugin_init (GstPlugin * plugin)
       count++;
       GST_INFO ("register element %s", kENCODER_ELEMENTS[i].element);
     } else {
-      GST_ERROR ("failed to register element %s", kENCODER_ELEMENTS[i].element);
+      SG_ERR ("failed to register element %s", kENCODER_ELEMENTS[i].element);
     }
   }
 

@@ -175,7 +175,7 @@ gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
     if (!c2componentInterface_config (decoder->comp_intf,
             config, BLOCK_MODE_MAY_BLOCK)) {
       result = FALSE;
-      GST_ERROR_OBJECT (dec, "Failed to set config");
+      SG_ERR_OBJ (dec, "Failed to set config");
       goto out;
     }
   }
