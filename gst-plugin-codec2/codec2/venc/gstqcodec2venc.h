@@ -40,9 +40,8 @@
 #include <gst/video/gstvideoencoder.h>
 #include <gst/video/gstvideopool.h>
 #include <gst/allocators/allocators.h>
-#include "gstqcodec2bufferpool.h"
-
 #include "codec2wrapper.h"
+#include "gstqcodec2bufferpool.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_QCODEC2_VENC          (gst_qcodec2_venc_get_type())

@@ -1,8 +1,8 @@
 // Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
-#include "gstqcodec2utils.h"
 #include "codec2wrapper.h"
+#include "gstqcodec2utils.h"
 
 GST_DEBUG_CATEGORY_EXTERN (qcodec2utils_debug);
 #define GST_CAT_DEFAULT qcodec2utils_debug
