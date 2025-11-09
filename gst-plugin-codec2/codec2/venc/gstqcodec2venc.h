@@ -161,10 +161,11 @@ struct _GstQcodec2Venc
   guint32 ltr_count;
   GValue ltr_mark;
   GValue ltr_use;
-  gboolean is_input_dmabuf;
+  gboolean is_input_zerocopy;
   gboolean input_glmem_feature;
 
   guint max_input_buffers;
+  gboolean force_inputcopy;
 };
 
 /*

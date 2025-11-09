@@ -92,6 +92,7 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_I_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
+#define DEFAULT_INPUTCOPY                         (FALSE)
 
 
 /* class initialization */
@@ -179,6 +180,7 @@ enum
   PROP_LTR_COUNT,
   PROP_LTR_MARK,
   PROP_LTR_USE,
+  PROP_INPUTCOPY,
 };
 
 FULL_RANGE toQCodec2VideoFullRange(GstVideoColorRange range)
@@ -2631,13 +2633,14 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   buf = frame->input_buffer;
   mem = gst_buffer_get_memory (buf, 0);
 
-  if (gst_is_dmabuf_memory (mem)) {
+  if (!enc->force_inputcopy && gst_is_dmabuf_memory (mem)) {
     if (frame->system_frame_number == 0) {
-      enc->is_input_dmabuf = TRUE;
-    } else if (!enc->is_input_dmabuf) {
-      syslog (LOG_ERR, "gst-c2:" "Fatal error: input buf feature changed from need copy to zero copy");
+      GST_INFO_OBJECT (enc, "Not need copy input frame as input is dmabuf");
+      enc->is_input_zerocopy = TRUE;
+    } else if (!enc->is_input_zerocopy) {
+      syslog (LOG_ERR, "gst-c2:" "Fatal error: input buf feature changed from non-dmabuf to dmabuf at idx %u", frame->system_frame_number);
       GST_ERROR_OBJECT (enc,
-          "Fatal error: input buf feature changed from need copy to zero copy");
+          "Fatal error: input buf feature changed from non-dmabuf to dmabuf at idx %u", frame->system_frame_number);
     }
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
@@ -2650,11 +2653,12 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
         inBuf.fd);
   } else {
     if (frame->system_frame_number == 0) {
-      enc->is_input_dmabuf = FALSE;
-    } else if (enc->is_input_dmabuf) {
-      syslog (LOG_ERR, "gst-c2: " "Fatal error: input buf feature changed from zero copy to need copy");
+      GST_INFO_OBJECT (enc, "Need copy input frame as inputcopy(%d) prop. or input is non-dma(%d)", (int)enc->force_inputcopy, (int)(!gst_is_dmabuf_memory (mem)));
+      enc->is_input_zerocopy = FALSE;
+    } else if (enc->is_input_zerocopy) {
+      syslog (LOG_ERR, "gst-c2: " "Fatal error: input buf feature changed from dmabuf to non-dmabuf at idx %u", frame->system_frame_number);
       GST_ERROR_OBJECT (enc,
-          "Fatal error: input buf feature changed from zero copy to need copy");
+          "Fatal error: input buf feature changed from dmabuf to non-dmabuf at idx %u", frame->system_frame_number);
     }
     if (enc->input_glmem_feature) {
       gst_qcodec2_venc_check_gl_memory (buf);
@@ -2906,6 +2910,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
         g_value_copy (value, &enc->ltr_use);
       }
       break;
+    case PROP_INPUTCOPY:
+      enc->force_inputcopy = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3033,6 +3040,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       if (gst_value_array_get_size (&enc->ltr_use)) {
         g_value_copy (&enc->ltr_use, value);
       }
+      break;
+    case PROP_INPUTCOPY:
+      g_value_set_boolean (value, enc->force_inputcopy);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -3417,6 +3427,14 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_INPUTCOPY,
+      g_param_spec_boolean ("inputcopy",
+          "force do input copy",
+          "force do input copy even if input gstbuf is dmabuf, only for test",
+          DEFAULT_INPUTCOPY,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -3486,7 +3504,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->ratio_size = 0;
   enc->bitrate_ratios = NULL;
   enc->ltr_count = 0;
-  enc->is_input_dmabuf = FALSE;
+  enc->is_input_zerocopy = FALSE;
   enc->input_glmem_feature = FALSE;
 
   enc->max_input_buffers = 0;
@@ -3495,6 +3513,8 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);
   g_cond_init (&enc->pending_cond);
   g_mutex_init (&enc->pending_lock);
+
+  enc->force_inputcopy = DEFAULT_INPUTCOPY;
 }
 
 gboolean
