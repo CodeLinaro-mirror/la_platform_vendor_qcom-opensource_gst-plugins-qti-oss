@@ -138,7 +138,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
       gst_vp9_parser_parse_frame_header (vp9_parser, vp9_hdr, frame_data,
           frame_size);
     } else {
-      GST_ERROR_OBJECT (dec, "failed to new some structure");
+      SG_ERR_OBJ (dec, "failed to new some structure");
       gst_buffer_unmap (buf, &mapinfo);
       ret = GST_FLOW_ERROR;
       goto done;
@@ -168,7 +168,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
         g_ptr_array_add (config, &pixelformat);
         if (!c2componentInterface_config (base_dec->comp_intf,
               config, BLOCK_MODE_MAY_BLOCK)) {
-          GST_ERROR_OBJECT (dec, "Failed to set config");
+          SG_ERR_OBJ (dec, "Failed to set config");
           ret = GST_FLOW_ERROR;
           goto done;
         }
@@ -180,7 +180,7 @@ gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
 
   if (base_dec->delay_start) {
     if (!gst_qcodec2_vdec_start_comp_and_config_pool (base_dec)) {
-      GST_ERROR_OBJECT (dec, "failed to start c2 comp or config pool");
+      SG_ERR_OBJ (dec, "failed to start c2 comp or config pool");
       ret = GST_FLOW_ERROR;
       goto done;
     }

@@ -316,7 +316,7 @@ std::unique_ptr<C2Param> setVideoBitrate(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setVideoBitrate input not implemented");
+        GST_WARNING("setVideoBitrate input not implemented");
 
     } else {
         C2StreamBitrateInfo::output bitrate;
@@ -351,7 +351,7 @@ std::unique_ptr<C2Param> setMirrorType(gpointer param, void* const comp_intf)
 
         return mirror;
     }
-    LOG_WARNING("setMirrorType output not implemented");
+    GST_WARNING("setMirrorType output not implemented");
 
     return nullptr;
 }
@@ -378,7 +378,7 @@ std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf)
 
         return rotation;
     }
-    LOG_WARNING("setRotation output not implemented");
+    GST_WARNING("setRotation output not implemented");
 
     return nullptr;
 }
@@ -488,7 +488,7 @@ std::unique_ptr<C2Param> setDownscale(gpointer param, void* const comp_intf)
 
         return scale;
     }
-    LOG_WARNING("setDownscale input not implemented");
+    GST_WARNING("setDownscale input not implemented");
 
     return nullptr;
 }
@@ -585,7 +585,7 @@ std::unique_ptr<C2Param> setBlurMode(gpointer param, void* const comp_intf)
 
         return blur;
     }
-    LOG_WARNING("setBlurMode output not implemented");
+    GST_WARNING("setBlurMode output not implemented");
 
     return nullptr;
 }
@@ -613,7 +613,7 @@ std::unique_ptr<C2Param> setBlurResolution(gpointer param, void* const comp_intf
 
         return blur;
     }
-    LOG_WARNING("setBlurResolution output not implemented");
+    GST_WARNING("setBlurResolution output not implemented");
 
     return nullptr;
 }
@@ -652,7 +652,7 @@ std::unique_ptr<C2Param> setBitrateSavingMode(gpointer param, void* const comp_i
 
     ConfigParams* config = (ConfigParams*)param;
     if (config->isInput) {
-        LOG_WARNING("setVideoBitrateSavingMode input not implemented");
+        GST_WARNING("setVideoBitrateSavingMode input not implemented");
 
     } else {
         C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
@@ -677,7 +677,7 @@ std::unique_ptr<C2Param> setVideoProfileLevel(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setVideoProfileLevel input not implemented");
+        GST_WARNING("setVideoProfileLevel input not implemented");
     } else {
         C2StreamProfileLevelInfo::output profileAndLevel;
         profileAndLevel.profile = toC2Profile(config->profileAndLevel.profile);
@@ -723,7 +723,7 @@ std::unique_ptr<C2Param> setDeInterlace(gpointer param, void* const comp_intf)
 
     item.set((int32_t)config->deinterlace);
     kvpairs.emplace("vendor.qti-ext-dec-deinterlace.enable", item);
-    LOG_DEBUG("enable deinterlace:%d", config->deinterlace);
+    GST_DEBUG("enable deinterlace:%d", config->deinterlace);
 
     deinterlace = intf_wrapper->updateParamFromConfig(kvpairs);
 
@@ -780,7 +780,7 @@ std::unique_ptr<C2Param> setIntraframesPeriod(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setIntraframesPeriod input not implemented");
+        GST_WARNING("setIntraframesPeriod input not implemented");
     } else {
         C2StreamSyncFrameIntervalTuning::output syncFrameInterval;
         syncFrameInterval.value = config->val.i64;
@@ -799,7 +799,7 @@ std::unique_ptr<C2Param> setIntraVideoFrameRequest(gpointer param)
     ConfigParams* config = (ConfigParams*)param;
 
     if (config->isInput) {
-        LOG_WARNING("setIntraVideoFrameRequest input not implemented");
+        GST_WARNING("setIntraVideoFrameRequest input not implemented");
     } else if (config->force_idr) {
         C2StreamRequestSyncFrameTuning::output frameRequest;
         frameRequest.value = (uint32_t)C2Config::SYNC_FRAME;
@@ -839,7 +839,7 @@ std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param)
     if (config->temporalLayer.ratios) {
         for (uint32_t i = 0; i < config->temporalLayer.ratioSize; i++) {
             pTemporalLayering->m.bitrateRatios[i] = config->temporalLayer.ratios[i];
-            LOG_MESSAGE("bitrateRatios[%d]=%.2f", i, config->temporalLayer.ratios[i]);
+            GST_LOG("bitrateRatios[%d]=%.2f", i, config->temporalLayer.ratios[i]);
         }
     }
 
@@ -974,14 +974,14 @@ std::unique_ptr<C2Param> setLTRCount(gpointer param, void* const comp_intf)
         android::ReflectedParamUpdater::Dict kvpairs;
         android::ReflectedParamUpdater::Value item;
 
-        LOG_MESSAGE("ltrCount %d", config->ltr.count);
+        GST_LOG("ltrCount %d", config->ltr.count);
         item.set((int32_t)config->ltr.count);
         kvpairs.emplace("vendor.qti-ext-enc-ltr-count.num-ltr-frames", item);
         ltrcount = intf_wrapper->updateParamFromConfig(kvpairs);
 
         return ltrcount;
     } else {
-        LOG_WARNING("%s output not implemented", __FUNCTION__);
+        GST_WARNING("%s output not implemented", __FUNCTION__);
     }
 
     return nullptr;
@@ -1001,14 +1001,14 @@ std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf)
         android::ReflectedParamUpdater::Dict kvpairs;
         android::ReflectedParamUpdater::Value item;
 
-        LOG_MESSAGE("ltrMarkIndex %d", config->ltr.mark_index);
+        GST_LOG("ltrMarkIndex %d", config->ltr.mark_index);
         item.set((int32_t)config->ltr.mark_index);
         kvpairs.emplace("vendor.qti-ext-enc-ltr.mark-frame", item);
         ltrmark = intf_wrapper->updateParamFromConfig(kvpairs);
 
         return ltrmark;
     } else {
-        LOG_WARNING("%s output not implemented", __FUNCTION__);
+        GST_WARNING("%s output not implemented", __FUNCTION__);
     }
 
     return nullptr;
@@ -1028,14 +1028,14 @@ std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf)
         android::ReflectedParamUpdater::Dict kvpairs;
         android::ReflectedParamUpdater::Value item;
 
-        LOG_MESSAGE("ltrUseIndex %d", config->ltr.use_index);
+        GST_LOG("ltrUseIndex %d", config->ltr.use_index);
         item.set((int32_t)config->ltr.use_index);
         kvpairs.emplace("vendor.qti-ext-enc-ltr.use-frame", item);
         ltruse = intf_wrapper->updateParamFromConfig(kvpairs);
 
         return ltruse;
     } else {
-        LOG_WARNING("%s output not implemented", __FUNCTION__);
+        GST_WARNING("%s output not implemented", __FUNCTION__);
     }
 
     return nullptr;
@@ -1055,7 +1055,7 @@ std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf
 
     item.set((int32_t)config->use_external_buf);
     kvpairs.emplace("vendor.qti-ext-dec-external-buf.enable", item);
-    LOG_DEBUG("set to use external buffer:%d", config->use_external_buf);
+    GST_DEBUG("set to use external buffer:%d", config->use_external_buf);
 
     use_external_buf = intf_wrapper->updateParamFromConfig(kvpairs);
 
@@ -1092,7 +1092,7 @@ private:
 CodecCallback::CodecCallback(const void* handle, listener_cb cb)
 {
 
-    LOG_MESSAGE("CodecCallback(%p) created", this);
+    GST_LOG("CodecCallback(%p) created", this);
 
     mCallback = cb;
     mHandle = handle;
@@ -1101,7 +1101,7 @@ CodecCallback::CodecCallback(const void* handle, listener_cb cb)
 CodecCallback::~CodecCallback()
 {
 
-    LOG_MESSAGE("CodecCallback(%p) destroyed", this);
+    GST_LOG("CodecCallback(%p) destroyed", this);
 }
 
 // set buffer's layout information
@@ -1119,7 +1119,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
     uint32_t stride[2] = { 0 };
 
     if (!buf) {
-        LOG_ERROR("invalid buffer");
+        SG_ERR("invalid buffer");
         return;
     }
 
@@ -1137,7 +1137,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
             color_fmt = COLOR_FMT_P010;
             color_fmt_str = "P010";
         } else {
-            LOG_ERROR("format 0x%x is not implemented", format);
+            SG_ERR("format 0x%x is not implemented", format);
             return;
         }
     }
@@ -1162,7 +1162,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
         if (interlace_mode != INTERLACE_MODE_PROGRESSIVE) {
             validDataSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 1);
             offset[1] = VENUS_BUFFER_SIZE(color_fmt, width, height) / 2;
-            LOG_DEBUG("output format is NV12_UBWC interlaced");
+            GST_DEBUG("output format is NV12_UBWC interlaced");
         } else {
             validDataSize = VENUS_BUFFER_SIZE_USED(color_fmt, width, height, 0);
             offset[1] = y_meta_plane + y_ubwc_plane;
@@ -1177,7 +1177,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
         offset[1] = y_meta_plane + y_ubwc_plane;
         break;
     default:
-        LOG_ERROR("color format 0x%x is not implemented", color_fmt);
+        SG_ERR("color format 0x%x is not implemented", color_fmt);
         break;
     }
 
@@ -1189,7 +1189,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
         buf->stride[i] = stride[i];
     }
 
-    LOG_DEBUG("format:%s Y stride:%u Y scanline:%u UV stride:%u  offset[0:1]:[%d:%d] valid size:%u",
+    GST_DEBUG("format:%s Y stride:%u Y scanline:%u UV stride:%u  offset[0:1]:[%d:%d] valid size:%u",
         color_fmt_str, y_stride, y_sclines, uv_stride, offset[0], offset[1], validDataSize);
 }
 
@@ -1203,7 +1203,7 @@ void CodecCallback::onOutputBufferAvailable(
 {
 
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1222,7 +1222,7 @@ void CodecCallback::onOutputBufferAvailable(
             const C2ConstGraphicBlock graphic_block = buffer->data().graphicBlocks().front();
             C2Handle* handle = const_cast<C2Handle*>(graphic_block.handle());
             if (nullptr == handle) {
-                LOG_ERROR("C2ConstGraphicBlock handle is null");
+                SG_ERR("C2ConstGraphicBlock handle is null");
                 return;
             }
             outBuf.fd = handle->data[0];
@@ -1257,20 +1257,20 @@ void CodecCallback::onOutputBufferAvailable(
              * To avoid including GBM header, use void* instead. */
             outBuf.gbm_bo = reinterpret_cast<void*>(bo);
             crop = view.crop();
-            LOG_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
+            GST_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
             outBuf.width = crop.width;
             outBuf.height = crop.height;
             setBufLayout(&outBuf, format, gbmUsage, width, height, outBuf.interlaceMode);
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
-            LOG_INFO("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
+            GST_INFO("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
                 size, outBuf.size, width, height, stride, outBuf.data);
         } else if (buf_type == C2BufferData::LINEAR) {
             const C2ConstLinearBlock linear_block = buffer->data().linearBlocks().front();
             const C2Handle* handle = linear_block.handle();
             if (nullptr == handle) {
-                LOG_ERROR("C2ConstLinearBlock handle is null");
+                SG_ERR("C2ConstLinearBlock handle is null");
                 return;
             }
             C2ReadView view(linear_block.map().get());
@@ -1278,12 +1278,12 @@ void CodecCallback::onOutputBufferAvailable(
             outBuf.fd = handle->data[0];
             outBuf.data = (guint8*)view.data();
             outBuf.avg_frame_qp = frameQp;
-            LOG_INFO("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
+            GST_INFO("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
             /* Check for codec data */
             auto csd = std::static_pointer_cast<const C2StreamInitDataInfo::output>(
                 buffer->getInfo(C2StreamInitDataInfo::output::PARAM_TYPE));
             if (csd) {
-                LOG_INFO("get codec config data, size: %lu data:%p", csd->flexCount(), (guint8*)csd->m.value);
+                GST_INFO("get codec config data, size: %lu data:%p", csd->flexCount(), (guint8*)csd->m.value);
                 outBuf.config_data = (guint8*)&csd->m.value;
                 outBuf.config_size = csd->flexCount();
                 outBuf.flag = (FLAG_TYPE)(outBuf.flag | FLAG_TYPE_CODEC_CONFIG);
@@ -1295,10 +1295,10 @@ void CodecCallback::onOutputBufferAvailable(
         outBuf.index = index;
         outBuf.flag = toWrapperFlag(flag);
         outBuf.interlaceMode = interlaceInfo.interlaceMode;
-        LOG_MESSAGE("Mark drop frame index: %lu, pts: %lu", index, timestamp);
+        GST_LOG("Mark drop frame index: %lu, pts: %lu", index, timestamp);
         mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
     } else if (flag & C2FrameData::FLAG_END_OF_STREAM) {
-        LOG_MESSAGE("Mark EOS buffer");
+        GST_LOG("Mark EOS buffer");
         outBuf.data = NULL;
         outBuf.fd = -1;
         outBuf.meta_fd = -1;
@@ -1311,7 +1311,7 @@ void CodecCallback::onOutputBufferAvailable(
 
         mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
     } else {
-        LOG_MESSAGE("Buffer is null");
+        GST_LOG("Buffer is null");
     }
 }
 
@@ -1319,7 +1319,7 @@ void CodecCallback::onTripped(uint32_t errorCode)
 {
 
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1330,7 +1330,7 @@ void CodecCallback::onError(uint32_t errorCode)
 {
 
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1341,7 +1341,7 @@ void CodecCallback::onUpdateMaxBufCount(uint32_t outputDelay)
 {
 
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1352,7 +1352,7 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC
 {
 
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1367,7 +1367,7 @@ void CodecCallback::onAcquireExtBuffer(uint32_t width, uint32_t height, bool isC
 void CodecCallback::onReleaseExtBuffer(int32_t extFd)
 {
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1377,7 +1377,7 @@ void CodecCallback::onReleaseExtBuffer(int32_t extFd)
 void CodecCallback::onReleaseInputBuffer(uint64_t index)
 {
     if (!mCallback) {
-        LOG_MESSAGE("Callback not set in CodecCallback(%p)", this);
+        GST_LOG("Callback not set in CodecCallback(%p)", this);
         return;
     }
 
@@ -1393,26 +1393,26 @@ void* c2componentStore_create()
     GST_DEBUG_CATEGORY_INIT(gst_qcodec2_wrapper_debug,
         "qcodec2wrapper", 0, "GST QTI codec2.0 wrapper");
 
-    LOG_MESSAGE("Creating component store");
+    GST_LOG("Creating component store");
 
 #ifndef USE_AGL_C2SERVICE
     void* lib = dlopen("libqcodec2_core.so", RTLD_NOW);
     if (lib == nullptr) {
-        LOG_ERROR("failed to open %s: %s", "libqcodec2_core.so", dlerror());
+        SG_ERR("failed to open %s: %s", "libqcodec2_core.so", dlerror());
         return nullptr;
     }
 
     auto factoryGetter = (QC2ComponentStoreFactoryGetter_t)dlsym(lib, kFn_QC2ComponentStoreFactoryGetter);
 
     if (factoryGetter == nullptr) {
-        LOG_ERROR("failed to load symbol %s: %s", kFn_QC2ComponentStoreFactoryGetter, dlerror());
+        SG_ERR("failed to load symbol %s: %s", kFn_QC2ComponentStoreFactoryGetter, dlerror());
         dlclose(lib);
         return nullptr;
     }
 
     auto c2StoreFactory = (*factoryGetter)(1, 0); // get version 1.0
     if (c2StoreFactory == nullptr) {
-        LOG_ERROR("failed to get Store factory !");
+        SG_ERR("failed to get Store factory !");
         dlclose(lib);
         return nullptr;
     }
@@ -1425,7 +1425,7 @@ void* c2componentStore_create()
     // Enabled death notifier on client side. When server died, client can receive message.
     auto client = aglqc2::QC2Client::create();
     auto store = client->getC2ComponentStore();
-    LOG_MESSAGE("Created component store %p", store.get());
+    GST_LOG("Created component store %p", store.get());
 
     return new C2ComponentStoreAdapter(store, nullptr, nullptr);
 #endif /* USE_AGL_C2SERVICE */
@@ -1440,7 +1440,7 @@ const gchar* c2componentStore_getName(void* const comp_store)
         C2ComponentStoreAdapter* store_Wrapper = (C2ComponentStoreAdapter*)comp_store;
         name = g_strdup(store_Wrapper->getName().c_str());
     } else {
-        LOG_ERROR("Component store is null");
+        SG_ERR("Component store is null");
     }
 
     return name;
@@ -1449,7 +1449,7 @@ const gchar* c2componentStore_getName(void* const comp_store)
 gboolean c2componentStore_createComponent(void* const comp_store, const gchar* name, void** const component, comp_cb* cb)
 {
 
-    LOG_MESSAGE("Creating component");
+    GST_LOG("Creating component");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1461,15 +1461,15 @@ gboolean c2componentStore_createComponent(void* const comp_store, const gchar* n
         if (c2Status == C2_OK) {
             C2ComponentAdapter* comp_adapter = *(C2ComponentAdapter**)component;
             if (cb) {
-                LOG_DEBUG("comp name:%s, set func for copying", name);
+                GST_DEBUG("comp name:%s, set func for copying", name);
                 comp_adapter->setDataCopyFunc(cb->data_copy_func, cb->data_copy_func_param);
             }
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to create component (%s)", c2Status, name);
+            SG_ERR("Failed(%d) to create component (%s)", c2Status, name);
         }
     } else {
-        LOG_ERROR("Component store is null");
+        SG_ERR("Component store is null");
     }
 
     return ret;
@@ -1478,7 +1478,7 @@ gboolean c2componentStore_createComponent(void* const comp_store, const gchar* n
 gboolean c2componentStore_createInterface(void* const comp_store, const gchar* name, void** const interface)
 {
 
-    LOG_MESSAGE("Creating component interface");
+    GST_LOG("Creating component interface");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1490,10 +1490,10 @@ gboolean c2componentStore_createInterface(void* const comp_store, const gchar* n
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to create component interface (%s)", c2Status, name);
+            SG_ERR("Failed(%d) to create component interface (%s)", c2Status, name);
         }
     } else {
-        LOG_ERROR("Component store is null");
+        SG_ERR("Component store is null");
     }
 
     return ret;
@@ -1502,16 +1502,16 @@ gboolean c2componentStore_createInterface(void* const comp_store, const gchar* n
 gboolean c2componentStore_listComponents(void* const comp_store, GPtrArray* array)
 {
     gboolean ret = FALSE;
-    LOG_MESSAGE("%s", __func__);
+    GST_LOG("%s", __func__);
 
     if (comp_store) {
         C2ComponentStoreAdapter* store_Wrapper = (C2ComponentStoreAdapter*)comp_store;
 
         std::vector<std::shared_ptr<const C2Component::Traits> > traits = store_Wrapper->listComponents();
-        LOG_MESSAGE("component traits size %zu", traits.size());
+        GST_LOG("component traits size %zu", traits.size());
         for (auto &trait : traits) {
             const char *name = trait->name.c_str();
-            LOG_MESSAGE("trait name: %s", name);
+            GST_LOG("trait name: %s", name);
             g_ptr_array_add(array, (gpointer)name);
         }
         ret = TRUE;
@@ -1538,7 +1538,7 @@ gboolean c2componentStore_isComponentSupported(void* const comp_store, gchar* na
 gboolean c2componentStore_delete(void* comp_store)
 {
 
-    LOG_MESSAGE("Deleting component store");
+    GST_LOG("Deleting component store");
 
     gboolean ret = FALSE;
 
@@ -1558,7 +1558,7 @@ gboolean c2componentStore_delete(void* comp_store)
 gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb listener, BLOCK_MODE_TYPE mayBlock)
 {
 
-    LOG_MESSAGE("Updating component listener");
+    GST_LOG("Updating component listener");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1571,10 +1571,10 @@ gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to set component listener is null", c2Status);
+            SG_ERR("Failed(%d) to set component listener is null", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1583,7 +1583,7 @@ gboolean c2component_setListener(void* const comp, void* cb_context, listener_cb
 gboolean c2component_setMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type, guint max)
 {
 
-    LOG_MESSAGE("Comp %p set max: %u type: %d", comp, max, type);
+    GST_LOG("Comp %p set max: %u type: %d", comp, max, type);
     c2_status_t status = C2_BAD_VALUE;
 
     if (comp) {
@@ -1603,7 +1603,7 @@ guint c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type)
         count = comp_wrapper->getMaxAllocationCount(type);
     }
 
-    LOG_MESSAGE("Comp %p get max: %u type: %d", comp, count, type);
+    GST_LOG("Comp %p get max: %u type: %d", comp, count, type);
 
     return (guint)count;
 }
@@ -1611,7 +1611,7 @@ guint c2component_getMaxAllocationCount(void* const comp, BUFFER_POOL_TYPE type)
 gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
 {
 
-    LOG_MESSAGE("Comp %p allocate buffer type: %d", comp, buffer->pool_type);
+    GST_LOG("Comp %p allocate buffer type: %d", comp, buffer->pool_type);
 
     gboolean ret = FALSE;
     std::shared_ptr<C2Buffer> buf = nullptr;
@@ -1625,13 +1625,13 @@ gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
             if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
                 ret = TRUE;
             } else {
-                LOG_ERROR("Unsupported pool type: %d", buffer->pool_type);
+                SG_ERR("Unsupported pool type: %d", buffer->pool_type);
             }
         } else {
-            LOG_ERROR("Failed to alloc buffer");
+            SG_ERR("Failed to alloc buffer");
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1640,7 +1640,7 @@ gboolean c2component_alloc(void* const comp, BufferDescriptor* buffer)
 gboolean c2component_queue(void* const comp, BufferDescriptor* buffer)
 {
 
-    LOG_MESSAGE("Queueing work");
+    GST_LOG("Queueing work");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1653,10 +1653,10 @@ gboolean c2component_queue(void* const comp, BufferDescriptor* buffer)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed to queue work (%d)", c2Status);
+            SG_ERR("Failed to queue work (%d)", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1664,7 +1664,7 @@ gboolean c2component_queue(void* const comp, BufferDescriptor* buffer)
 
 gboolean c2component_flush(void* const comp, FLUSH_MODE_TYPE mode)
 {
-    LOG_MESSAGE("Flushing work");
+    GST_LOG("Flushing work");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1675,10 +1675,10 @@ gboolean c2component_flush(void* const comp, FLUSH_MODE_TYPE mode)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed to flush work (%d)", c2Status);
+            SG_ERR("Failed to flush work (%d)", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1687,12 +1687,12 @@ gboolean c2component_flush(void* const comp, FLUSH_MODE_TYPE mode)
 gboolean c2component_drain(void* const comp, DRAIN_MODE_TYPE mode)
 {
 
-    LOG_MESSAGE("Draining work");
+    GST_LOG("Draining work");
 
     gboolean ret = FALSE;
 
     if (comp) {
-        LOG_MESSAGE("Not implemented");
+        GST_LOG("Not implemented");
     }
 
     return ret;
@@ -1701,7 +1701,7 @@ gboolean c2component_drain(void* const comp, DRAIN_MODE_TYPE mode)
 gboolean c2component_start(void* const comp)
 {
 
-    LOG_MESSAGE("Starting component");
+    GST_LOG("Starting component");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1713,10 +1713,10 @@ gboolean c2component_start(void* const comp)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to start component", c2Status);
+            SG_ERR("Failed(%d) to start component", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1725,7 +1725,7 @@ gboolean c2component_start(void* const comp)
 gboolean c2component_stop(void* const comp)
 {
 
-    LOG_MESSAGE("Stopping component");
+    GST_LOG("Stopping component");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1737,10 +1737,10 @@ gboolean c2component_stop(void* const comp)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to stop component", c2Status);
+            SG_ERR("Failed(%d) to stop component", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1749,7 +1749,7 @@ gboolean c2component_stop(void* const comp)
 gboolean c2component_reset(void* const comp)
 {
 
-    LOG_MESSAGE("Resetting component");
+    GST_LOG("Resetting component");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1761,10 +1761,10 @@ gboolean c2component_reset(void* const comp)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to reset component", c2Status);
+            SG_ERR("Failed(%d) to reset component", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1773,7 +1773,7 @@ gboolean c2component_reset(void* const comp)
 gboolean c2component_release(void* const comp)
 {
 
-    LOG_MESSAGE("Releasing component");
+    GST_LOG("Releasing component");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1785,10 +1785,10 @@ gboolean c2component_release(void* const comp)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to release component", c2Status);
+            SG_ERR("Failed(%d) to release component", c2Status);
         }
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     return ret;
@@ -1797,7 +1797,7 @@ gboolean c2component_release(void* const comp)
 void* c2component_intf(void* const comp)
 {
 
-    LOG_MESSAGE("Creating component interface");
+    GST_LOG("Creating component interface");
 
     void* compIntf = NULL;
 
@@ -1806,11 +1806,11 @@ void* c2component_intf(void* const comp)
 
         compIntf = comp_wrapper->intf();
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 
     if (compIntf == NULL) {
-        LOG_ERROR("Component interface is null");
+        SG_ERR("Component interface is null");
     }
 
     return compIntf;
@@ -1819,7 +1819,7 @@ void* c2component_intf(void* const comp)
 gboolean c2component_createBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
 {
 
-    LOG_MESSAGE("Creating block pool");
+    GST_LOG("Creating block pool");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1831,7 +1831,7 @@ gboolean c2component_createBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to allocate block pool(%d)", c2Status, poolType);
+            SG_ERR("Failed(%d) to allocate block pool(%d)", c2Status, poolType);
         }
     }
 
@@ -1841,7 +1841,7 @@ gboolean c2component_createBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
 gboolean c2component_configBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
 {
 
-    LOG_MESSAGE("Configing block pool");
+    GST_LOG("Configing block pool");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1853,7 +1853,7 @@ gboolean c2component_configBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to allocate block pool(%d)", c2Status, poolType);
+            SG_ERR("Failed(%d) to allocate block pool(%d)", c2Status, poolType);
         }
     }
 
@@ -1863,7 +1863,7 @@ gboolean c2component_configBlockpool(void* comp, BUFFER_POOL_TYPE poolType)
 gboolean c2component_freeOutBuffer(void* const comp, guint64 bufferId)
 {
 
-    LOG_MESSAGE("Freeing buffer");
+    GST_LOG("Freeing buffer");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1875,7 +1875,7 @@ gboolean c2component_freeOutBuffer(void* const comp, guint64 bufferId)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to free buffer(%lu)", c2Status, bufferId);
+            SG_ERR("Failed(%d) to free buffer(%lu)", c2Status, bufferId);
         }
     }
 
@@ -1885,7 +1885,7 @@ gboolean c2component_freeOutBuffer(void* const comp, guint64 bufferId)
 gboolean c2component_delete(void* comp)
 {
 
-    LOG_MESSAGE("Deleting component");
+    GST_LOG("Deleting component");
 
     gboolean ret = FALSE;
 
@@ -1899,7 +1899,7 @@ gboolean c2component_delete(void* comp)
 
 gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd)
 {
-    LOG_MESSAGE("Attach external fd: %d", fd);
+    GST_LOG("Attach external fd: %d", fd);
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1910,7 +1910,7 @@ gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd)
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to attach external fd: %d", c2Status, fd);
+            SG_ERR("Failed(%d) to attach external fd: %d", c2Status, fd);
         }
     }
     return ret;
@@ -1918,7 +1918,7 @@ gboolean c2component_attachExternalFd(void* comp, BUFFER_POOL_TYPE type, int fd)
 
 gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gboolean useExternal)
 {
-    LOG_MESSAGE("Set to use external buffer: %s", useExternal ? "TRUE" : "FALSE");
+    GST_LOG("Set to use external buffer: %s", useExternal ? "TRUE" : "FALSE");
 
     gboolean ret = FALSE;
     c2_status_t c2Status = C2_NO_INIT;
@@ -1929,7 +1929,7 @@ gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gbo
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_ERROR("Failed(%d) to set using external buffer", c2Status);
+            SG_ERR("Failed(%d) to set using external buffer", c2Status);
         }
     }
     return ret;
@@ -1937,13 +1937,13 @@ gboolean c2component_setUseExternalBuffer(void* comp, BUFFER_POOL_TYPE type, gbo
 
 void c2component_cancelPendingWork(void* const comp)
 {
-    LOG_MESSAGE("unblock waiting for pending C2 works");
+    GST_LOG("unblock waiting for pending C2 works");
 
     if (comp) {
         C2ComponentAdapter* comp_wrapper = (C2ComponentAdapter*)comp;
         comp_wrapper->cancelPendingWork();
     } else {
-        LOG_ERROR("Component is null");
+        SG_ERR("Component is null");
     }
 }
 
@@ -1985,20 +1985,20 @@ void _push_to_settings(gpointer data, gpointer user_data)
 
     auto iter = sConfigFunctionMap.find(conf_param->config_name);
     if (iter != sConfigFunctionMap.end()) {
-        LOG_DEBUG("C2 config name:%s", conf_param->config_name);
+        GST_DEBUG("C2 config name:%s", conf_param->config_name);
         param = (*iter->second)(conf_param);
     } else {
         /* Iterator for vendor parameters */
         auto iterVendor = sConfigFunctionForVendorParamsMap.find(conf_param->config_name);
         if (iterVendor != sConfigFunctionForVendorParamsMap.end()) {
-            LOG_DEBUG("vendor config name:%s", conf_param->config_name);
+            GST_DEBUG("vendor config name:%s", conf_param->config_name);
             param = (*iterVendor->second)(conf_param, settings_intf->comp_intf);
         }
     }
     if (param) {
         settings_intf->settings.push_back(C2Param::Copy(*param));
     } else {
-        LOG_ERROR("param is NULL for %s", conf_param->config_name);
+        SG_ERR("param is NULL for %s", conf_param->config_name);
     }
 }
 
@@ -2006,7 +2006,7 @@ gboolean c2componentInterface_initReflectedParamUpdater(void* const comp_store,
     void* const comp_intf)
 {
 
-    LOG_MESSAGE("Init ReflectedParamUpdater");
+    GST_LOG("Init ReflectedParamUpdater");
 
     gboolean ret = FALSE;
 
@@ -2023,7 +2023,7 @@ gboolean c2componentInterface_initReflectedParamUpdater(void* const comp_store,
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_WARNING("Failed(%d) to initReflectedParamUpdater", c2Status);
+            GST_WARNING("Failed(%d) to initReflectedParamUpdater", c2Status);
         }
     }
 
@@ -2033,7 +2033,7 @@ gboolean c2componentInterface_initReflectedParamUpdater(void* const comp_store,
 gboolean c2componentInterface_config(void* const comp_intf, GPtrArray* config, BLOCK_MODE_TYPE block)
 {
 
-    LOG_MESSAGE("Applying configuration");
+    GST_LOG("Applying configuration");
 
     gboolean ret = FALSE;
 
@@ -2054,7 +2054,7 @@ gboolean c2componentInterface_config(void* const comp_intf, GPtrArray* config, B
         if (c2Status == C2_OK) {
             ret = TRUE;
         } else {
-            LOG_WARNING("Failed(%d) to apply the configuration", c2Status);
+            GST_WARNING("Failed(%d) to apply the configuration", c2Status);
         }
     }
 
