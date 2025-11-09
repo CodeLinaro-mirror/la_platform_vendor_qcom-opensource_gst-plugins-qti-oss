@@ -1763,7 +1763,7 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
 
   if (!priv->active) {
     SG_INFO_OBJ (qvconv, "first buffer comes, configure c2d, meta=%p, instance %"
-        GST_PTR_FORMAT "@%p, input need copy %d, in_mem %p", QGVMeta, qvconv, qvconv, (int)need_copy, in_mem);
+        GST_PTR_FORMAT "@%p, input need copy %d, in_mem %p, force inputcopy %d", QGVMeta, qvconv, qvconv, (int)need_copy, in_mem, (int)priv->do_inputcopy);
     /* GstVideoMeta overrides GstVideoInfo for v4l2src->qvconv case.
      * v4l2src gets stride from QC camera driver, and stride can be configured
      * as no padding or as GBM-aligned with padding.
@@ -1786,8 +1786,8 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
   } else {
     /* Input buffer type MUST NOT change. */
     if (need_copy != priv->input_buf_internal) {
-      SG_ERR_OBJ (qvconv, "Fatal error: Can NOT handle input buffer changed from %s, inst %" GST_PTR_FORMAT "@%p",
-          need_copy ? "dmabuf to non-dmabuf" : "non-dmabuf to dmabuf", qvconv, qvconv);
+      SG_ERR_OBJ (qvconv, "Fatal error: Can NOT handle input buffer changed from %s, at idx %u, inst %" GST_PTR_FORMAT "@%p",
+          need_copy ? "dmabuf to non-dmabuf" : "non-dmabuf to dmabuf", priv->idx_in_one_cycle, qvconv, qvconv);
       goto exit;
     }
   }
