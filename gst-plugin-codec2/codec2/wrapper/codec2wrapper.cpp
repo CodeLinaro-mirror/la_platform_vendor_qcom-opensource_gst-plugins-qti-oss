@@ -1189,7 +1189,7 @@ void setBufLayout(BufferDescriptor* buf, uint32_t format, uint64_t gbm_usage,
         buf->stride[i] = stride[i];
     }
 
-    GST_DEBUG("format:%s Y stride:%u Y scanline:%u UV stride:%u  offset[0:1]:[%d:%d] valid size:%u",
+    GST_LOG("format:%s Y stride:%u Y scanline:%u UV stride:%u  offset[0:1]:[%d:%d] valid size:%u",
         color_fmt_str, y_stride, y_sclines, uv_stride, offset[0], offset[1], validDataSize);
 }
 
@@ -1257,14 +1257,14 @@ void CodecCallback::onOutputBufferAvailable(
              * To avoid including GBM header, use void* instead. */
             outBuf.gbm_bo = reinterpret_cast<void*>(bo);
             crop = view.crop();
-            GST_INFO("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
+            GST_LOG("get crop info (%d,%d) [%dx%d] bo:%p", crop.left, crop.top, crop.width, crop.height, outBuf.gbm_bo);
             outBuf.width = crop.width;
             outBuf.height = crop.height;
             setBufLayout(&outBuf, format, gbmUsage, width, height, outBuf.interlaceMode);
 
             /* graphic_block unmapped once out of scope. */
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
-            GST_INFO("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
+            GST_DEBUG("out buffer size:%d(valid %u) gbm's width:%d height:%d stride:%d data:%p\n",
                 size, outBuf.size, width, height, stride, outBuf.data);
         } else if (buf_type == C2BufferData::LINEAR) {
             const C2ConstLinearBlock linear_block = buffer->data().linearBlocks().front();
@@ -1278,7 +1278,7 @@ void CodecCallback::onOutputBufferAvailable(
             outBuf.fd = handle->data[0];
             outBuf.data = (guint8*)view.data();
             outBuf.avg_frame_qp = frameQp;
-            GST_INFO("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
+            GST_DEBUG("outBuf linear data:%p fd:%d size:%d\n", outBuf.data, outBuf.fd, outBuf.size);
             /* Check for codec data */
             auto csd = std::static_pointer_cast<const C2StreamInitDataInfo::output>(
                 buffer->getInfo(C2StreamInitDataInfo::output::PARAM_TYPE));

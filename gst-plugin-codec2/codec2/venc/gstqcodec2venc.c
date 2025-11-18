@@ -82,6 +82,9 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_venc_debug
 
+#define ENC_SHOWLOG_NUMBER 5
+#define ENC_SHOWLOG_INTERVAL 250
+
 #define DEFAULT_COLOR_SPACE_CONVERSION            (FALSE)
 #define DEFAULT_EMBED_COLOR_SPACE_INFO            (FALSE)
 #define DEFAULT_BITRATE_SAVING_MODE               (0xffffffff)
@@ -1312,7 +1315,11 @@ gst_qcodec2_venc_stop (GstVideoEncoder * encoder)
 {
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
 
-  GST_DEBUG_OBJECT (enc, "stop");
+  SG_INFO_OBJ (enc, "stop: handled in-data(%u/%u), out-data(%u/%u), enc(%p) f-idx %lu",
+      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  enc->in_data_idx_1cycle = 0;
+  enc->out_data_idx_1cycle = 0;
+
   enc->input_setup = FALSE;
   enc->output_setup = FALSE;
 
@@ -1762,6 +1769,9 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     }
   }
 
+  SG_INFO_OBJ (enc, "set_format: handled in-data(%u/%u), out-data(%u/%u), enc(%p) f-idx %lu",
+      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+
   if (!c2component_start (enc->comp)) {
     GST_DEBUG_OBJECT (enc, "Failed to start component");
     goto error_config;
@@ -1984,9 +1994,19 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
   GstFlowReturn ret = GST_FLOW_OK;
 
-  GST_DEBUG_OBJECT (enc, "handle_frame");
+  GST_LOG_OBJECT (enc, "handle_frame");
 
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
+
+  if (enc->in_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->in_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
+    SG_INFO_OBJ (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+  } else {
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+  }
+  enc->in_data_idx_1cycle++;
+  enc->in_data_idx_total++;
 
   if (!enc->input_setup) {
     goto done;
@@ -1996,9 +2016,6 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
     ret = GST_FLOW_ERROR;
     goto done;
   }
-
-  GST_DEBUG ("Frame number : %d, pts: %" GST_TIME_FORMAT,
-      frame->system_frame_number, GST_TIME_ARGS (frame->pts));
 
   if (GST_VIDEO_CODEC_FRAME_IS_FORCE_KEYFRAME (frame)) {
     GST_INFO_OBJECT (enc, "Forcing key frame");
@@ -2204,6 +2221,16 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
     goto out;
   }
 
+  if (enc->out_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->out_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
+    SG_INFO_OBJ (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  } else {
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  }
+  enc->out_data_idx_1cycle++;
+  enc->out_data_idx_total++;
+
   if (desc->flag & FLAG_TYPE_INCOMPLETE) {
     ret = gst_video_encoder_finish_subframe (encoder, frame);
   } else {
@@ -2280,15 +2307,15 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       break;
     }
     case EVENT_ACQUIRE_EXT_BUF:{
-      GST_DEBUG_OBJECT (enc, "Ignore event:acquire_ext_buf:%d on enc", type);
+      GST_LOG_OBJECT (enc, "Ignore event:acquire_ext_buf:%d on enc", type);
       break;
     }
     case EVENT_RELEASE_EXT_BUF:{
-      GST_DEBUG_OBJECT (enc, "Ignore event:release_ext_buf:%d on enc", type);
+      GST_LOG_OBJECT (enc, "Ignore event:release_ext_buf:%d on enc", type);
       break;
     }
     case EVENT_RELEASE_INPUT_BUF:{
-      GST_DEBUG_OBJECT (enc, "Ignore event:release_input_buf:%d on enc", type);
+      GST_LOG_OBJECT (enc, "Ignore event:release_input_buf:%d on enc", type);
       break;
     }
     default:{
@@ -2557,7 +2584,7 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
   bufinfo->offset[0] = GST_VIDEO_INFO_COMP_OFFSET (&enc->input_info, 0);
   bufinfo->offset[1] = GST_VIDEO_INFO_COMP_OFFSET (&enc->input_info, 1);
 
-  GST_DEBUG_OBJECT (enc, "layout info width %u, height %u, "
+  GST_LOG_OBJECT (enc, "layout info width %u, height %u, "
       "stride0 %d, stride1 %d, "
       "offset0 %" G_GSIZE_FORMAT ", offset1 %" G_GSIZE_FORMAT,
       bufinfo->width, bufinfo->height, bufinfo->stride[0],
@@ -2570,7 +2597,7 @@ gst_qcodec2_venc_refresh_input_layout_info (GstVideoEncoder * encoder,
     g_return_val_if_fail (meta->stride[0] > 0, FALSE);
     g_return_val_if_fail (meta->stride[0] == meta->stride[1], FALSE);
 
-    GST_INFO_OBJECT (enc, "GstVideoMeta format %d, width %u, height %u, "
+    GST_LOG_OBJECT (enc, "GstVideoMeta format %d, width %u, height %u, "
         "stride0 %d, stride1 %d, "
         "offset0 %" G_GSIZE_FORMAT ", offset1 %" G_GSIZE_FORMAT,
         meta->format, meta->width, meta->height, meta->stride[0],
@@ -2622,7 +2649,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   GstFlowReturn ret = GST_FLOW_OK;
   GstVideoC2BufMeta *video_c2buf_meta = NULL;
 
-  GST_DEBUG_OBJECT (enc, "encode");
+  GST_LOG_OBJECT (enc, "encode");
 
   memset (&inBuf, 0, sizeof (BufferDescriptor));
 
@@ -2646,7 +2673,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
     if (video_c2buf_meta) {
       inBuf.c2Buffer = video_c2buf_meta->c2_buf;
     }
-    GST_DEBUG_OBJECT (enc, "input c2 buffer:%p fd:%d", inBuf.c2Buffer,
+    GST_LOG_OBJECT (enc, "input c2 buffer:%p fd:%d", inBuf.c2Buffer,
         inBuf.fd);
   } else {
     if (frame->system_frame_number == 0) {
@@ -2680,7 +2707,7 @@ gst_qcodec2_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   g_warn_if_fail (gst_qcodec2_venc_refresh_input_layout_info (encoder, frame,
           &inBuf) && "invalid input layout info");
 
-  GST_DEBUG_OBJECT (enc,
+  GST_LOG_OBJECT (enc,
       "input buffer: fd: %d, va:%p, size: %d, timestamp: %lu, index: %ld, "
       "stride %u, width %u, height %u",
       inBuf.fd, inBuf.data, inBuf.size, inBuf.timestamp, inBuf.index,
@@ -3511,6 +3538,11 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   g_mutex_init (&enc->pending_lock);
 
   enc->force_inputcopy = DEFAULT_INPUTCOPY;
+
+  enc->in_data_idx_1cycle = 0;
+  enc->in_data_idx_total = 0;
+  enc->out_data_idx_1cycle = 0;
+  enc->out_data_idx_total = 0;
 }
 
 gboolean

@@ -369,7 +369,7 @@ static inline int _get_inode (int fd, ino_t *i)
   int ret = fstat (fd, &sb);
   if (0 == ret) {
     *i = sb.st_ino;
-    GST_DEBUG ("fd=%d, dev 0x%lx, inode 0x%lx, rdev 0x%lx",
+    GST_LOG ("fd=%d, dev 0x%lx, inode 0x%lx, rdev 0x%lx",
         fd, sb.st_dev, sb.st_ino, sb.st_rdev);
   } else {
     SG_ERR ("fd=%d, fstat error: %s", fd, strerror(errno));
@@ -415,9 +415,9 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   gst_buf = (GstBuffer *) g_hash_table_lookup (buffer_table, &key);
   if (gst_buf) {
     GST_DEBUG_OBJECT (bpool,
-        "found a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d", gst_buf,
+        "found a gst buf:%p fd:%d meta_fd:%d idx:%lu ref_cnt:%d, key:0x%llx", gst_buf,
         param_ext->fd, param_ext->meta_fd, param_ext->index,
-        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)));
+        GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)), (unsigned long long)key);
     /*replace buffer index with current one */
     structure =
         gst_mini_object_get_qdata (GST_MINI_OBJECT (gst_buf),
@@ -425,7 +425,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     if (structure) {
       g_value_set_uint64 (&new_index, param_ext->index);
       gst_structure_set_value (structure, "index", &new_index);
-      GST_DEBUG_OBJECT (bpool, "set index:%lu into structure",
+      GST_LOG_OBJECT (bpool, "set index:%lu into structure",
           param_ext->index);
     }
   } else {
