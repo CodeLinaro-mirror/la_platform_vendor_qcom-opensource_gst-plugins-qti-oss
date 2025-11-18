@@ -96,6 +96,9 @@ G_DEFINE_TYPE (GstQcodec2Vdec, gst_qcodec2_vdec, GST_TYPE_VIDEO_DECODER);
 #define EOS_WAITING_TIMEOUT 5
 #define EXT_BUF_WAIT_TIMEOUT_MS 100
 
+#define DEC_SHOWLOG_NUMBER 5
+#define DEC_SHOWLOG_INTERVAL 200
+
 #define DEFAULT_OUTPUT_PICTURE_ORDER_MODE    (0xffffffff)
 #define DEFAULT_LOW_LATENCY_MODE             (FALSE)
 #define DEFAULT_SECURE_MODE                  (FALSE)
@@ -435,7 +438,7 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
   gboolean ret = TRUE;
   gboolean is_10bit = FALSE;
 
-  GST_DEBUG_OBJECT (dec, "dec set format");
+  GST_DEBUG_OBJECT (dec, "dec set pixel format");
 
   /* check 10bit cases
    * 1: Field bit-depth-luma in caps. It supported since GST 1.13.1 for H265
@@ -993,6 +996,9 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     }
   }
 
+  SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u), out-data(%u/%u), dec(%p) f-idx %lu",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+
   if (!dec->delay_start) {
     ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
     if (ret == FALSE) {
@@ -1073,7 +1079,10 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
-  GST_DEBUG_OBJECT (dec, "stop");
+  SG_INFO_OBJ (dec, "stop: handled in-data(%u/%u), out-data(%u/%u), dec(%p) f-idx %lu",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+  dec->in_data_idx_1cycle = 0;
+  dec->out_data_idx_1cycle = 0;
 
   /* handle state change from PAUSE to READY, then back to PAUSE */
   dec->output_setup = FALSE;
@@ -1221,9 +1230,19 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   GstQcodec2VdecClass *dec_class = GST_QCODEC2_VDEC_GET_CLASS (decoder);
   GstFlowReturn ret = GST_FLOW_OK;
 
-  GST_DEBUG_OBJECT (dec, "handle_frame");
+  GST_LOG_OBJECT (dec, "handle_frame");
 
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
+
+  if (dec->in_data_idx_1cycle < DEC_SHOWLOG_NUMBER || 0 == (dec->in_data_idx_1cycle % DEC_SHOWLOG_INTERVAL)) {
+    SG_INFO_OBJ (dec, "Frame number: %u, Distance from Sync: %d, PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+  }else{
+    GST_DEBUG_OBJECT (dec, "Frame number: %u, Distance from Sync: %d, PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+  }
+  dec->in_data_idx_1cycle++;
+  dec->in_data_idx_total++;
 
   if (frame->system_frame_number == 0) {
       gettimeofday (&dec->first_bitstream_receive_time, NULL);
@@ -1232,11 +1251,6 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   if (!dec->comp_started) {
     goto done;
   }
-
-  GST_DEBUG_OBJECT (dec,
-      "Frame number : %d, Distance from Sync : %d, Presentation timestamp : %"
-      GST_TIME_FORMAT, frame->system_frame_number, frame->distance_from_sync,
-      GST_TIME_ARGS (frame->pts));
 
   if (dec_class->handle_frame) {
     ret = dec_class->handle_frame (dec, frame);
@@ -1473,7 +1487,7 @@ release_input_buf_callback (GstVideoDecoder * decoder, guint64 index)
         GST_BUFFER_COPY_META, 0, 0);
     gst_buffer_unref (tmp);
     gst_video_codec_frame_unref (frame);
-    GST_DEBUG_OBJECT (dec, "Release the input buffer for frame %lu", index);
+    GST_LOG_OBJECT (dec, "Release the input buffer for frame %lu", index);
   } else {
     GST_DEBUG_OBJECT (dec, "Not find frame %lu,"
         " maybe released during work done.", index);
@@ -1577,7 +1591,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
   GstVideoCodecState *state;
   GstVideoInfo *vinfo;
 
-  GST_DEBUG_OBJECT (dec, "push frame to downstream");
+  GST_LOG_OBJECT (dec, "push frame to downstream");
 
   state = gst_video_decoder_get_output_state (decoder);
   if (state) {
@@ -1592,7 +1606,7 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     goto out;
   }
 
-  GST_DEBUG_OBJECT (dec,
+  GST_LOG_OBJECT (dec,
       "push_frame_downstream, buffer: %p, fd: %d, meta_fd: %d, timestamp: %lu",
       decode_buf->data, decode_buf->fd, decode_buf->meta_fd,
       decode_buf->timestamp);
@@ -1639,10 +1653,15 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     }
     frame->output_buffer = outbuf;
 
-    GST_DEBUG_OBJECT (dec,
-        "out buffer: PTS: %lu, duration: %lu, fps_d: %d, fps_n: %d interlace:%d",
-        GST_BUFFER_PTS (outbuf), GST_BUFFER_DURATION (outbuf), vinfo->fps_d,
-        vinfo->fps_n, decode_buf->interlaceMode);
+    if (dec->out_data_idx_1cycle < DEC_SHOWLOG_NUMBER || 0 == (dec->out_data_idx_1cycle % DEC_SHOWLOG_INTERVAL)) {
+      SG_INFO_OBJ (dec, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", duration: %lu, fps_d: %d, fps_n: %d interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
+          frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_BUFFER_DURATION (outbuf), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+    } else {
+      GST_DEBUG_OBJECT (dec, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", duration: %lu, fps_d: %d, fps_n: %d interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
+          frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_BUFFER_DURATION (outbuf), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+    }
+    dec->out_data_idx_1cycle++;
+    dec->out_data_idx_total++;
   }
 
   ret = gst_video_decoder_finish_frame (decoder, frame);
@@ -1972,7 +1991,7 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   gboolean status = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
 
-  GST_DEBUG_OBJECT (dec, "decode");
+  GST_LOG_OBJECT (dec, "decode");
 
   memset (&inBuf, 0, sizeof (BufferDescriptor));
 
@@ -1984,7 +2003,7 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
     inBuf.fd = gst_dmabuf_memory_get_fd (mem);
     inBuf.data = NULL;
     inBuf.size = gst_memory_get_sizes (mem, NULL, NULL);
-    GST_DEBUG_OBJECT (dec, "Input dma buffer with fd=%d, size=%d",
+    GST_LOG_OBJECT (dec, "Input dma buffer with fd=%d, size=%d",
         inBuf.fd, inBuf.size);
   } else {
     gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
@@ -1992,7 +2011,7 @@ gst_qcodec2_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
     inBuf.data = mapinfo.data;
     inBuf.size = mapinfo.size;
   }
-  GST_INFO_OBJECT (dec, "frame->pts (%" G_GUINT64_FORMAT ")", frame->pts);
+  GST_LOG_OBJECT (dec, "frame->pts (%" G_GUINT64_FORMAT ")", frame->pts);
 
   inBuf.pool_type = BUFFER_POOL_BASIC_LINEAR;
   inBuf.timestamp = NANO_TO_MILLI (frame->pts);
@@ -2308,6 +2327,10 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->use_external_buf = DEFAULT_USE_EXTERNAL_POOL;
   dec->is_flushing = FALSE;
   dec->release_input_buf = DEFAULT_RELEASE_INPUT;
+  dec->in_data_idx_1cycle = 0;
+  dec->in_data_idx_total = 0;
+  dec->out_data_idx_1cycle = 0;
+  dec->out_data_idx_total = 0;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);
