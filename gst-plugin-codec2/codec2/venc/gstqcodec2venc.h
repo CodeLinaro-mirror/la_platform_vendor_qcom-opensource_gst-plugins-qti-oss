@@ -165,6 +165,12 @@ struct _GstQcodec2Venc
 
   guint max_input_buffers;
   gboolean force_inputcopy;
+
+  //only for log
+  guint32 in_data_idx_1cycle;
+  guint32 in_data_idx_total;
+  guint32 out_data_idx_1cycle;
+  guint32 out_data_idx_total;
 };
 
 /*

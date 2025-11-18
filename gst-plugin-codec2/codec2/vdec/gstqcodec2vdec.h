@@ -158,6 +158,12 @@ struct _GstQcodec2Vdec
   GCond external_buf_cond;
   gboolean is_flushing;
   gboolean release_input_buf;
+
+  //only for log
+  guint32 in_data_idx_1cycle;
+  guint32 in_data_idx_total;
+  guint32 out_data_idx_1cycle;
+  guint32 out_data_idx_total;
 };
 
 /* Param function */
