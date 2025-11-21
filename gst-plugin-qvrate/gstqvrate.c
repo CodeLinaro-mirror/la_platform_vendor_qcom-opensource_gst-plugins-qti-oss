@@ -674,6 +674,10 @@ _fill_vppbuf_with_gstbuf (struct vpp_buffer * vpp_buf,
     vpp_buf->pixel.valid_data_len = buf_size;
     vpp_buf->pvGralloc = gst_buf;
     vpp_buf->extradata.fd = -1;
+    for (int i = 0; i < VPP_METABUFFER_TYPE_MAX; i++) {
+      vpp_buf->metabufs[i].fd = -1;
+    }
+
     if (!outport) {
       vpp_buf->timestamp = GST_BUFFER_PTS(gst_buf)/1000;
       GST_DEBUG ("input buf timestamp %ld, buf size %d, fd %d",

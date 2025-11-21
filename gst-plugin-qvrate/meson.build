@@ -24,6 +24,10 @@ if get_option('mmmcolorfmt')
   gstqvrate_c_args += ['-DGST_USE_MMM_COLOR_FMT']
 endif
 
+if get_option('GPP_ENABLED')
+  gstqvrate_c_args += ['-DGPP_ENABLED']
+endif
+
 gstqvrate_link_args = ['-L.', '-lhyp_vpp_fe', '-ldl']
 
 configinc = include_directories('.')
