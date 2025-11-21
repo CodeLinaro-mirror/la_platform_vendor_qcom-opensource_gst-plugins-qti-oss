@@ -72,15 +72,51 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <C2Buffer.h>
 #include <gst/gst.h>
 
-namespace QTI {
 
-#define LOG_MESSAGE GST_LOG
-#define LOG_DEBUG GST_DEBUG
-#define LOG_INFO GST_INFO
-#define LOG_WARNING GST_WARNING
-#define LOG_ERROR GST_ERROR
+#ifdef SLOG_TIP
+#undef SLOG_TIP
+#endif
+#ifdef SG_ERR
+#undef SG_ERR
+#endif
+#ifdef SG_ERR_OBJ
+#undef SG_ERR_OBJ
+#endif
+#ifdef ENABLE_GSTC2_DEFAULT_SYSLOG
+#undef ENABLE_GSTC2_DEFAULT_SYSLOG
+#endif
+
+#define ENABLE_GSTC2_DEFAULT_SYSLOG
+#ifndef ENABLE_GSTC2_DEFAULT_SYSLOG
+#define SG_ERR        GST_ERROR
+#define SG_ERR_OBJ    GST_ERROR_OBJECT
+#else
+#include <syslog.h>
+#define SLOG_TIP "gst-c2:"
+//if fmt contain GST specific format like GST_PTR_FORMAT/GST_SEGMENT_FORMAT or fmt is var, must use gst_info_strdup_printf() to explain those GST specific format and var
+#define SG_ERR(fmt, args...)                                   \
+    do {                                                       \
+        gchar* __sg_str = gst_info_strdup_printf(fmt, ##args); \
+        if (__sg_str) {                                        \
+            syslog(LOG_ERR, SLOG_TIP "E: %s", __sg_str);       \
+            g_free(__sg_str);                                  \
+        }                                                      \
+        GST_ERROR(fmt, ##args);                                \
+    } while(0)
+#define SG_ERR_OBJ(obj, fmt, args...)                          \
+    do {                                                       \
+        gchar* __sg_str = gst_info_strdup_printf(fmt, ##args); \
+        if (__sg_str) {                                        \
+            syslog(LOG_ERR, SLOG_TIP "E: %s", __sg_str);       \
+            g_free(__sg_str);                                  \
+        }                                                      \
+        GST_ERROR_OBJECT(obj, fmt, ##args);                    \
+    } while(0)
+#endif
 
 #define UNUSED(x) (void)(x)
+
+namespace QTI {
 
 typedef std::unique_ptr<C2Param> (*configFunction)(gpointer data);
 typedef std::unique_ptr<C2Param> (*configFunctionForVendorParams)(gpointer data, void* const comp_intf);

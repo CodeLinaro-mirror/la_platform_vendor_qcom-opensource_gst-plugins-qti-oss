@@ -104,6 +104,7 @@ struct _GstQvidcVenc
   gboolean input_setup;
   gboolean output_setup;
   gboolean eos_reached;
+  gboolean error_detected;
 
   gint width;
   gint height;

@@ -80,7 +80,7 @@ C2ComponentInterfaceAdapter::C2ComponentInterfaceAdapter(std::shared_ptr<C2Compo
 
 C2ComponentInterfaceAdapter::~C2ComponentInterfaceAdapter()
 {
-    LOG_MESSAGE("delete C2 Component Interface Adapter");
+    GST_LOG("delete C2 Component Interface Adapter");
     mCompIntf = nullptr;
 }
 
@@ -99,7 +99,7 @@ c2_node_id_t C2ComponentInterfaceAdapter::getId() const
 c2_status_t C2ComponentInterfaceAdapter::initReflectedParamUpdater(std::shared_ptr<C2ParamReflector>& reflector)
 {
 
-    LOG_MESSAGE("Init ReflectedParamUpdater");
+    GST_LOG("Init ReflectedParamUpdater");
 
     c2_status_t result = C2_NO_INIT;
 
@@ -113,7 +113,7 @@ c2_status_t C2ComponentInterfaceAdapter::initReflectedParamUpdater(std::shared_p
         mParamUpdater->clear();
         mParamUpdater->addParamDesc(reflector, supportedParams);
     } else {
-        LOG_ERROR("Failed(%d) to query supported params", result);
+        SG_ERR("Failed(%d) to query supported params", result);
     }
 
     return result;
@@ -130,14 +130,14 @@ std::unique_ptr<C2Param> C2ComponentInterfaceAdapter::updateParamFromConfig(
     mParamUpdater->getParamIndicesFromMessage(kvpairs, &paramIndices);
 
     for (const auto& index : paramIndices) {
-        LOG_MESSAGE("update param index name = %s", mParamUpdater->getParamName(index).c_str());
+        GST_LOG("update param index name = %s", mParamUpdater->getParamName(index).c_str());
     }
 
     std::vector<std::unique_ptr<C2Param> > updateParams;
 
     if (mCompIntf->query_vb({}, paramIndices, C2_MAY_BLOCK, &updateParams) == C2_OK) {
         mParamUpdater->updateParamsFromMessage(kvpairs, &updateParams);
-        LOG_MESSAGE("update param vector size = %zu", updateParams.size());
+        GST_LOG("update param vector size = %zu", updateParams.size());
 
         if (updateParams.size() > 0) {
 
@@ -161,14 +161,14 @@ android::ReflectedParamUpdater::Dict C2ComponentInterfaceAdapter::getParams(
 c2_status_t C2ComponentInterfaceAdapter::config(const std::vector<C2Param*>& stackParams, c2_blocking_t mayBlock)
 {
 
-    LOG_MESSAGE("Component interface (%p) configured", this);
+    GST_LOG("Component interface (%p) configured", this);
 
     c2_status_t result = C2_NO_INIT;
     std::vector<std::unique_ptr<C2SettingResult> > failures;
 
     result = mCompIntf->config_vb(stackParams, mayBlock, &failures);
     if ((C2_OK != result) || (failures.size() != 0)) {
-        LOG_WARNING("Configuration failed(%d)", static_cast<int32_t>(result));
+        GST_WARNING("Configuration failed(%d)", static_cast<int32_t>(result));
     }
 
     return result;

@@ -478,21 +478,27 @@ gst_qvidc_vdec_create_component (GstVideoDecoder * decoder)
   GST_DEBUG_OBJECT (dec, "create component");
 
   if (dec->comp_store) {
-    ret =
-        vidcStore_createComponent (dec->comp_store, dec->comp_name,
-        &dec->comp, &dec->cb);
-    if (ret == TRUE) {
-      GST_DEBUG_OBJECT (dec, "set listerner to %s component", dec->comp_name);
+    if (!dec->comp) {
       ret =
-          vidc_setListener (dec->comp, decoder, handle_video_event,
-          BLOCK_MODE_MAY_BLOCK);
+          vidcStore_createComponent (dec->comp_store, dec->comp_name,
+          &dec->comp, &dec->cb);
+
       if (ret == TRUE) {
-        GST_ERROR_OBJECT (dec, "set listerner done");
+        GST_DEBUG_OBJECT (dec, "set listerner to %s component", dec->comp_name);
+        ret =
+            vidc_setListener (dec->comp, decoder, handle_video_event,
+            BLOCK_MODE_MAY_BLOCK);
+        if (ret == TRUE) {
+          GST_DEBUG_OBJECT (dec, "set listerner done");
+        } else {
+          GST_ERROR_OBJECT (dec, "Failed to set listerner");
+        }
       } else {
-        GST_ERROR_OBJECT (dec, "Failed to set listerner");
+        GST_ERROR_OBJECT (dec, "Failed to create component");
       }
     } else {
-      GST_ERROR_OBJECT (dec, "Failed to create component");
+      GST_WARNING_OBJECT (dec, "already created %s component", dec->comp_name);
+      return TRUE;
     }
   } else {
     GST_ERROR_OBJECT (dec, "Component store is Null");
@@ -566,6 +572,14 @@ gst_qvidc_vdec_config_pool (GstVideoDecoder * decoder, GstQuery * query,
   }
 
   memset (&param, 0, sizeof (GstBufferPoolInitParam));
+
+  /* round up input buffer size with 1M alignment to get nearly optimal
+   * balance of dec input buffer size.
+   */
+  if (port == BUFFER_PORT_INPUT) {
+    GST_DEBUG_OBJECT (dec, "original %d, resize input with 1M alignment", size);
+    size = GST_ROUND_UP_N (size, 1024 * 1024);
+  }
 
   if (query) {
     GST_DEBUG_OBJECT (dec, "allocation params: %" GST_PTR_FORMAT, query);
@@ -1024,8 +1038,6 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
   if (!gst_qvidc_vdec_create_component (decoder)) {
     goto error_set_format;
-  } else {
-    dec->comp_started = TRUE;
   }
 
   if (dec_class->set_format) {
@@ -1091,6 +1103,7 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
 done:
   GST_DEBUG_OBJECT (dec, "done");
+  dec->comp_started = TRUE;
   return TRUE;
 
   /* Errors */
@@ -1120,6 +1133,7 @@ gst_qvidc_vdec_open (GstVideoDecoder * decoder)
   dec->comp_started = FALSE;
   dec->output_setup = FALSE;
   dec->eos_reached = FALSE;
+  dec->error_detected = FALSE;
   dec->frame_index = 0;
   dec->num_output_done = 0;
   dec->downstream_supports_dma = FALSE;
@@ -1617,6 +1631,10 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     }
 
     case EVENT_ERROR:{
+      g_mutex_lock (&dec->pending_lock);
+      dec->error_detected = TRUE;
+      g_mutex_unlock (&dec->pending_lock);
+
       GST_ERROR_OBJECT (dec, "Something un-expected happened(%d)",
           *(gint32 *) data);
       GST_ELEMENT_ERROR (dec, STREAM, DECODE, ("Decoder posts an error"),
@@ -1779,6 +1797,7 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   gboolean status = FALSE;
   gboolean mem_mapped = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
+  guint try_cnt = 0;
 
   GST_DEBUG_OBJECT (dec, "decode");
 
@@ -1809,6 +1828,16 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   GST_DEBUG_OBJECT (dec, "acquire_inter_buffer");
 
   do {
+    g_mutex_lock (&dec->pending_lock);
+    if (try_cnt > MAX_TRY_CNT || dec->error_detected) {
+      GST_ERROR_OBJECT (dec, "reach max try %u or error detected %u",
+          try_cnt, (guint) dec->error_detected);
+      g_mutex_unlock (&dec->pending_lock);
+      ret = GST_FLOW_ERROR;
+      break;
+    }
+    g_mutex_unlock (&dec->pending_lock);
+
     GstBufferPoolAcquireParamsExt params_ext;
     memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
     params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
@@ -1826,6 +1855,7 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
       GST_ERROR_OBJECT (dec, "Timed out on wait");
     }
     g_mutex_unlock (&dec->pending_lock);
+    try_cnt++;
   } while (dec->comp_started);
 
   if (ret != GST_FLOW_OK || inter_buf == NULL) {
@@ -1865,7 +1895,18 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
           info.size, info.maxsize);
       //TODO: zero-copy for dmabuf
       if (inBuf.data) {
-        memcpy (info.data, inBuf.data, inBuf.size);
+        /* FIXME: WA to fix coredump if input frame size bigger than buffer's
+         * This will lead to potential frame drop.
+         */
+        if (inBuf.size > info.maxsize) {
+          GST_ERROR_OBJECT (dec, "ignore: input size %u exceeds buffer size %u",
+              inBuf.size, info.maxsize);
+          gst_memory_unmap (inter_mem, &info);
+          gst_buffer_pool_release_buffer (dec->in_port_pool, inter_buf);
+          goto out;
+        } else {
+          memcpy (info.data, inBuf.data, inBuf.size);
+        }
       }
       vidcbuf.data = info.data;
       vidcbuf.capacity = info.size;

@@ -15,14 +15,10 @@
 #include <map>
 #include <c2d2.h>
 
-#ifndef _ENABLE_UMD_
-#include <linux/msm_kgsl.h> //just to include KGSL_USER_MEM_TYPE_ION
-#else
 #ifdef KGSL_USER_MEM_TYPE_ION
 #undef KGSL_USER_MEM_TYPE_ION
 #endif
 #define KGSL_USER_MEM_TYPE_ION 0x3
-#endif
 
 #ifndef MM_C2D_UNIT_TEST
 #include <gst/gstinfo.h>

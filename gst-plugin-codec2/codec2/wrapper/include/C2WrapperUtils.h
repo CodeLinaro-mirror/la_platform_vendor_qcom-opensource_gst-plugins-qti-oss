@@ -46,7 +46,7 @@
     int r = close(fd);                                                   \
     if (r != 0) {                                                        \
       int e = errno;                                                     \
-      GST_ERROR("close(fd %d), ret %d, error: %s", fd, r, strerror(e));  \
+      SG_ERR("close(fd %d), ret %d, error: %s", fd, r, strerror(e));  \
     }                                                                    \
   }                                                                      \
 } while (0)
