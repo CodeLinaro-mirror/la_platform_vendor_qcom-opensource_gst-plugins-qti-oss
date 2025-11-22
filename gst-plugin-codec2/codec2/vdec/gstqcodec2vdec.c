@@ -998,6 +998,9 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
 
   SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u), out-data(%u/%u), dec(%p) f-idx %lu",
       dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+  //In dec + enc pipeline, if ctrl+c halfway, there is still enc output after stop. Then, reset those 1 cycle idx here again.
+  dec->in_data_idx_1cycle = 0;
+  dec->out_data_idx_1cycle = 0;
 
   if (!dec->delay_start) {
     ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
