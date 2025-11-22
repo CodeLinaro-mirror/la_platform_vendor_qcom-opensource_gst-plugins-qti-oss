@@ -1771,6 +1771,9 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   SG_INFO_OBJ (enc, "set_format: handled in-data(%u/%u), out-data(%u/%u), enc(%p) f-idx %lu",
       enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  //In dec + enc pipeline, if ctrl+c halfway, there is still enc output after stop. Then, reset those 1 cycle idx here again.
+  enc->in_data_idx_1cycle = 0;
+  enc->out_data_idx_1cycle = 0;
 
   if (!c2component_start (enc->comp)) {
     GST_DEBUG_OBJECT (enc, "Failed to start component");
