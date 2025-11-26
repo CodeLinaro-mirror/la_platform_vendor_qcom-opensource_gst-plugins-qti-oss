@@ -73,6 +73,8 @@ G_BEGIN_DECLS
  */
 #define GST_MEMORY_BUFFER_POOL_TYPE_SECURE "GstBufferPoolTypeSecureMemory"
 
+#define GST_MEMORY_BUFFER_POOL_TYPE_SECURE_BITSTREAM "GstBufferPoolTypeSecureBitStreamMemory"
+
 typedef struct _GstMemBufferPool GstMemBufferPool;
 typedef struct _GstMemBufferPoolClass GstMemBufferPoolClass;
 typedef struct _GstMemBufferPoolPrivate GstMemBufferPoolPrivate;

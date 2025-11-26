@@ -54,8 +54,14 @@ GST_DEBUG_CATEGORY_STATIC (gst_mem_pool_debug);
     (type == g_quark_from_static_string (GST_MEMORY_BUFFER_POOL_TYPE_SYSTEM))
 #define GST_IS_DMA_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_MEMORY_BUFFER_POOL_TYPE_DMA))
-#define GST_IS_SECURE_MEMORY_TYPE(type) \
+#define GST_IS_SECURE_DEFAULT_MEMORY_TYPE(type) \
     (type == g_quark_from_static_string (GST_MEMORY_BUFFER_POOL_TYPE_SECURE))
+#define GST_IS_SECURE_BITSTREAM_MEMORY_TYPE(type) \
+    (type == g_quark_from_static_string (GST_MEMORY_BUFFER_POOL_TYPE_SECURE_BITSTREAM))
+
+#define GST_IS_SECURE_MEMORY_TYPE(type) \
+    (GST_IS_SECURE_DEFAULT_MEMORY_TYPE(type) || \
+     GST_IS_SECURE_BITSTREAM_MEMORY_TYPE(type))
 
 #define DEFAULT_PAGE_ALIGNMENT 4096
 
@@ -86,8 +92,13 @@ open_dma_device (GstMemBufferPool * mempool, gboolean secure)
   GstMemBufferPoolPrivate *priv = mempool->priv;
 
   if (secure) {
-    GST_INFO_OBJECT (mempool, "Open /dev/dma_heap/system-secure");
-    priv->devfd = open ("/dev/dma_heap/system-secure", O_RDONLY | O_CLOEXEC);
+    if (GST_IS_SECURE_BITSTREAM_MEMORY_TYPE(priv->memtype)) {
+      GST_INFO_OBJECT (mempool, "Open /dev/dma_heap/qcom,secure-bitstream");
+      priv->devfd = open ("/dev/dma_heap/qcom,secure-bitstream", O_RDONLY | O_CLOEXEC);
+    } else {
+      GST_INFO_OBJECT (mempool, "Open /dev/dma_heap/system-secure");
+      priv->devfd = open ("/dev/dma_heap/system-secure", O_RDONLY | O_CLOEXEC);
+    }
   } else {
     GST_INFO_OBJECT (mempool, "Open /dev/dma_heap/qcom,system");
     priv->devfd = open ("/dev/dma_heap/qcom,system", O_RDONLY | O_CLOEXEC);
