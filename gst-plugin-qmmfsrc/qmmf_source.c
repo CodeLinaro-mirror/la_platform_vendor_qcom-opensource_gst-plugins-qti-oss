@@ -780,9 +780,9 @@ static GstStaticCaps gst_qmmfsrc_image_static_src_caps =
         QMMFSRC_IMAGE_RAW_CAPS (
                 "{ NV21"
 #ifdef GST_IMAGE_NV12_FORMAT_ENABLE
-                ", NV12"
+                ", NV12, NV12_Q08C"
 #endif // GST_IMAGE_NV12_FORMAT_ENABLE
-                " }") "; "
+                ", P010_10LE, NV12_Q10LE32C }") "; "
             QMMFSRC_IMAGE_BAYER_CAPS (
                 "{ bggr, rggb, gbrg, grbg, mono }",
                 "{ 8, 10, 12, 16 }"));
@@ -837,9 +837,9 @@ gst_qmmfsrc_image_src_caps (void)
           QMMFSRC_IMAGE_RAW_CAPS_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_GBM,
                 "{ NV21"
 #ifdef GST_IMAGE_NV12_FORMAT_ENABLE
-                ", NV12"
+                ", NV12, NV12_Q08C"
 #endif // GST_IMAGE_NV12_FORMAT_ENABLE
-                " }"));
+                ", P010_10LE, NV12_Q10LE32C }"));
 
       caps = gst_caps_make_writable (caps);
       gst_caps_append (caps, tmplcaps);
@@ -868,6 +868,8 @@ static void
 qmmfsrc_event_callback (guint event, gpointer userdata)
 {
   GstQmmfSrc *qmmfsrc = GST_QMMFSRC (userdata);
+  GstStructure *event_msg = NULL;
+  GstMessage *message = NULL;
 
   switch (event) {
     case EVENT_SERVICE_DIED:
@@ -905,9 +907,45 @@ qmmfsrc_event_callback (guint event, gpointer userdata)
       GST_WARNING_OBJECT (qmmfsrc, "Camera device has encountered non-fatal "
           "metadata drop error !");
       break;
+    case EVENT_SOF_FREEZE:
+      GST_LOG_OBJECT (qmmfsrc, "SOF Freeze occured");
+      break;
+    case EVENT_RECOVERYFAILURE:
+      GST_LOG_OBJECT (qmmfsrc, "Recovery Failure occured");
+      break;
+    case EVENT_FATAL:
+      GST_LOG_OBJECT (qmmfsrc, "Fatal Error occured");
+      break;
+    case EVENT_RECOVERYSUCCESS:
+      GST_LOG_OBJECT (qmmfsrc, "Recovery success occured");
+      break;
+    case EVENT_INTERNAL_RECOVERY:
+      GST_LOG_OBJECT (qmmfsrc, "Internal Recovery occured");
+      break;
     default:
       GST_WARNING_OBJECT (qmmfsrc, "Unknown camera device event");
       break;
+  }
+
+  event_msg = gst_structure_new ("qmmfsrc-event",
+      "event-type", G_TYPE_UINT, event,
+      NULL);
+
+  if (!event_msg) {
+    GST_WARNING_OBJECT (qmmfsrc, "Failed to create structure for event %d", event);
+    return;
+  }
+
+  message = gst_message_new_element (GST_OBJECT (qmmfsrc), event_msg);
+  if (!message) {
+    gst_structure_free (event_msg);
+    GST_WARNING_OBJECT (qmmfsrc, "Failed to create message for event %d", event);
+    return;
+  }
+
+  if (!gst_element_post_message (GST_ELEMENT (qmmfsrc), message)) {
+    gst_message_unref(message);
+    GST_WARNING_OBJECT (qmmfsrc, "Failed to post message for event %d", event);
   }
 }
 
@@ -930,10 +968,6 @@ qmmfsrc_create_stream (GstQmmfSrc * qmmfsrc)
   gpointer key = NULL;
   GstPad *pad = NULL;
   GList *list = NULL;
-  GValue isslave = G_VALUE_INIT, sframerate = G_VALUE_INIT;
-
-  g_value_init (&isslave, G_TYPE_BOOLEAN);
-  g_value_init (&sframerate, G_TYPE_INT);
 
   GST_TRACE_OBJECT (qmmfsrc, "Create stream");
 
@@ -941,17 +975,6 @@ qmmfsrc_create_stream (GstQmmfSrc * qmmfsrc)
   for (list = qmmfsrc->vidindexes; list != NULL; list = list->next) {
     key = list->data;
     pad = GST_PAD (g_hash_table_lookup (qmmfsrc->srcpads, key));
-
-    gst_qmmf_context_get_camera_param (qmmfsrc->context,
-        PARAM_CAMERA_SLAVE, &isslave);
-
-    if (!g_value_get_boolean (&isslave)) {
-      GstQmmfSrcVideoPad *vpad = GST_QMMFSRC_VIDEO_PAD (pad);
-
-      gst_qmmf_context_get_camera_param (qmmfsrc->context,
-          PARAM_CAMERA_SUPER_FRAMERATE, &sframerate);
-      vpad->superframerate = g_value_get_int (&sframerate);
-    }
 
     success = qmmfsrc_video_pad_fixate_caps (pad);
     QMMFSRC_RETURN_VAL_IF_FAIL (qmmfsrc, success, FALSE,
@@ -961,9 +984,6 @@ qmmfsrc_create_stream (GstQmmfSrc * qmmfsrc)
     QMMFSRC_RETURN_VAL_IF_FAIL (qmmfsrc, success, FALSE,
         "Video stream creation failed!");
   }
-
-  g_value_unset (&isslave);
-  g_value_unset (&sframerate);
 
   // Iterate over the image pads, fixate caps and create streams.
   for (list = qmmfsrc->imgindexes; list != NULL; list = list->next) {
