@@ -520,6 +520,9 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   int buf_fd = -1;
 
   if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
+    GST_LOG_OBJECT (vesdeliver, "Input buf %p with sz %" G_GSIZE_FORMAT ", pts %"
+        GST_TIME_FORMAT ", only caps change", inbuf, gst_buffer_get_size(inbuf),
+        GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)));
     return GST_FLOW_OK;
   }
 
@@ -529,8 +532,8 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   gst_buffer_map (inbuf, &input_map, GST_MAP_READ);
   GST_DEBUG_OBJECT (vesdeliver,
       "Input buffer %p with size: %" G_GSIZE_FORMAT ", timestamp: %"
-      G_GUINT64_FORMAT ", offset: %" G_GUINT64_FORMAT, inbuf, input_map.size,
-      GST_BUFFER_TIMESTAMP (inbuf), GST_BUFFER_OFFSET (inbuf));
+      GST_TIME_FORMAT ", offset: %" G_GUINT64_FORMAT, inbuf, input_map.size,
+      GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)), GST_BUFFER_OFFSET (inbuf));
 
   out_mem = gst_buffer_peek_memory (outbuf, 0);
   if (gst_is_dmabuf_memory (out_mem)) {
