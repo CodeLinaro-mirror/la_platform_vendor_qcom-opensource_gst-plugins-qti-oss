@@ -1635,6 +1635,8 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       dec->error_detected = TRUE;
       g_mutex_unlock (&dec->pending_lock);
 
+      gst_buffer_pool_set_flushing (dec->in_port_pool, TRUE);
+
       GST_ERROR_OBJECT (dec, "Something un-expected happened(%d)",
           *(gint32 *) data);
       GST_ELEMENT_ERROR (dec, STREAM, DECODE, ("Decoder posts an error"),

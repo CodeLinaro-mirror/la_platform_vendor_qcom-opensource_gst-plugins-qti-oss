@@ -1015,7 +1015,7 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
         paramVal = paramsMap["vendor.qti-ext-dec-info-interlace.format"];
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&interlace)) {
-                GST_DEBUG("interlace type:%u", interlace);
+                GST_LOG("interlace type:%u", interlace);
             }
         }
     }
@@ -1024,7 +1024,7 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&is_deinterlaced)) {
                 deinterlaced = (is_deinterlaced != 0);
-                GST_DEBUG("deinterlace is %s", deinterlaced ? "enabled" : "disabled");
+                GST_LOG("deinterlace is %s", deinterlaced ? "enabled" : "disabled");
             }
         }
     }
@@ -1046,7 +1046,7 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
         paramVal = paramsMap["vendor.qti-ext-enc-info-coded_avgqp.frameQP"];
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&frameQP)) {
-                GST_DEBUG("get average frame QP: %u", frameQP);
+                GST_LOG("get average frame QP: %u", frameQP);
             }
         }
     }
@@ -1054,7 +1054,7 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
     for (auto& param : configUpdate) {
         if (param->coreIndex().typeIndex() == kParamIndexAverageBlockQuantization) {
             frameQP = ((C2AndroidStreamAverageBlockQuantizationInfo::output*)param.get())->value;
-            GST_DEBUG("get average frame QP: %u", frameQP);
+            GST_LOG("get average frame QP: %u", frameQP);
         }
     }
 #endif

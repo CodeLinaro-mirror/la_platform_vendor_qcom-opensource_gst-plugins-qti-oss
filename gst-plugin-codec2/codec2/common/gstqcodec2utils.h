@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifndef __GST_QCODEC2_UTILS_H__
@@ -6,48 +6,7 @@
 
 #include <gst/gst.h>
 #include <codec2wrapper.h>
-
-
-#ifdef SLOG_TIP
-#undef SLOG_TIP
-#endif
-#ifdef SG_ERR
-#undef SG_ERR
-#endif
-#ifdef SG_ERR_OBJ
-#undef SG_ERR_OBJ
-#endif
-#ifdef ENABLE_GSTC2_DEFAULT_SYSLOG
-#undef ENABLE_GSTC2_DEFAULT_SYSLOG
-#endif
-
-#define ENABLE_GSTC2_DEFAULT_SYSLOG
-#ifndef ENABLE_GSTC2_DEFAULT_SYSLOG
-#define SG_ERR        GST_ERROR
-#define SG_ERR_OBJ    GST_ERROR_OBJECT
-#else
-#include <syslog.h>
-#define SLOG_TIP "gst-c2:"
-//if fmt contain GST specific format like GST_PTR_FORMAT/GST_SEGMENT_FORMAT or fmt is var, must use gst_info_strdup_printf() to explain those GST specific format and var
-#define SG_ERR(fmt, args...)                                   \
-    do {                                                       \
-        gchar* __sg_str = gst_info_strdup_printf(fmt, ##args); \
-        if (__sg_str) {                                        \
-            syslog(LOG_ERR, SLOG_TIP "E: %s", __sg_str);       \
-            g_free(__sg_str);                                  \
-        }                                                      \
-        GST_ERROR(fmt, ##args);                                \
-    } while(0)
-#define SG_ERR_OBJ(obj, fmt, args...)                          \
-    do {                                                       \
-        gchar* __sg_str = gst_info_strdup_printf(fmt, ##args); \
-        if (__sg_str) {                                        \
-            syslog(LOG_ERR, SLOG_TIP "E: %s", __sg_str);       \
-            g_free(__sg_str);                                  \
-        }                                                      \
-        GST_ERROR_OBJECT(obj, fmt, ##args);                    \
-    } while(0)
-#endif
+#include <gstc2misc.h>
 
 #define QCODEC2_MIN_OUTBUFFERS 6
 #define QCODEC2_MAX_OUTBUFFERS 32
