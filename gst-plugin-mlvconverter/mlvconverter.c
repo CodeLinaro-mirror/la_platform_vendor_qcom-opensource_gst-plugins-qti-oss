@@ -26,39 +26,10 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * Changes from Qualcomm Innovation Center are provided under the following license:
+ * Changes from Qualcomm Technologies, Inc. are provided under the following license:
  *
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted (subject to the limitations in the
- * disclaimer below) provided that the following conditions are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *
- *     * Neither the name of Qualcomm Innovation Center, Inc. nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE
- * GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT
- * HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
- * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
- * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
 #ifdef HAVE_CONFIG_H
@@ -81,6 +52,7 @@
 #include <gst/ml/ml-module-utils.h>
 #include <gst/utils/common-utils.h>
 #include <gst/utils/batch-utils.h>
+#include <gst/gfx/gfx-utils.h>
 
 #ifdef HAVE_LINUX_DMA_BUF_H
 #include <sys/ioctl.h>
@@ -1577,6 +1549,7 @@ gst_ml_video_converter_create_pool (GstMLVideoConverter * mlconverter,
   GstStructure *config = NULL;
   GstAllocator *allocator = NULL;
   GstMLInfo info;
+  guint size = 1, stride = 0, alignment = 0;
 
   if (!gst_ml_info_from_caps (&info, caps)) {
     GST_ERROR_OBJECT (mlconverter, "Invalid caps %" GST_PTR_FORMAT, caps);
@@ -1587,7 +1560,19 @@ gst_ml_video_converter_create_pool (GstMLVideoConverter * mlconverter,
   pool = gst_ml_buffer_pool_new (GST_ML_BUFFER_POOL_TYPE_DMA);
 
   config = gst_buffer_pool_get_config (pool);
-  gst_buffer_pool_config_set_params (config, caps, gst_ml_info_size (&info),
+
+  alignment = gst_gfx_adreno_get_alignment ();
+  stride = GST_ML_INFO_TENSOR_DIM_W (mlconverter->tensorlayout, &info) *
+      GST_ML_INFO_TENSOR_DIM_C (mlconverter->tensorlayout, &info);
+
+  size *= GST_ML_INFO_TENSOR_DIM_N (mlconverter->tensorlayout, &info);
+  size *= GST_ROUND_UP_N (stride, alignment);
+  size *= GST_ROUND_UP_4 (
+      GST_ML_INFO_TENSOR_DIM_H (mlconverter->tensorlayout, &info));
+  size *= GST_ML_INFO_TENSOR_DIM_D (mlconverter->tensorlayout, &info);
+  size *= gst_ml_type_get_size (info.type);
+
+  gst_buffer_pool_config_set_params (config, caps, size,
       DEFAULT_PROP_MIN_BUFFERS, DEFAULT_PROP_MAX_BUFFERS);
 
   allocator = gst_fd_allocator_new ();
@@ -1597,6 +1582,8 @@ gst_ml_video_converter_create_pool (GstMLVideoConverter * mlconverter,
       config, GST_ML_BUFFER_POOL_OPTION_TENSOR_META);
   gst_buffer_pool_config_add_option (
       config, GST_ML_BUFFER_POOL_OPTION_KEEP_MAPPED);
+  gst_buffer_pool_config_add_option (
+      config, GST_ML_BUFFER_POOL_OPTION_CONTINUOUS);
 
   if (!gst_buffer_pool_set_config (pool, config)) {
     GST_WARNING_OBJECT (mlconverter, "Failed to set pool configuration!");
@@ -1610,25 +1597,25 @@ gst_ml_video_converter_create_pool (GstMLVideoConverter * mlconverter,
 
 static gboolean
 gst_ml_video_converter_propose_allocation (GstBaseTransform * base,
-    GstQuery * inquery, GstQuery * outquery)
+    GstQuery * decide_query, GstQuery * query)
 {
   GstMLVideoConverter *mlconverter = GST_ML_VIDEO_CONVERTER (base);
   GstCaps *caps = NULL;
   GstBufferPool *pool = NULL;
+  GstStructure *config = NULL;
   GstVideoInfo info = {0,};
+  GstVideoAlignment align = {0,};
   guint size = 0, minbuffers = 0;
-  gboolean needpool = FALSE;
+  gboolean needpool = FALSE, success = FALSE;
 
-  if (!GST_BASE_TRANSFORM_CLASS (parent_class)->propose_allocation (
-        base, inquery, outquery))
+  success = GST_BASE_TRANSFORM_CLASS (parent_class)->propose_allocation (
+      base, decide_query, query);
+
+  if (!success)
     return FALSE;
 
-  // No input query, nothing to do.
-  if (NULL == inquery)
-    return TRUE;
-
-  // // Extract caps from the query.
-  gst_query_parse_allocation (outquery, &caps, &needpool);
+  // Extract caps from the query.
+  gst_query_parse_allocation (query, &caps, &needpool);
 
   if (NULL == caps) {
     GST_ERROR_OBJECT (mlconverter, "Failed to extract caps from query!");
@@ -1640,10 +1627,13 @@ gst_ml_video_converter_propose_allocation (GstBaseTransform * base,
     return FALSE;
   }
 
+  if (!gst_video_retrieve_gpu_alignment (&info, &align)) {
+    GST_ERROR_OBJECT (mlconverter, "Failed to get alignment!");
+    return FALSE;
+  }
+
   if (needpool) {
-    GstStructure *config = NULL;
     GstAllocator *allocator = NULL;
-    GstVideoAlignment align = {0,};
 
     if ((pool = gst_image_buffer_pool_new ()) == NULL) {
       GST_ERROR_OBJECT (mlconverter, "Failed to create image pool!");
@@ -1673,12 +1663,6 @@ gst_ml_video_converter_propose_allocation (GstBaseTransform * base,
     gst_buffer_pool_config_add_option (config,
         GST_IMAGE_BUFFER_POOL_OPTION_KEEP_MAPPED);
 
-    if (!gst_video_retrieve_gpu_alignment (&info, &align)) {
-      GST_ERROR_OBJECT (mlconverter, "Failed to get alignment!");
-      gst_clear_object (&pool);
-      return FALSE;
-    }
-
     gst_buffer_pool_config_set_params (config, caps, info.size,
         DEFAULT_PROP_MIN_BUFFERS, DEFAULT_PROP_MAX_BUFFERS);
 
@@ -1699,14 +1683,19 @@ gst_ml_video_converter_propose_allocation (GstBaseTransform * base,
   minbuffers = GST_ML_INFO_TENSOR_DIM_D (mlconverter->tensorlayout,
       mlconverter->mlinfo);
 
-  // If upstream does't have a pool requirement, set only size in query.
-  gst_query_add_allocation_pool (outquery, needpool ? pool : NULL, size,
+  // If upstream doesn't have a pool requirement, set only size in query.
+  gst_query_add_allocation_pool (query, needpool ? pool : NULL, size,
         minbuffers, 0);
 
   if (pool != NULL)
     gst_object_unref (pool);
 
-  gst_query_add_allocation_meta (outquery, GST_VIDEO_META_API_TYPE, NULL);
+  config = gst_structure_new_empty ("video-meta");
+  gst_buffer_pool_config_set_video_alignment (config, &align);
+
+  // Add video meta with alignment information for upstream.
+  gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, config);
+
   return TRUE;
 }
 
@@ -1729,15 +1718,12 @@ gst_ml_video_converter_decide_allocation (GstBaseTransform * base,
     return FALSE;
   }
 
-  if (gst_query_get_n_allocation_pools (query) > 0)
-    gst_query_parse_nth_allocation_pool (query, 0, &pool, NULL, NULL, NULL);
-
   // Invalidate the cached pool if there is an allocation_query.
   if (mlconverter->outpool)
     gst_object_unref (mlconverter->outpool);
 
   // Create a new pool in case none was proposed in the query.
-  if (!pool && !(pool = gst_ml_video_converter_create_pool (mlconverter, caps))) {
+  if (!(pool = gst_ml_video_converter_create_pool (mlconverter, caps))) {
     GST_ERROR_OBJECT (mlconverter, "Failed to create buffer pool!");
     return FALSE;
   }
@@ -1760,8 +1746,6 @@ gst_ml_video_converter_decide_allocation (GstBaseTransform * base,
         maxbuffers);
   else
     gst_query_add_allocation_pool (query, pool, size, minbuffers, maxbuffers);
-
-  gst_query_add_allocation_meta (query, GST_ML_TENSOR_META_API_TYPE, NULL);
 
   return TRUE;
 }
@@ -1837,6 +1821,7 @@ gst_ml_video_converter_transform_caps (GstBaseTransform * base,
   GstPad *pad = NULL;
   const GValue *rate = NULL, *dims = NULL, *depth = NULL;
   gint idx = 0, length = 0;
+  GstStructure *structure = NULL;
 
   GST_DEBUG_OBJECT (mlconverter, "Transforming caps: %" GST_PTR_FORMAT
       " in direction %s", caps, (direction == GST_PAD_SINK) ? "sink" : "src");
@@ -1854,12 +1839,20 @@ gst_ml_video_converter_transform_caps (GstBaseTransform * base,
     if (mlconverter->backend == GST_VCE_BACKEND_NONE) {
       GstCaps *videocaps = NULL;
       gint idx = 0, length = 0, maxwidth = 0, maxheight = 0;
+      GstCaps *localcaps = gst_caps_copy (caps);
 
-      videocaps = gst_ml_video_converter_translate_ml_caps (mlconverter, caps);
+      // Removing non-fixated framerate field for caps translation
+      if (!gst_caps_is_empty (localcaps)) {
+        structure = gst_caps_get_structure (localcaps, 0);
+        gst_structure_remove_field (structure, "rate");
+      }
+
+      videocaps = gst_ml_video_converter_translate_ml_caps (mlconverter, localcaps);
       length = gst_caps_get_size (videocaps);
+      gst_caps_unref (localcaps);
 
       for (idx = 0; idx < length; idx++) {
-        GstStructure *structure = gst_caps_get_structure (videocaps, idx);
+        structure = gst_caps_get_structure (videocaps, idx);
 
         if (!gst_structure_has_field (structure, "width") &&
             !gst_structure_has_field (structure, "height"))
@@ -1889,7 +1882,7 @@ gst_ml_video_converter_transform_caps (GstBaseTransform * base,
 
   // Extract the framerate and propagate it to result caps.
   if (!gst_caps_is_empty (caps)) {
-    GstStructure *structure = gst_caps_get_structure (caps, 0);
+    structure = gst_caps_get_structure (caps, 0);
 
     rate = gst_structure_get_value (structure,
         (direction == GST_PAD_SRC) ? "rate" : "framerate");
@@ -1911,7 +1904,7 @@ gst_ml_video_converter_transform_caps (GstBaseTransform * base,
   length = gst_caps_get_size (result);
 
   for (idx = 0; idx < length; idx++) {
-    GstStructure *structure = gst_caps_get_structure (result, idx);
+    structure = gst_caps_get_structure (result, idx);
 
     if (rate != NULL) {
       gst_structure_set_value (structure,
