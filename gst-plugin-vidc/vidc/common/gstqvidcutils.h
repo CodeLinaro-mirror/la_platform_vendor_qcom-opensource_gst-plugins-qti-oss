@@ -10,6 +10,7 @@
 #define QVIDC_MIN_OUTBUFFERS 6
 #define QVIDC_MAX_OUTBUFFERS 32
 #define COMMON_FRAMERATE 30
+#define MAX_TRY_CNT 20
 
 typedef struct _GstVIDCComp GstVIDCComp;
 

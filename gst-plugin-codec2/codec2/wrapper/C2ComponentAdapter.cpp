@@ -82,7 +82,7 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp) :
     mStore(), mCallbackLock(), mInPendingBuffer(), mOutPendingBuffer(),
     mTrackBuffers(), mLock(), mLockOut(), mPendingWorkCond()
 {
-    LOG_MESSAGE("Component(%p) created", this);
+    GST_LOG("Component(%p) created", this);
 
     mComp = std::move(comp);
     mIntf = nullptr;
@@ -105,7 +105,7 @@ C2ComponentAdapter::C2ComponentAdapter(std::shared_ptr<C2Component> comp) :
 
 C2ComponentAdapter::~C2ComponentAdapter()
 {
-    LOG_MESSAGE("Component(%p) destroyed", this);
+    GST_LOG("Component(%p) destroyed", this);
 
     mInPendingBuffer.clear();
     mOutPendingBuffer.clear();
@@ -129,7 +129,7 @@ c2_status_t C2ComponentAdapter::setListenercallback(std::shared_ptr<EventCallbac
     c2_blocking_t mayBlock)
 {
 
-    LOG_MESSAGE("Component(%p) listener set", this);
+    GST_LOG("Component(%p) listener set", this);
 
     c2_status_t result = C2_NO_INIT;
 
@@ -161,7 +161,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
     uint8_t* src = buffer_info->data;
 
     if (!dst || !src) {
-        LOG_ERROR("Inavlid buffer in writePlane(%p)", this);
+        SG_ERR("Inavlid buffer in writePlane(%p)", this);
         return C2_BAD_VALUE;
     }
 
@@ -169,7 +169,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
     uint32_t height = buffer_info->height;
     uint32_t stride = buffer_info->stride[0];
 
-    LOG_MESSAGE("format %d, %ux%u, stride %u, "
+    GST_LOG("format %d, %ux%u, stride %u, "
                 "offset %" G_GSIZE_FORMAT "-%" G_GSIZE_FORMAT ".",
         buffer_info->format, width, height, stride,
         buffer_info->offset[0], buffer_info->offset[1]);
@@ -265,7 +265,7 @@ c2_status_t C2ComponentAdapter::writePlane(uint8_t* dest, BufferDescriptor* buff
         if (buffer_info->ubwc_flag) {
             memcpy(dst, src, buffer_info->size);
         } else {
-            LOG_ERROR("Non UBWC NV12_10LE32 not supported yet");
+            SG_ERR("Non UBWC NV12_10LE32 not supported yet");
             result = C2_BAD_VALUE;
         }
     } else {
@@ -286,7 +286,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
     uint32_t dim_y = buffer->height;
 
     if (!rawBuffer) {
-        LOG_ERROR("Inavlid buffer in prepareC2Buffer(%p)", this);
+        SG_ERR("Inavlid buffer in prepareC2Buffer(%p)", this);
         result = C2_BAD_VALUE;
     } else {
         std::shared_ptr<C2LinearBlock> linear_block;
@@ -306,7 +306,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
             allocSize = GST_ROUND_UP_N(frameSize, 1024 * 1024);
             err = mLinearPool->fetchLinearBlock(allocSize, c2Usage, &linear_block);
             if (err != C2_OK || !linear_block) {
-                LOG_ERROR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
+                SG_ERR("Linear pool failed to allocate input buffer of size : (%d)", frameSize);
                 return C2_NO_MEMORY;
             }
 
@@ -314,7 +314,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                 if (linear_block->handle()) {
                     const C2Handle* handle = linear_block->handle();
                     if (!handle) {
-                        LOG_ERROR("invalid C2 handle");
+                        SG_ERR("invalid C2 handle");
                         return C2_CORRUPTED;
                     }
                     uint32_t dest_fd = handle->data[0];
@@ -327,30 +327,30 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                      */
                     int ret = mDataCopyFunc(dest_fd, rawBuffer, &frameSize, mDataCopyFuncParam);
                     if (ret) {
-                        LOG_ERROR("data copy failed");
+                        SG_ERR("data copy failed");
                         return C2_CORRUPTED;
                     }
 
                     if (frameSize > buffer->size) {
-                        LOG_ERROR("frameSize exceeds, previous: %u current: %u",
+                        SG_ERR("frameSize exceeds, previous: %u current: %u",
                             buffer->size, frameSize);
                         return C2_CORRUPTED;
                     }
                 } else {
-                    LOG_ERROR("invalid handle of linear block");
+                    SG_ERR("invalid handle of linear block");
                     return C2_CORRUPTED;
                 }
             } else {
                 if (!buffer->secure) {
                     C2WriteView view = linear_block->map().get();
                     if (view.error() != C2_OK) {
-                        LOG_ERROR("C2LinearBlock::map() failed : %d", view.error());
+                        SG_ERR("C2LinearBlock::map() failed : %d", view.error());
                         return C2_NO_MEMORY;
                     }
                     destBuffer = view.base();
                     memcpy(destBuffer, rawBuffer, frameSize);
                 } else {
-                    LOG_ERROR("should not be here for secure mode");
+                    SG_ERR("should not be here for secure mode");
                     return C2_CORRUPTED;
                 }
             }
@@ -361,10 +361,10 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
             if (mGraphicPool) {
                 if (buffer->format == GST_VIDEO_FORMAT_NV12) {
                     if (buffer->ubwc_flag) {
-                        LOG_MESSAGE("NV12: usage add UBWC");
+                        GST_LOG("NV12: usage add UBWC");
                         gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
                     } else if (buffer->heic_flag) {
-                        LOG_MESSAGE("NV12: usage add NV12 512 QTI");
+                        GST_LOG("NV12: usage add NV12 512 QTI");
                         gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
 
                         /* In HEIC encode, align width & height to multiples of 512
@@ -382,25 +382,28 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
                         dim_y = static_cast<uint32_t>(GST_ROUND_UP_N(dim_y, 512));
                     }
                 }
-                C2MemoryUsageGBM c2GbmUsage(c2Usage, gbmUsage);
+
+                // enable CSC by vulkan
+                C2MemoryUsage c2CscUsage { c2Usage.expected | kVulkanCscUsage };
+                C2MemoryUsageGBM c2GbmUsage(c2CscUsage, gbmUsage);
 
                 err = mGraphicPool->fetchGraphicBlock(dim_x, dim_y,
                     gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphic_block);
                 if (C2_OK != err || !graphic_block) {
-                    LOG_ERROR("fetchGraphicBlock failed: %d", err);
+                    SG_ERR("fetchGraphicBlock failed: %d", err);
                     return C2_NO_MEMORY;
                 }
 
                 C2GraphicView view(graphic_block->map().get());
                 if (view.error() != C2_OK) {
-                    LOG_ERROR("C2GraphicBlock::map failed: %d", view.error());
+                    SG_ERR("C2GraphicBlock::map failed: %d", view.error());
                     return C2_NO_MEMORY;
                 }
 
                 destBuffer = (guint8*)view.data()[0];
 
                 if (C2_OK != writePlane(destBuffer, buffer)) {
-                    LOG_ERROR("failed to write planes for graphic buffer");
+                    SG_ERR("failed to write planes for graphic buffer");
                     return C2_NO_MEMORY;
                 }
 
@@ -409,7 +412,7 @@ c2_status_t C2ComponentAdapter::prepareC2Buffer(std::shared_ptr<C2Buffer>* c2Buf
         }
 
         if (!buf) {
-            LOG_ERROR("failed to allocate input C2Buffer");
+            SG_ERR("failed to allocate input C2Buffer");
             return C2_NO_MEMORY;
         }
         *c2Buf = buf;
@@ -426,13 +429,13 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
     std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now() + timeout;
     c2_status_t ret = C2_OK;
 
-    LOG_MESSAGE("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
+    GST_LOG("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
 
     if (mNumPendingWorks >= maxPendingWorks) {
         auto pendingSignaled = [this]{ return mPendingSignaled; };
         if (timeoutMs > 0) {
             if (!mPendingWorkCond.wait_until(ul, endTime, pendingSignaled)) {
-                LOG_ERROR("Timed-Out waiting for work / state-transition (pending=%u)",
+                SG_ERR("Timed-Out waiting for work / state-transition (pending=%u)",
                     mNumPendingWorks);
                 ret = C2_TIMED_OUT;
             }
@@ -441,7 +444,7 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
         }
 
         mPendingSignaled = false;
-        LOG_MESSAGE("wake up");
+        GST_LOG("wake up");
     }
 
     return ret;
@@ -458,10 +461,10 @@ void C2ComponentAdapter::registerTrackBuffer(const C2FrameData& input)
                 onDestroyNotify, trackbuf);
 
             if (status != C2_OK) {
-                LOG_ERROR("TrackBuffer registerOnDestroyNotify failed, buf idx:%zu", trackbuf->frameIndex);
+                SG_ERR("TrackBuffer registerOnDestroyNotify failed, buf idx:%zu", trackbuf->frameIndex);
                 delete trackbuf;
             } else {
-                LOG_MESSAGE("emplace buf idx:%zu TrackBuffer %p to mTrackBuffers", trackbuf->frameIndex, trackbuf);
+                GST_LOG("emplace buf idx:%zu TrackBuffer %p to mTrackBuffers", trackbuf->frameIndex, trackbuf);
                 std::unique_lock<std::mutex> ul(mLock);
                 mTrackBuffers.emplace(trackbuf);
             }
@@ -493,7 +496,7 @@ void C2ComponentAdapter::unregisterTrackBuffer(
                                 onDestroyNotify, *it);
                         }
 
-                        LOG_MESSAGE("erase buf idx:%zu, TrackBuffer %p",
+                        GST_LOG("erase buf idx:%zu, TrackBuffer %p",
                             frameIndex, (*it));
                         mTrackBuffers.erase(it);
                         delete (*it);
@@ -506,13 +509,13 @@ void C2ComponentAdapter::unregisterTrackBuffer(
 
 void C2ComponentAdapter::unregisterTrackBufferAll()
 {
-    LOG_MESSAGE("unregister all track buffers");
+    GST_LOG("unregister all track buffers");
 
     std::unique_lock<std::mutex> ul(mLock);
 
     for (auto it = mTrackBuffers.begin(); it != mTrackBuffers.end(); ++it) {
         if (auto buf = (*it)->buffer.lock()) {
-            LOG_MESSAGE("erase buf idx:%zu TrackBuffer %p", (*it)->frameIndex, (*it));
+            GST_LOG("erase buf idx:%zu TrackBuffer %p", (*it)->frameIndex, (*it));
             buf->unregisterOnDestroyNotify(onDestroyNotify, *it);
         }
         delete (*it);
@@ -524,7 +527,7 @@ void C2ComponentAdapter::unregisterTrackBufferAll()
 void C2ComponentAdapter::onDestroyNotify(const C2Buffer* buf, void* arg)
 {
     if (!buf || !arg) {
-        LOG_MESSAGE("no buf");
+        GST_LOG("no buf");
         return;
     }
 
@@ -538,14 +541,14 @@ void C2ComponentAdapter::onBufferDestroyed(const C2Buffer* buf, void* arg)
 {
     std::unique_lock<std::mutex> ul(mLock);
 
-    LOG_MESSAGE("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
+    GST_LOG("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
 
     TrackBuffer* trackbuf = (TrackBuffer*)arg;
     if (!mTrackBuffers.empty()) {
 
         auto buf = mTrackBuffers.find(trackbuf);
         if (buf != mTrackBuffers.end()) {
-            LOG_MESSAGE("erase buf idx:%zu TrackBuffer %p", trackbuf->frameIndex, trackbuf);
+            GST_LOG("erase buf idx:%zu TrackBuffer %p", trackbuf->frameIndex, trackbuf);
             releaseInputBuf(trackbuf->frameIndex);
             mTrackBuffers.erase(buf);
             delete trackbuf;
@@ -575,7 +578,7 @@ c2_status_t C2ComponentAdapter::setMaxAllocationCount(uint32_t max, BUFFER_POOL_
             status = mC2AllocatorGBM->setMaxAllocationCount(max);
         }
     } else {
-        LOG_ERROR("Unsupported pool type: %d", type);
+        SG_ERR("Unsupported pool type: %d", type);
     }
 
     return status;
@@ -595,7 +598,7 @@ uint32_t C2ComponentAdapter::getMaxAllocationCount(BUFFER_POOL_TYPE type)
             count = mC2AllocatorGBM->getMaxAllocationCount();
         }
     } else {
-        LOG_ERROR("Unsupported pool type: %d", type);
+        SG_ERR("Unsupported pool type: %d", type);
     }
 
     return count;
@@ -618,10 +621,10 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
         if (mGraphicPool) {
             if (buffer->ubwc_flag) {
                 gbmUsage = GBM_BO_USAGE_UBWC_ALIGNED_QTI;
-                LOG_MESSAGE("NV12: usage add UBWC ALIGNED QTI");
+                GST_LOG("NV12: usage add UBWC ALIGNED QTI");
             } else if (buffer->heic_flag) {
                 gbmUsage = GBM_BO_PRIVATE_USAGE_NV12_512_QTI;
-                LOG_MESSAGE("NV12: usage add NV12 512 QTI");
+                GST_LOG("NV12: usage add NV12 512 QTI");
 
                 /* In HEIC encode, align width & height to multiples of 512
                  * because in codec2, VENUS_NV12_512 is deprecated. if this
@@ -644,12 +647,12 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                 gst_to_c2_gbmformat(buffer->format), c2GbmUsage, &graphicBlock);
 
             if (ret != C2_OK || !graphicBlock) {
-                LOG_ERROR("Graphic pool failed to allocate input buffer");
+                SG_ERR("Graphic pool failed to allocate input buffer");
                 ret = C2_NO_MEMORY;
             } else {
                 const C2Handle* handle = graphicBlock->handle();
                 if (!handle) {
-                    LOG_ERROR("C2GraphicBlock's C2 handle is invalid");
+                    SG_ERR("C2GraphicBlock's C2 handle is invalid");
                     ret = C2_CORRUPTED;
                 } else {
                     buf = createGraphicBuffer(graphicBlock);
@@ -674,17 +677,17 @@ std::shared_ptr<C2Buffer> C2ComponentAdapter::alloc(BufferDescriptor* buffer)
                     buffer->capacity = size;
                     setBufLayout(buffer, format, usage, width, height, INTERLACE_MODE_PROGRESSIVE);
 
-                    LOG_MESSAGE("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d, stride %u, offset %" G_GSIZE_FORMAT,
+                    GST_LOG("allocated C2Buffer, fd: %d capacity: %d, ubwc: %d, stride %u, offset %" G_GSIZE_FORMAT,
                         fd, buffer->capacity, buffer->ubwc_flag, stride, buffer->offset[1]);
                 }
             }
         } else {
-            LOG_ERROR("Graphic pool is not created");
+            SG_ERR("Graphic pool is not created");
             ret = C2_NO_INIT;
         }
     } else {
         /* TODO: support linear buffer */
-        LOG_ERROR("Unsupported pool type: %u", buffer->pool_type);
+        SG_ERR("Unsupported pool type: %u", buffer->pool_type);
         ret = C2_OMITTED;
     }
 
@@ -699,7 +702,7 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
     uint64_t frame_index = buffer->index;
     uint64_t timestamp = buffer->timestamp;
 
-    LOG_MESSAGE("Component(%p) work queued, Frame index : %lu, Timestamp : %lu",
+    GST_LOG("Component(%p) work queued, Frame index : %lu, Timestamp : %lu",
         this, frame_index, timestamp);
 
     c2_status_t result = C2_OK;
@@ -731,7 +734,7 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
             if (result == C2_OK) {
                 work->input.buffers.emplace_back(clientBuf);
             } else {
-                LOG_ERROR("Failed(%d) to import buffer", result);
+                SG_ERR("Failed(%d) to import buffer", result);
             }
         } else if (buffer->pool_type == BUFFER_POOL_BASIC_GRAPHIC) {
             std::map<uint64_t, std::shared_ptr<C2GraphicBlock> >::iterator it;
@@ -746,7 +749,7 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
                     buf = createGraphicBuffer(graphicBlock);
                     work->input.buffers.emplace_back(buf);
                 } else {
-                    LOG_ERROR("invalid graphic block");
+                    SG_ERR("invalid graphic block");
                     result = C2_NO_MEMORY;
                 }
             } else {
@@ -756,26 +759,26 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
                  * buffer by fd instead of allocating a new one. */
                 if (!isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                     setUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC, TRUE);
-                    LOG_MESSAGE("Set to use external buffer for C2AllocatorGBM");
+                    GST_LOG("Set to use external buffer for C2AllocatorGBM");
                 }
                 result = attachExternalFd(BUFFER_POOL_BASIC_GRAPHIC, fd);
                 if (result == C2_OK) {
                     buf = alloc(buffer);
                     if (buf) {
                         work->input.buffers.emplace_back(buf);
-                        LOG_MESSAGE("Successfully import and queue the external "
+                        GST_LOG("Successfully import and queue the external "
                                     "buffer, fd=%d",
                             fd);
                     } else {
-                        LOG_ERROR("Failed to import external fd: %d", fd);
+                        SG_ERR("Failed to import external fd: %d", fd);
                         result = C2_CORRUPTED;
                     }
                 } else {
-                    LOG_ERROR("Failed(%d) to attach external fd: %d", result, fd);
+                    SG_ERR("Failed(%d) to attach external fd: %d", result, fd);
                 }
             }
         } else {
-            LOG_ERROR("Invalid buffer pool type %d", buffer->pool_type);
+            SG_ERR("Invalid buffer pool type %d", buffer->pool_type);
         }
     } else if (inputBuffer) {
         std::shared_ptr<C2Buffer> clientBuf;
@@ -784,13 +787,13 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
         if (result == C2_OK) {
             work->input.buffers.emplace_back(clientBuf);
         } else {
-            LOG_ERROR("Failed(%d) to allocate buffer", result);
+            SG_ERR("Failed(%d) to allocate buffer", result);
             result = C2_NO_MEMORY;
         }
     } else if (isEOSFrame) {
-        LOG_MESSAGE("queue EOS frame");
+        GST_LOG("queue EOS frame");
     } else {
-        LOG_ERROR("invalid buffer descriptor");
+        SG_ERR("invalid buffer descriptor");
         result = C2_BAD_VALUE;
     }
 
@@ -804,12 +807,12 @@ c2_status_t C2ComponentAdapter::queue(BufferDescriptor* buffer)
         if (!isEOSFrame) {
             waitForProgressOrStateChange(MAX_PENDING_WORK, 0);
         } else {
-            LOG_MESSAGE("queue empty C2 work with EOS");
+            GST_LOG("queue empty C2 work with EOS");
         }
 
         result = mComp->queue_nb(&workList);
         if (result != C2_OK) {
-            LOG_ERROR("Failed to queue work");
+            SG_ERR("Failed to queue work");
         }
     }
 
@@ -823,10 +826,10 @@ c2_status_t C2ComponentAdapter::flush(C2Component::flush_mode_t mode)
 
     result = mComp->flush_sm(mode, &flushedWork);
     if (result == C2_OK) {
-        LOG_MESSAGE("Component(%p) flushed work num:%zu", this, flushedWork.size());
+        GST_LOG("Component(%p) flushed work num:%zu", this, flushedWork.size());
         unregisterTrackBuffer(flushedWork);
     } else {
-        LOG_ERROR("Failed to flush work");
+        SG_ERR("Failed to flush work");
     }
 
     return result;
@@ -835,7 +838,7 @@ c2_status_t C2ComponentAdapter::flush(C2Component::flush_mode_t mode)
 c2_status_t C2ComponentAdapter::drain(C2Component::drain_mode_t mode)
 {
 
-    LOG_MESSAGE("Component(%p) drain", this);
+    GST_LOG("Component(%p) drain", this);
 
     c2_status_t result = C2_OK;
     UNUSED(mode);
@@ -846,7 +849,7 @@ c2_status_t C2ComponentAdapter::drain(C2Component::drain_mode_t mode)
 c2_status_t C2ComponentAdapter::start()
 {
 
-    LOG_MESSAGE("Component(%p) start", this);
+    GST_LOG("Component(%p) start", this);
 
     auto ret = mComp->start();
 #ifdef USE_AGL_C2SERVICE
@@ -854,18 +857,18 @@ c2_status_t C2ComponentAdapter::start()
         C2String name = intf()->getName();
         auto isDecoder = name.find("decoder") != std::string::npos;
         if (isDecoder) {
-            LOG_MESSAGE("Component(%p) try to get GBM Allocator", this);
+            GST_LOG("Component(%p) try to get GBM Allocator", this);
             mIC2AllocatorGBM = aglqc2::QC2Client::GBMAllocator::get(mComp);
             auto acquireFunc = std::bind(&C2ComponentAdapter::acquireExtBuf, this,
                 std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             auto releaseFunc = std::bind(&C2ComponentAdapter::releaseExtBuf, this, std::placeholders::_1);
             if (mIC2AllocatorGBM) {
-                LOG_MESSAGE("Component(%p) try to set GBM callbacks", this);
+                GST_LOG("Component(%p) try to set GBM callbacks", this);
                 mIC2AllocatorGBM->setAcquireExtBufCb(acquireFunc);
                 mIC2AllocatorGBM->setReleaseExtBufCb(releaseFunc);
                 mIC2AllocatorGBM->passReleaseExtBufCb((uintptr_t)s_releaseExtBuf, (uintptr_t)this);
             } else {
-                LOG_MESSAGE("Component(%p) mIC2AllocatorGBM is null", this);
+                GST_LOG("Component(%p) mIC2AllocatorGBM is null", this);
             }
         }
     }
@@ -876,7 +879,7 @@ c2_status_t C2ComponentAdapter::start()
 c2_status_t C2ComponentAdapter::stop()
 {
 
-    LOG_MESSAGE("Component(%p) stop", this);
+    GST_LOG("Component(%p) stop", this);
 
     c2_status_t result = mComp->stop();
 
@@ -888,7 +891,7 @@ c2_status_t C2ComponentAdapter::stop()
 c2_status_t C2ComponentAdapter::reset()
 {
 
-    LOG_MESSAGE("Component(%p) reset", this);
+    GST_LOG("Component(%p) reset", this);
 
     c2_status_t result = mComp->reset();
 
@@ -900,7 +903,7 @@ c2_status_t C2ComponentAdapter::reset()
 c2_status_t C2ComponentAdapter::release()
 {
 
-    LOG_MESSAGE("Component(%p) release", this);
+    GST_LOG("Component(%p) release", this);
 
     c2_status_t result = mComp->release();
 
@@ -912,13 +915,13 @@ c2_status_t C2ComponentAdapter::release()
 C2ComponentInterfaceAdapter* C2ComponentAdapter::intf()
 {
     if (mIntf) {
-        LOG_MESSAGE("Component(%p) interface already created %p", this, mIntf.get());
+        GST_LOG("Component(%p) interface already created %p", this, mIntf.get());
     } else if (mComp) {
         std::shared_ptr<C2ComponentInterface> compIntf = nullptr;
 
         compIntf = mComp->intf();
         mIntf = std::shared_ptr<C2ComponentInterfaceAdapter>(new C2ComponentInterfaceAdapter(compIntf));
-        LOG_MESSAGE("Component(%p) interface created %p", this, mIntf.get());
+        GST_LOG("Component(%p) interface created %p", this, mIntf.get());
     }
 
     return mIntf ? mIntf.get() : NULL;
@@ -927,7 +930,7 @@ C2ComponentInterfaceAdapter* C2ComponentAdapter::intf()
 c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType)
 {
 
-    LOG_MESSAGE("Component(%p) block pool (%lu) allocated", this, poolType);
+    GST_LOG("Component(%p) block pool (%lu) allocated", this, poolType);
 
     std::shared_ptr<C2BlockPool> pool;
     std::shared_ptr<C2Allocator> allocator;
@@ -941,7 +944,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         uint64_t local_id = mLinearPool->getLocalId();
         android::GetCodec2BlockPoolWithAllocator(local_id, mComp, &pool, &allocator);
         if (!allocator) {
-            LOG_ERROR("Failed to get allocator");
+            SG_ERR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else {
             mC2LinearAllocator = allocator;
@@ -954,7 +957,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
         uint64_t local_id = mGraphicPool->getLocalId();
         android::GetCodec2BlockPoolWithAllocator(local_id, mComp, &pool, &allocator);
         if (!allocator) {
-            LOG_ERROR("Failed to get allocator");
+            SG_ERR("Failed to get allocator");
             ret = C2_NOT_FOUND;
         } else if (intf()) {
             C2String name = intf()->getName();
@@ -973,7 +976,7 @@ c2_status_t C2ComponentAdapter::createBlockpool(C2BlockPool::local_id_t poolType
     }
 
     if (ret != C2_OK) {
-        LOG_ERROR("Failed (%d) to create block pool (%lu)", ret, poolType);
+        SG_ERR("Failed (%d) to create block pool (%lu)", ret, poolType);
     }
 
     return ret;
@@ -984,16 +987,16 @@ c2_status_t C2ComponentAdapter::configBlockPool(C2BlockPool::local_id_t poolType
     C2BlockPool::local_id_t local_id;
     c2_status_t ret = C2_OK;
 
-    LOG_MESSAGE("Component(%p) config block pool (%lu)", this, poolType);
+    GST_LOG("Component(%p) config block pool (%lu)", this, poolType);
 
     local_id = (poolType == C2BlockPool::BASIC_GRAPHIC) ? mGraphicPool->getLocalId() : mLinearPool->getLocalId();
-    LOG_MESSAGE("Get pool local id:%lu", local_id);
+    GST_LOG("Get pool local id:%lu", local_id);
     std::vector<C2Param*> params;
     std::unique_ptr<C2PortBlockPoolsTuning::output> pool = C2PortBlockPoolsTuning::output::AllocUnique({ local_id });
     params.push_back(pool.get());
     ret = mIntf->config(params, C2_DONT_BLOCK);
     if (ret != C2_OK) {
-        LOG_ERROR("Failed (%d) to config block pool (%lu)", ret, poolType);
+        SG_ERR("Failed (%d) to config block pool (%lu)", ret, poolType);
     }
 
     return ret;
@@ -1012,7 +1015,7 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
         paramVal = paramsMap["vendor.qti-ext-dec-info-interlace.format"];
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&interlace)) {
-                LOG_DEBUG("interlace type:%u", interlace);
+                GST_LOG("interlace type:%u", interlace);
             }
         }
     }
@@ -1021,7 +1024,7 @@ uint32_t C2ComponentAdapter::getInterlaceMode(std::vector<std::unique_ptr<C2Para
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&is_deinterlaced)) {
                 deinterlaced = (is_deinterlaced != 0);
-                LOG_DEBUG("deinterlace is %s", deinterlaced ? "enabled" : "disabled");
+                GST_LOG("deinterlace is %s", deinterlaced ? "enabled" : "disabled");
             }
         }
     }
@@ -1043,7 +1046,7 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
         paramVal = paramsMap["vendor.qti-ext-enc-info-coded_avgqp.frameQP"];
         if (paramVal.find(&c2Value)) {
             if (c2Value.get(&frameQP)) {
-                LOG_DEBUG("get average frame QP: %u", frameQP);
+                GST_LOG("get average frame QP: %u", frameQP);
             }
         }
     }
@@ -1051,7 +1054,7 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
     for (auto& param : configUpdate) {
         if (param->coreIndex().typeIndex() == kParamIndexAverageBlockQuantization) {
             frameQP = ((C2AndroidStreamAverageBlockQuantizationInfo::output*)param.get())->value;
-            LOG_DEBUG("get average frame QP: %u", frameQP);
+            GST_LOG("get average frame QP: %u", frameQP);
         }
     }
 #endif
@@ -1061,7 +1064,7 @@ uint32_t C2ComponentAdapter::getAvgFrameQP(std::vector<std::unique_ptr<C2Param> 
 
 void C2ComponentAdapter::printHDRStaticInfo(const C2StreamHdrStaticInfo::output& hsi)
 {
-    LOG_MESSAGE("SEI(float style) R(%0.5f, %0.5f) G(%0.5f, %0.5f) B(%0.5f, %0.5f) WP(%0.5f, %0.5f) L(max %f, min %f)",
+    GST_LOG("SEI(float style) R(%0.5f, %0.5f) G(%0.5f, %0.5f) B(%0.5f, %0.5f) WP(%0.5f, %0.5f) L(max %f, min %f)",
         hsi.mastering.red.x,
         hsi.mastering.red.y,
         hsi.mastering.green.x,
@@ -1073,7 +1076,7 @@ void C2ComponentAdapter::printHDRStaticInfo(const C2StreamHdrStaticInfo::output&
         hsi.mastering.maxLuminance,
         hsi.mastering.minLuminance);
 
-    LOG_MESSAGE("SEI(float style) CLL %f, %f", hsi.maxCll, hsi.maxFall);
+    GST_LOG("SEI(float style) CLL %f, %f", hsi.maxCll, hsi.maxFall);
 }
 
 void C2ComponentAdapter::paramHelper(const std::shared_ptr<C2Buffer>& buffer, uint64_t index)
@@ -1097,7 +1100,7 @@ void C2ComponentAdapter::handleWorkDone(
     std::list<std::unique_ptr<C2Work> > workItems)
 {
 
-    LOG_MESSAGE("Component(%p) work done", this);
+    GST_LOG("Component(%p) work done", this);
 
     while (!workItems.empty()) {
         std::unique_ptr<C2Work> work = std::move(workItems.front());
@@ -1108,12 +1111,12 @@ void C2ComponentAdapter::handleWorkDone(
         }
 
         if (work->worklets.empty()) {
-            LOG_DEBUG("Component(%p) worklet empty", this);
+            GST_DEBUG("Component(%p) worklet empty", this);
             continue;
         }
 
         if (work->result != C2_OK) {
-            LOG_DEBUG("No output for component(%p), ret:%d", this, work->result);
+            GST_DEBUG("No output for component(%p), ret:%d", this, work->result);
             continue;
         }
 
@@ -1137,9 +1140,9 @@ void C2ComponentAdapter::handleWorkDone(
                     C2PortActualDelayTuning::output outputDelay;
                     C2String name = intf()->getName();
                     bool isDecoder = name.find("decoder") != std::string::npos;
-                    LOG_MESSAGE("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
+                    GST_LOG("Component intf name:%s, decoder:%u", name.c_str(), isDecoder);
                     if (isDecoder && outputDelay.updateFrom(*param)) {
-                        LOG_MESSAGE("onWorkDone: updating output delay:%u.", outputDelay.value);
+                        GST_LOG("onWorkDone: updating output delay:%u.", outputDelay.value);
                         if (isUseExternalBuffer(BUFFER_POOL_BASIC_GRAPHIC)) {
                             /* Update the max acquirable buffer count for external buffer pool */
                             uint32_t maxBufCnt = outputDelay.value + MAX_EXT_BUF_CNT_EXTENSION;
@@ -1161,10 +1164,10 @@ void C2ComponentAdapter::handleWorkDone(
             buffer = worklet->output.buffers[0];
             bufferIdx = worklet->output.ordinal.frameIndex.peeku();
             if (!buffer) {
-                LOG_ERROR("Invalid buffer");
+                SG_ERR("Invalid buffer");
             } else {
 
-                LOG_MESSAGE("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, Flag : 0x%x",
+                GST_LOG("Component(%p) output buffer available, Frame index : %lu, Timestamp : %lu, Flag : 0x%x",
                     this, bufferIdx, worklet->output.ordinal.timestamp.peeku(), outputFrameFlag);
 
                 paramHelper(buffer, bufferIdx);
@@ -1181,10 +1184,10 @@ void C2ComponentAdapter::handleWorkDone(
             }
         } else {
             if (outputFrameFlag & C2FrameData::FLAG_END_OF_STREAM) {
-                LOG_MESSAGE("Component(%p) reached EOS on output", this);
+                GST_LOG("Component(%p) reached EOS on output", this);
                 onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else if (outputFrameFlag & C2FrameData::FLAG_INCOMPLETE) {
-                LOG_MESSAGE("Component(%p) work incomplete, means an input frame results in multiple "
+                GST_LOG("Component(%p) work incomplete, means an input frame results in multiple "
                             "output frames, or codec config update event",
                     this);
             } else if (outputFrameFlag & C2FrameData::FLAG_DROP_FRAME
@@ -1198,11 +1201,11 @@ void C2ComponentAdapter::handleWorkDone(
                 bufferIdx = work->input.ordinal.frameIndex.peeku();
                 timestamp = work->input.ordinal.timestamp.peeku();
 
-                LOG_MESSAGE("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
+                GST_LOG("Component(%p) work drop frame, may mean a superframe. Input Frame index: %lu, pts %lu",
                     this, bufferIdx, timestamp);
                 onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else {
-                LOG_MESSAGE("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
+                GST_LOG("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
 
         }
@@ -1214,7 +1217,7 @@ void C2ComponentAdapter::handleTripped(
     std::vector<std::shared_ptr<C2SettingResult> > settingResult)
 {
 
-    LOG_MESSAGE("Component(%p) work tripped", this);
+    GST_LOG("Component(%p) work tripped", this);
 
     UNUSED(component);
 
@@ -1225,7 +1228,7 @@ void C2ComponentAdapter::handleTripped(
 
 void C2ComponentAdapter::handleError(std::weak_ptr<C2Component> component, uint32_t errorCode)
 {
-    LOG_MESSAGE("Component(%p) posts an error", this);
+    GST_LOG("Component(%p) posts an error", this);
 
     UNUSED(component);
     onError(errorCode);
@@ -1234,7 +1237,7 @@ void C2ComponentAdapter::handleError(std::weak_ptr<C2Component> component, uint3
 c2_status_t C2ComponentAdapter::setCompStore(std::weak_ptr<C2ComponentStore> store)
 {
 
-    LOG_MESSAGE("Component store for component(%p) set", this);
+    GST_LOG("Component store for component(%p) set", this);
 
     c2_status_t result = C2_BAD_VALUE;
     if (!store.expired()) {
@@ -1247,7 +1250,7 @@ c2_status_t C2ComponentAdapter::setCompStore(std::weak_ptr<C2ComponentStore> sto
 c2_status_t C2ComponentAdapter::freeOutputBuffer(uint64_t bufferIdx)
 {
 
-    LOG_MESSAGE("Freeing component(%p) output buffer(%lu)", this, bufferIdx);
+    GST_LOG("Freeing component(%p) output buffer(%lu)", this, bufferIdx);
 
     c2_status_t result = C2_BAD_VALUE;
     std::map<uint64_t, std::shared_ptr<C2Buffer> >::iterator it;
@@ -1260,7 +1263,7 @@ c2_status_t C2ComponentAdapter::freeOutputBuffer(uint64_t bufferIdx)
             result = C2_OK;
 
         } else {
-            LOG_ERROR("Buffer index(%lu) not found", bufferIdx);
+            SG_ERR("Buffer index(%lu) not found", bufferIdx);
         }
     }
 
@@ -1270,7 +1273,7 @@ c2_status_t C2ComponentAdapter::freeOutputBuffer(uint64_t bufferIdx)
 c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
 {
     c2_status_t result = C2_NO_INIT;
-    LOG_MESSAGE("Component(%p) attach external fd: %d for pool type %d", this, fd, type);
+    GST_LOG("Component(%p) attach external fd: %d for pool type %d", this, fd, type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
 #ifdef USE_AGL_C2SERVICE
@@ -1281,15 +1284,15 @@ c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
         if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->attachExternalFd(fd);
         } else {
-            LOG_ERROR("mC2AllocatorGBM is NULL");
+            SG_ERR("mC2AllocatorGBM is NULL");
             result = C2_BAD_VALUE;
         }
     } else {
-        LOG_ERROR("Invalid buffer pool type %d", type);
+        SG_ERR("Invalid buffer pool type %d", type);
     }
 
     if (C2_OK != result) {
-        LOG_ERROR("Failed to attach external fd with result=%d", result);
+        SG_ERR("Failed to attach external fd with result=%d", result);
     }
 
     return result;
@@ -1298,7 +1301,7 @@ c2_status_t C2ComponentAdapter::attachExternalFd(BUFFER_POOL_TYPE type, int fd)
 c2_status_t C2ComponentAdapter::setUseExternalBuffer(BUFFER_POOL_TYPE type, bool useExternal)
 {
     c2_status_t result = C2_NO_INIT;
-    LOG_MESSAGE("Component(%p) set to use external buffer: %s for pool type %d",
+    GST_LOG("Component(%p) set to use external buffer: %s for pool type %d",
         this, useExternal ? "TRUE" : "FALSE", type);
 
     if (type == BUFFER_POOL_BASIC_GRAPHIC) {
@@ -1310,11 +1313,11 @@ c2_status_t C2ComponentAdapter::setUseExternalBuffer(BUFFER_POOL_TYPE type, bool
         if (mC2AllocatorGBM) {
             result = mC2AllocatorGBM->setUseExternalBuffer(useExternal);
         } else {
-            LOG_ERROR("mC2AllocatorGBM is NULL");
+            SG_ERR("mC2AllocatorGBM is NULL");
             result = C2_BAD_VALUE;
         }
     } else {
-        LOG_ERROR("Invalid buffer pool type %d", type);
+        SG_ERR("Invalid buffer pool type %d", type);
     }
 
     return result;
@@ -1335,11 +1338,11 @@ bool C2ComponentAdapter::isUseExternalBuffer(BUFFER_POOL_TYPE type)
         } else {
             /* mC2AllocatorGBM is not created in Codec2 service mode. */
 #ifndef USE_AGL_C2SERVICE
-            LOG_ERROR("mC2AllocatorGBM is NULL");
+            SG_ERR("mC2AllocatorGBM is NULL");
 #endif
         }
     } else {
-        LOG_ERROR("Invalid buffer pool type %d", type);
+        SG_ERR("Invalid buffer pool type %d", type);
     }
 
     return ret;
@@ -1366,7 +1369,7 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
 #endif
 
     if (!mC2LinearAllocator || !linearHandle) {
-        LOG_ERROR("Invalid mC2LinearAllocator or linearHandle");
+        SG_ERR("Invalid mC2LinearAllocator or linearHandle");
         need_release = true;
         qcodec2_close_fd(dup_fd);
         result = C2_NO_MEMORY;
@@ -1375,20 +1378,20 @@ c2_status_t C2ComponentAdapter::importExternalBuf(std::shared_ptr<C2Buffer>& c2B
     /* linearHandle will be released in priorLinearAllocation if return C2_OK */
     result = mC2LinearAllocator->priorLinearAllocation(linearHandle, &allocation);
     if (result != C2_OK) {
-        LOG_ERROR("Failed(%d) to call priorLinearAllocation", result);
+        SG_ERR("Failed(%d) to call priorLinearAllocation", result);
         need_release = true;
         goto do_exit;
     }
     linearBlock = _C2BlockFactory::CreateLinearBlock(allocation);
     if (!linearBlock) {
-        LOG_ERROR("Failed to CreateLinearBlock");
+        SG_ERR("Failed to CreateLinearBlock");
         result = C2_NO_MEMORY;
         goto do_exit;
     }
     linearBlock->mSize = size;
     c2Buf = createLinearBuffer(linearBlock);
     if (!c2Buf) {
-        LOG_ERROR("Failed to createLinearBuffer");
+        SG_ERR("Failed to createLinearBuffer");
         result = C2_NO_MEMORY;
     }
 
@@ -1431,7 +1434,7 @@ void C2ComponentAdapter::onOutputBufferAvailable(
     if (callback) {
         callback->onOutputBufferAvailable(buffer, index, timestamp, interlaceInfo, frameQp, flag);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1441,7 +1444,7 @@ void C2ComponentAdapter::onTripped(uint32_t errorCode)
     if (callback) {
         callback->onTripped(errorCode);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1451,7 +1454,7 @@ void C2ComponentAdapter::onError(uint32_t errorCode)
     if (callback) {
         callback->onError(errorCode);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1461,7 +1464,7 @@ void C2ComponentAdapter::updateMaxBufCount(uint32_t outputDelay)
     if (callback) {
         callback->onUpdateMaxBufCount(outputDelay);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1471,7 +1474,7 @@ void C2ComponentAdapter::acquireExtBuf(uint32_t width, uint32_t height, bool isC
     if (callback) {
         callback->onAcquireExtBuffer(width, height, isC2D);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1487,7 +1490,7 @@ void C2ComponentAdapter::releaseExtBuf(int32_t extFd)
     if (callback) {
         callback->onReleaseExtBuffer(extFd);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
@@ -1497,17 +1500,17 @@ void C2ComponentAdapter::releaseInputBuf(uint64_t index)
     if (callback) {
         callback->onReleaseInputBuffer(index);
     } else {
-        LOG_WARNING("mCallback is null");
+        GST_WARNING("mCallback is null");
     }
 }
 
 void C2ComponentAdapter::cancelPendingWork()
 {
-    LOG_MESSAGE("Component(%p) cancelPendingWork.", this);
+    GST_LOG("Component(%p) cancelPendingWork.", this);
 
     {
         std::unique_lock<std::mutex> ul(mLock);
-        LOG_MESSAGE("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
+        GST_LOG("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
         mPendingSignaled = true;
     }
 
@@ -1531,7 +1534,7 @@ void C2ComponentListenerAdapter::onWorkDone_nb(
     std::list<std::unique_ptr<C2Work> > workItems)
 {
 
-    LOG_MESSAGE("Component listener (%p) onWorkDone_nb", this);
+    GST_LOG("Component listener (%p) onWorkDone_nb", this);
 
     if (mComp) {
         mComp->handleWorkDone(component, std::move(workItems));
@@ -1543,7 +1546,7 @@ void C2ComponentListenerAdapter::onTripped_nb(
     std::vector<std::shared_ptr<C2SettingResult> > settingResult)
 {
 
-    LOG_MESSAGE("Component listener (%p) onTripped_nb", this);
+    GST_LOG("Component listener (%p) onTripped_nb", this);
 
     if (mComp) {
         mComp->handleTripped(component, settingResult);
@@ -1553,7 +1556,7 @@ void C2ComponentListenerAdapter::onTripped_nb(
 void C2ComponentListenerAdapter::onError_nb(std::weak_ptr<C2Component> component, uint32_t errorCode)
 {
 
-    LOG_MESSAGE("Component listener (%p) onError_nb", this);
+    GST_LOG("Component listener (%p) onError_nb", this);
 
     if (mComp) {
         mComp->handleError(component, errorCode);

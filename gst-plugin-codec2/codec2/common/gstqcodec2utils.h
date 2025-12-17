@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifndef __GST_QCODEC2_UTILS_H__
@@ -6,6 +6,7 @@
 
 #include <gst/gst.h>
 #include <codec2wrapper.h>
+#include <gstc2misc.h>
 
 #define QCODEC2_MIN_OUTBUFFERS 6
 #define QCODEC2_MAX_OUTBUFFERS 32

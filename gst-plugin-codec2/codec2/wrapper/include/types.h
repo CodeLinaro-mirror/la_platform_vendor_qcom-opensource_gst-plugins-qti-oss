@@ -28,9 +28,8 @@
 */
 
 /*
-Changes from Qualcomm Innovation Center are provided under the following license:
-
-Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+Changes from Qualcomm Technologies, Inc. are provided under the following license:
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted (subject to the limitations in the
@@ -71,16 +70,11 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <glib.h>
 #include <C2Buffer.h>
 #include <gst/gst.h>
-
-namespace QTI {
-
-#define LOG_MESSAGE GST_LOG
-#define LOG_DEBUG GST_DEBUG
-#define LOG_INFO GST_INFO
-#define LOG_WARNING GST_WARNING
-#define LOG_ERROR GST_ERROR
+#include <gstc2misc.h>
 
 #define UNUSED(x) (void)(x)
+
+namespace QTI {
 
 typedef std::unique_ptr<C2Param> (*configFunction)(gpointer data);
 typedef std::unique_ptr<C2Param> (*configFunctionForVendorParams)(gpointer data, void* const comp_intf);

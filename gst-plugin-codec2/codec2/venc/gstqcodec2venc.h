@@ -40,9 +40,8 @@
 #include <gst/video/gstvideoencoder.h>
 #include <gst/video/gstvideopool.h>
 #include <gst/allocators/allocators.h>
-#include "gstqcodec2bufferpool.h"
-
 #include "codec2wrapper.h"
+#include "gstqcodec2bufferpool.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_QCODEC2_VENC          (gst_qcodec2_venc_get_type())
@@ -161,10 +160,17 @@ struct _GstQcodec2Venc
   guint32 ltr_count;
   GValue ltr_mark;
   GValue ltr_use;
-  gboolean is_input_dmabuf;
+  gboolean is_input_zerocopy;
   gboolean input_glmem_feature;
 
   guint max_input_buffers;
+  gboolean force_inputcopy;
+
+  //only for log
+  guint32 in_data_idx_1cycle;
+  guint32 in_data_idx_total;
+  guint32 out_data_idx_1cycle;
+  guint32 out_data_idx_total;
 };
 
 /*

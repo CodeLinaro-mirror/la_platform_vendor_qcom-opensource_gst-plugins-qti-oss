@@ -153,7 +153,7 @@ struct _GstQvidcVdec
   gboolean use_external_buf;
   guint max_external_buf_cnt;
   gboolean is_flushing;
-  gboolean release_input_buf;
+  gboolean error_detected;
 };
 
 
