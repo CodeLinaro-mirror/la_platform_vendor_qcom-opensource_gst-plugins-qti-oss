@@ -280,7 +280,7 @@ gst_drm_decryptor_sinkpad_event (GstPad *pad, GstObject *parent, GstEvent *event
       break;
     }
     case GST_EVENT_FLUSH_START:
-      if (gst_buffer_pool_is_active (decryptor->pool)) {
+      if (decryptor->pool && gst_buffer_pool_is_active (decryptor->pool)) {
         GST_LOG_OBJECT (decryptor, "Setting bufferpool to flushing");
         gst_buffer_pool_set_flushing (decryptor->pool, TRUE);
         GST_LOG_OBJECT (decryptor, "Bufferpool flushed");
@@ -288,7 +288,7 @@ gst_drm_decryptor_sinkpad_event (GstPad *pad, GstObject *parent, GstEvent *event
       success = gst_pad_event_default (pad, parent, event);
       break;
     case GST_EVENT_FLUSH_STOP:
-      if (gst_buffer_pool_is_active (decryptor->pool)) {
+      if (decryptor->pool && gst_buffer_pool_is_active (decryptor->pool)) {
         GST_LOG_OBJECT (decryptor, "Setting bufferpool to not flushing");
         gst_buffer_pool_set_flushing (decryptor->pool, FALSE);
         GST_LOG_OBJECT (decryptor, "Bufferpool not flushed");
