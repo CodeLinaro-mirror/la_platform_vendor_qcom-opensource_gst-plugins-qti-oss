@@ -589,8 +589,9 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
       if (is_exclusive_owner) {
         VmHandle vmHandleArr[LEND_VM_NUM] = { vesdeliver->vm_handle };
         uint32_t permArr[LEND_VM_NUM] = { VMMEM_READ | VMMEM_WRITE };
-
         int ret = -1;
+
+        GST_DEBUG_OBJECT (vesdeliver, "Lend dmabuf with fd=%d is calling", buf_fd);
         ret =
             vesdeliver->LendDmabuf (vesdeliver->vm_instance, buf_fd,
             vmHandleArr, permArr, LEND_VM_NUM);
