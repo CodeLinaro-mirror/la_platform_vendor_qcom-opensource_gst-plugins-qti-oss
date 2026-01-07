@@ -93,6 +93,12 @@ public:
         )>
         EOSDoneCallbackType;
 
+    // Callback function invoked for component error
+    typedef std::function<void(
+        BaseClient* vidcPtr, // Component that invoked the callback
+        uint32 errorCode)>
+        ErrorCallbackType;
+
     typedef struct // Port information that describes the I/O data
     {
         int width; // Image width, pixels
@@ -138,6 +144,8 @@ public:
 
     bool isInitialized() { return mInitialized; }
 
+    bool isDevOpened() { return mHandle != NULL; }
+
     bool isLoaded();
 
     bool isIdle();
@@ -163,7 +171,8 @@ public:
             BufferCallbackType emptyCallback,
             BufferCallbackType filledCallback,
             ReconfigureCallbackType reconfigureCallback,
-            EOSDoneCallbackType eosDoneCallback);
+            EOSDoneCallbackType eosDoneCallback,
+            ErrorCallbackType errorCallback);
 
     virtual bool stateExecuting() = 0; // Put component into executing state, blocking call
 
@@ -223,7 +232,8 @@ protected:
         COMMAND_OUTPUT_START, // Start output executing
         COMMAND_INPUT_STOP, // Stop input executing
         COMMAND_OUTPUT_STOP, // Stop output executing
-        COMMAND_LAST_FLAG // Last flag event received
+        COMMAND_LAST_FLAG, // Last flag event received
+        COMMAND_ERROR // error event received
     } CommandType;
 
     typedef struct
@@ -252,6 +262,7 @@ protected:
     BufferCallbackType mFilledCallback; // Client callback to invoke when an output buffer is filled
     ReconfigureCallbackType mReconfigureCallback; // Client callback to invoke for output reconfiguration
     EOSDoneCallbackType mEosDoneCallback; // Client callback to invoke for EOS done
+    ErrorCallbackType mErrorCallback; // Client callback to invoke for error
     PortMapType mPort; // Information to describe the I/O ports
     bool mInitialized; // True if component has been initialized
     VidcStateType mState; // Current state of the component
@@ -271,10 +282,24 @@ protected:
         (
             vidc_frame_data_type& frameData);
 
+    virtual void onError // Invoked when error is received
+        (
+            uint32 errorCode);
+
     virtual int event // Common event handling for all components
         (
             vidc_drv_msg_info_type& info,
             uint32 length);
+
+    virtual void setEndOfStream(bool val)
+    {
+        mEndOfStream = val;
+    }
+
+    virtual bool isEndOfStream()
+    {
+        return mEndOfStream;
+    }
 
     void resetPort(vidc_buffer_type buffer, const char* namePtr);
 

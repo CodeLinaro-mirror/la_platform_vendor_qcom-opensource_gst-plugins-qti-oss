@@ -171,6 +171,10 @@ void CodecCallback::onBufferAvailable(
             outBuf.flag = FLAG_TYPE_DROP_FRAME;
             mCallback(mHandle, EVENT_DROP_FRAME, &outBuf);
         } else {
+            if (frameData.flags & VIDC_FRAME_FLAG_EOS
+                || frameData.flags & VIDC_FRAME_FLAG_LAST) {
+                outBuf.flag = FLAG_TYPE_END_OF_STREAM;
+            }
             mCallback(mHandle, EVENT_OUTPUTS_DONE, &outBuf);
         }
     }
@@ -236,7 +240,7 @@ gboolean vidcStore_createComponent(void* const comp_store,
             client = factory->create(id);
             if (client) {
                 *component = client;
-                ret = TRUE;
+                return client->isDevOpened();
             }
         }
     }

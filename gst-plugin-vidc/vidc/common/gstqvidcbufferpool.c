@@ -77,6 +77,23 @@ steal_gst_buf (gpointer key, gpointer value, gpointer data)
   return FALSE;
 }
 
+static gboolean
+release_gst_buf (gint64 * key, GstBuffer * buffer, GstBufferPool * pool)
+{
+  gint64 vkey = *key;
+  gint fd = (vkey >> 32) & 0xFFFFFFFF;
+  gint meta_fd = vkey & 0xFFFFFFFF;
+  GST_DEBUG_OBJECT (pool, "key:0x%lx buffer:%p, fd %d, meta_fd %d",
+      vkey, buffer, fd, meta_fd);
+
+  if (pool && buffer) {
+    gst_buffer_pool_release_buffer (pool, buffer);
+    GST_DEBUG_OBJECT (pool, "release_buffer %p from pool %p", buffer, pool);
+  }
+
+  return FALSE;
+}
+
 static void
 gst_qvidc_buffer_pool_init (GstQvidcBufferPool * pool)
 {
@@ -174,38 +191,6 @@ destroy_gst_buffer (gpointer data)
   if (gst_buf) {
     GST_LOG ("destroy gst buffer:%p ref_cnt:%d", gst_buf,
         GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (gst_buf)));
-
-    GstCustomMeta *meta = NULL;
-    meta = gst_buffer_get_custom_meta (gst_buf, "GstQVIDCDMeta");
-    if (meta) {
-      GstMemory *meta_mem = NULL;
-      GstStructure *structure =
-          gst_custom_meta_get_structure ((GstCustomMeta *) meta);
-      if (structure &&
-          gst_structure_get (structure, "meta-mem", GST_TYPE_MEMORY, &meta_mem, NULL)) {
-        GST_LOG ("destroy custom GstQVIDCDMeta meta-mem:%p ref_cnt:%d", meta_mem,
-            GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (meta_mem)));
-        gst_memory_unref (meta_mem);
-      } else {
-        GST_ERROR ("failed to get custom GstQVIDCDMeta meta-mem");
-      }
-    }
-
-    meta = gst_buffer_get_custom_meta (gst_buf, "GstQVIDCEMeta");
-    if (meta) {
-      GstMemory *meta_mem = NULL;
-      GstStructure *structure =
-          gst_custom_meta_get_structure ((GstCustomMeta *) meta);
-      if (structure &&
-          gst_structure_get (structure, "meta-mem", GST_TYPE_MEMORY, &meta_mem, NULL)) {
-        GST_LOG ("destroy custom GstQVIDCEMeta meta-mem:%p ref_cnt:%d", meta_mem,
-            GST_MINI_OBJECT_REFCOUNT_VALUE (GST_MINI_OBJECT_CAST (meta_mem)));
-        gst_memory_unref (meta_mem);
-      } else {
-        GST_ERROR ("failed to get custom GstQVIDCEMeta meta-mem");
-      }
-    }
-
     gst_buffer_unref (gst_buf);
   }
 }
@@ -349,6 +334,24 @@ gst_qvidc_buffer_pool_release_buffer (GstBufferPool * bpool, GstBuffer * buffer)
   _buffer_pool_release_buffer_wrap (bpool, buffer);
 }
 
+static void
+gst_qvidc_buffer_pool_flush_start (GstBufferPool * bpool)
+{
+  GstBufferPoolClass *bp_class = GST_BUFFER_POOL_CLASS (parent_class);
+  GstQvidcBufferPool *pool = GST_QVIDC_BUFFER_POOL_CAST (bpool);
+  GST_DEBUG_OBJECT (pool, "flush_start %p", pool);
+
+  if (pool->param.is_outport) {
+    GST_DEBUG_OBJECT (pool, "no flush for output %p", pool);
+    return;
+  }
+
+  GHashTable *buffer_table = pool->buffer_table;
+  if (buffer_table) {
+    g_hash_table_foreach_steal (buffer_table, release_gst_buf, bpool);
+  }
+}
+
 static GstFlowReturn
 _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
     GstBuffer ** buffer, GstBufferPoolAcquireParams * params)
@@ -424,14 +427,22 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
              * These internal buffers are overheads and not necessary if using external
              * buffer. Need to refine implementation not to allocate internal buffer.
              */
-            key = ((gint64) param_ext->fd << 32);
-            GST_DEBUG_OBJECT (pool, "no ext pool, add buffer to table key 0x%lx, fd %d",
-                key, (key >> 32) & 0xFFFFFFFF);
+            if (param_ext) {
+              key = ((gint64) param_ext->fd << 32);
 
-            ret = _buffer_pool_add_buffer_to_table (bpool, gst_buf, key);
-            if (ret != GST_FLOW_OK) {
+              GST_DEBUG_OBJECT (pool, "no ext pool, add buffer to table key 0x%lx, fd %d",
+                  key, (key >> 32) & 0xFFFFFFFF);
+
+              ret = _buffer_pool_add_buffer_to_table (bpool, gst_buf, key);
+              if (ret != GST_FLOW_OK) {
+                gst_buffer_unref (gst_buf);
+                gst_buf = NULL;
+              }
+            } else {
+              GST_ERROR_OBJECT (pool, "param_ext is NULL in external pool mode without ext_pool");
               gst_buffer_unref (gst_buf);
               gst_buf = NULL;
+              ret = GST_FLOW_ERROR;
             }
           }
         } else {
@@ -557,6 +568,7 @@ gst_qvidc_buffer_pool_class_init (GstQvidcBufferPoolClass * klass)
   bp_class->alloc_buffer = gst_qvidc_buffer_pool_alloc_buffer;
   bp_class->acquire_buffer = gst_qvidc_buffer_pool_acquire_buffer;
   bp_class->release_buffer = gst_qvidc_buffer_pool_release_buffer;
+  bp_class->flush_start = gst_qvidc_buffer_pool_flush_start;
 }
 
 GstBufferPool *

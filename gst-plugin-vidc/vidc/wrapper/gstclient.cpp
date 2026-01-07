@@ -69,6 +69,7 @@ GstClient::GstClient(ComponentIdType id)
     BufferCallbackType filledCallbackFcn = {};
     ReconfigureCallbackType reconfigureCallbackFcn = {};
     EOSDoneCallbackType eosDoneCallbackFcn = {};
+    ErrorCallbackType errorCallbackFcn = {};
 
     emptyCallbackFcn = [this](BaseClient* base, vidc_frame_data_type& frameData) {
         return EmptyCallback(base, frameData);
@@ -82,9 +83,12 @@ GstClient::GstClient(ComponentIdType id)
     eosDoneCallbackFcn = [this](BaseClient* base) {
         return eosDoneCallback(base);
     };
+    errorCallbackFcn = [this](BaseClient* base, uint32 errorCode) {
+        return ErrorCallback(base, errorCode);
+    };
 
     registerCallback(emptyCallbackFcn, filledCallbackFcn,
-        reconfigureCallbackFcn, eosDoneCallbackFcn);
+        reconfigureCallbackFcn, eosDoneCallbackFcn, errorCallbackFcn);
 
     memset(&mConfig, 0, sizeof(mConfig));
 
@@ -108,6 +112,7 @@ GstClient::GstClient(ComponentIdType id)
 GstClient::~GstClient()
 {
     MM_DBG_MSG("GstClient::~GstClient");
+    mCallback.reset();
 }
 
 int GstClient::flattenMetaData(vidc_frame_data_type& frameData)
@@ -650,7 +655,11 @@ bool GstClient::setConfiguration(ConfigType& config)
 {
     MM_DBG_MSG("GstClient::setConfiguration");
     mConfig = config;
-    return true;
+    if (mHandle) {
+        return true;
+    }
+
+    return false;
 }
 
 bool GstClient::getConfiguration(ConfigType* config)
@@ -765,7 +774,7 @@ bool GstClient::stateLoaded()
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_IDLE || mState == VIDC_STATE_UNLOADED) // If in the idle state
+    if (mState == VIDC_STATE_IDLE || mState == VIDC_STATE_UNLOADED || mState == VIDC_STATE_LOADED) // If in the idle state
     {
         mState = VIDC_STATE_LOADED;
     } else {
@@ -784,6 +793,13 @@ bool GstClient::stateExecuting()
     std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
     uLockState.lock();
     MM_DBG_MSG("GstClient::stateExecuting-%s state %d", mNamePtr, mState);
+
+    if (isEndOfStream()) {
+        uLockState.unlock();
+        MM_ERROR_MSG("GstClient::stateExecuting started invalid, EOS");
+        rcBool = false;
+        return rcBool;
+    }
 
     if (mState == VIDC_STATE_IDLE) {
         uLockState.unlock();
@@ -915,10 +931,6 @@ bool GstClient::stateIdle()
                     "GstClient::stateIdle-%s Error waiting for drain command return, command %d",
                     mNamePtr, command);
                 MM_DBG_MSG("GstClient::stateIdle VidcIoctl completed VIDC_IOCTL_DRAIN before VIDC_IOCTL_STOP");
-                command = mQueueCompleted.pop(); // Wait for command to complete
-                RETURN_BOOL_ON_ERROR(command == COMMAND_LAST_FLAG,
-                    "GstClient::stateIdle-%s Error waiting for drain last flag command return, command %d",
-                    mNamePtr, command);
             }
         }
 
@@ -976,7 +988,7 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_LOADED) {
+    if (mState == VIDC_STATE_LOADED || mState == VIDC_STATE_IDLE || isEndOfStream()) {
         MM_DBG_MSG("GstClient::emptyBuffer-%s in wrong state %d", mNamePtr, mState);
         uLockState.unlock();
         return false;
@@ -1035,7 +1047,7 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_LOADED) {
+    if (mState == VIDC_STATE_LOADED || mState == VIDC_STATE_IDLE || isEndOfStream()) {
         MM_DBG_MSG("GstClient::fillBuffer-%s in wrong state %d",
             mNamePtr, mState);
         uLockState.unlock();
@@ -1179,14 +1191,20 @@ void GstClient::EmptyCallback(BaseClient* base, vidc_frame_data_type& frameData)
 
     InterlaceInfo interlaceInfo = {INTERLACE_MODE_PROGRESSIVE, true};
 
-    mCallback->onBufferAvailable(frameData, interlaceInfo);
+    if (mCallback) {
+        mCallback->onBufferAvailable(frameData, interlaceInfo);
+    }
 }
 
 void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData)
 {
+    std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
     MM_DBG_MSG("GstClient::FilledCallback-%s", mNamePtr);
     if (frameData.flags & VIDC_FRAME_FLAG_EOS) {
         MM_DBG_MSG("GstClient::FilledCallback-%s, EOS detected", mNamePtr);
+        uLockState.lock();
+        setEndOfStream(true);
+        uLockState.unlock();
     }
 
     std::vector<std::shared_ptr<MetaInfo>> infos;
@@ -1222,14 +1240,18 @@ void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData
         }
     }
 
-    mCallback->onBufferAvailable(frameData, interlaceInfo);
+    if (mCallback) {
+        mCallback->onBufferAvailable(frameData, interlaceInfo);
+    }
 }
 
 void GstClient::outputReconfigureCallback(BaseClient* base)
 {
     MM_DBG_MSG("GstClient::outputReconfigureCallback-%s", mNamePtr);
 
-    mCallback->onReconfig(mOutputStarted);
+    if (mCallback) {
+        mCallback->onReconfig(mOutputStarted);
+    }
 
     MM_DBG_MSG("GstClient::outputReconfigureCallback-%s done", mNamePtr);
 }
@@ -1237,6 +1259,14 @@ void GstClient::outputReconfigureCallback(BaseClient* base)
 void GstClient::eosDoneCallback(BaseClient* base)
 {
     MM_DBG_MSG("GstClient::eosDoneCallback-%s", mNamePtr);
+}
+
+void GstClient::ErrorCallback(BaseClient* base, uint32 errorCode)
+{
+    MM_DBG_MSG("GstClient::ErrorCallback-%s", mNamePtr);
+    if (mCallback) {
+        mCallback->onError(errorCode);
+    }
 }
 
 int GstClient::getPlaneCount()
