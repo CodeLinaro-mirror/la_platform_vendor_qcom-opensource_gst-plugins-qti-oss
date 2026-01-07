@@ -1,11 +1,11 @@
-// Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-
 #include "gstqcarcamdmabuf.h"
+#include "gstqcarcamutils.h"
 
 #include <gst/gstinfo.h>
 #include <stdint.h>
@@ -55,7 +55,7 @@ static void (*_gbm_bo_destroy) (struct gbm_bo *bo);
       *(void **) & (_ ## sym) = dlsym (lib, #sym);        \
       const char *dlerr = dlerror ();                     \
       if (NULL != dlerr) {                                \
-        GST_ERROR ("dlsym error: %s", dlerr);             \
+        SG_ERR_LITE ("dlsym error: %s", dlerr);             \
         goto error;                                       \
       }                                                   \
       GST_DEBUG ("loaded symbol %s", #sym);               \
@@ -73,14 +73,14 @@ static gpointer _do_load_lib_symbols (gpointer data)
 {
   gpointer ret = NULL;
 
-  GST_INFO ("data %p", data);
+  SG_INFO_LITE ("data %p", data);
 
   handle_gbm = dlopen (gbm_lib_name, RTLD_NOW);
   if (NULL == handle_gbm) {
     const char *dlerr = dlerror();
     if (NULL == dlerr)
         dlerr = "NULL";
-    GST_ERROR ("dlopen %s error: %s", gbm_lib_name, dlerr);
+    SG_ERR_LITE ("dlopen %s error: %s", gbm_lib_name, dlerr);
     goto error;
   }
 
@@ -99,7 +99,7 @@ static gpointer _do_load_lib_symbols (gpointer data)
   ret = (gpointer) -1; /* load all okay */
 
 error:
-  GST_INFO ("ret %p", ret);
+  SG_INFO_LITE ("ret %p", ret);
   atexit (_do_dlclose_libs);
 
   return ret;
@@ -111,7 +111,7 @@ gboolean qcarcam_dmabuf_load_libs_once (void)
   static GOnce once = G_ONCE_INIT;
 
   g_once (&once, _do_load_lib_symbols, NULL);
-  GST_INFO ("GOnce retval %p status %d", once.retval, once.status);
+  SG_INFO_LITE ("GOnce retval %p status %d", once.retval, once.status);
 
   return once.retval != NULL ? TRUE : FALSE;
 }
@@ -140,7 +140,7 @@ do_dmabuf_device_open (void)
 #ifndef _ENABLE_UMD_
   if ((fd = open (GBM_RENDER_DEVICE_NAME, O_RDONLY | O_CLOEXEC)) < 0) {
     int e = errno;
-    GST_ERROR ("open renderD128 error %s", strerror (e));
+    SG_ERR_LITE ("open renderD128 error %s", strerror (e));
     return FALSE;
   } else {
     dev_fd = fd;
@@ -159,7 +159,7 @@ do_dmabuf_device_close (void)
     return;
 
   if (close (dev_fd))
-    GST_ERROR ("close error %s", strerror (errno));
+    SG_ERR_LITE ("close error %s", strerror (errno));
 
   dev_fd = -1;
 }
@@ -180,7 +180,7 @@ gbm_dmabuf_fill_desc (DmaBufDesc * desc,
       break;
 
     default:
-      GST_ERROR ("NOT support format %s-%d", GST_VIDEO_INFO_NAME (info),
+      SG_ERR_LITE ("NOT support format %s-%d", GST_VIDEO_INFO_NAME (info),
           format);
       return FALSE;
   }
@@ -197,14 +197,14 @@ static inline gboolean
 gbm_dmabuf_open (void)
 {
   if (!do_dmabuf_device_open ()) {
-    GST_ERROR ("open device error");
+    SG_ERR_LITE ("open device error");
     return FALSE;
   }
 
   gbm_dev = gbm_create_device (dev_fd);
   GST_DEBUG ("gbm_dev %p", gbm_dev);
   if (NULL == gbm_dev) {
-    GST_ERROR ("create gbm device error");
+    SG_ERR_LITE ("create gbm device error");
     do_dmabuf_device_close ();
     return FALSE;
   }
@@ -244,7 +244,7 @@ gbm_dmabuf_alloc (DmaBufDesc * desc)
 
   bo = gbm_bo_create (gbm_dev, desc->width, desc->height, desc->format, flags);
   if (NULL == bo) {
-    GST_ERROR ("gbm alloc error %s-%d", strerror (errno), errno);
+    SG_ERR_LITE ("gbm alloc error %s-%d", strerror (errno), errno);
     return FALSE;
   }
 
@@ -266,7 +266,7 @@ gbm_dmabuf_alloc (DmaBufDesc * desc)
 
     gbm_perform (GBM_PERFORM_GET_BO_SIZE, bo, &size);
     if ((gsize) size < desc->size)
-      GST_WARNING ("gbm bo size %lu should >= requested size", size);
+      SG_WARN_LITE ("gbm bo size %lu should >= requested size", size);
 
     desc->size = (gsize) size;
 
@@ -287,7 +287,7 @@ static void
 gbm_dmabuf_free (DmaBufDesc * desc)
 {
   if (!desc) {
-    GST_ERROR ("NULL desc");
+    SG_ERR_LITE ("NULL desc");
     return;
   }
 
@@ -351,12 +351,12 @@ gboolean
 qcarcam_dmabuf_alloc (DmaBufDesc ** desc,
     const GstVideoInfo * info, gboolean ubwc)
 {
-  GST_INFO ("ubwc %u, size %" G_GSIZE_FORMAT,
+  SG_INFO ("ubwc %u, size %" G_GSIZE_FORMAT,
       ubwc, GST_VIDEO_INFO_SIZE (info));
 
   *desc = g_new0 (DmaBufDesc, 1);
   if (NULL == *desc) {
-    GST_ERROR ("no memory");
+    SG_ERR_LITE ("no memory");
     return FALSE;
   }
 
@@ -364,12 +364,12 @@ qcarcam_dmabuf_alloc (DmaBufDesc ** desc,
     goto desc_free;
 
   if (!_qcarcam_dmabuf_open ()) {
-    GST_ERROR ("open error");
+    SG_ERR_LITE ("open error");
     goto desc_free;
   }
 
   if (!gbm_dmabuf_alloc (*desc)) {
-    GST_ERROR ("alloc error");
+    SG_ERR_LITE ("alloc error");
     goto dmabuf_close;
   }
 
