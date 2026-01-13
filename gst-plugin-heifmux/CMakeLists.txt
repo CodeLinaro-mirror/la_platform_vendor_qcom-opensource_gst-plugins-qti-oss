@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(GST_PLUGIN_QTI_OSS_CAMERA_IMAGE_REPROCESS
+project(GST_PLUGIN_QTI_OSS_HEIFMUX
   VERSION ${GST_PLUGINS_QTI_OSS_VERSION}
   LANGUAGES C CXX
 )
@@ -18,12 +18,10 @@ pkg_check_modules(GST_ALLOC
   REQUIRED gstreamer-allocators-1.0>=${GST_VERSION_REQUIRED})
 pkg_check_modules(GST_VIDEO
   REQUIRED gstreamer-video-1.0>=${GST_VERSION_REQUIRED})
-pkg_check_modules(GST_QCOM_UTILS
-  REQUIRED gstreamer-qcom-oss-utils-1.0>=1.0.0)
+pkg_check_modules(GST_CODECPARSERS
+  REQUIRED gstreamer-codecparsers-1.0>=${GST_VERSION_REQUIRED})
 pkg_check_modules(GST_QCOM_VIDEO
   REQUIRED gstreamer-qcom-oss-video-1.0>=1.0.0)
-pkg_check_modules(GST_QCOM_ALLOC
-  REQUIRED gstreamer-qcom-oss-allocators-1.0>=1.0.0)
 
 # Generate configuration header file.
 configure_file(config.h.in config.h @ONLY)
@@ -36,36 +34,29 @@ add_definitions(-DHAVE_CONFIG_H)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
 
-# Gstreamer plugin
-set(CAMERA_IMAGE_REPROCESS gstqticamimgreproc)
+# GStreamer plugin.
+set(GST_QTI_HEIF_MUX gstqtiheifmux)
 
-add_library(${CAMERA_IMAGE_REPROCESS} SHARED
-  camera-image-reprocess.c
-  camera-image-reprocess-pad.c
-  camera-image-reprocess-context.cc
+add_library(${GST_QTI_HEIF_MUX} SHARED
+  heifmux.c
+  heifmuxpads.c
+  heif-engine.cc
 )
 
-target_include_directories(${CAMERA_IMAGE_REPROCESS} PUBLIC
+target_include_directories(${GST_QTI_HEIF_MUX} PUBLIC
   ${GST_INCLUDE_DIRS}
-  ${GST_QCOM_UTILS_INCLUDE_DIRS}
-  ${GST_QCOM_VIDEO_INCLUDE_DIRS}
-  ${GST_QCOM_ALLOC_INCLUDE_DIRS}
 )
 
-target_link_libraries(${CAMERA_IMAGE_REPROCESS} PRIVATE
+target_link_libraries(${GST_QTI_HEIF_MUX} PRIVATE
   ${GST_LIBRARIES}
-  ${GST_VIDEO_LIBRARIES}
   ${GST_ALLOC_LIBRARIES}
-  qmmf_recorder_client
-  qmmf_camera_metadata
-  ${GST_QCOM_UTILS_LIBRARIES}
+  ${GST_VIDEO_LIBRARIES}
+  ${GST_CODECPARSERS_LIBRARIES}
   ${GST_QCOM_VIDEO_LIBRARIES}
-  ${GST_QCOM_ALLOC_LIBRARIES}
-  gstqticamerabase
 )
 
 install(
-  TARGETS ${CAMERA_IMAGE_REPROCESS}
+  TARGETS ${GST_QTI_HEIF_MUX}
   LIBRARY DESTINATION ${GST_PLUGINS_QTI_OSS_INSTALL_LIBDIR}/gstreamer-1.0
   PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
               GROUP_EXECUTE GROUP_READ
