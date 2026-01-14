@@ -1000,6 +1000,13 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
     RETURN_BOOL_ON_ERROR(rc == VIDC_ERR_NONE,
         "GstClient::emptyBuffer-%s flattenMeta error", mNamePtr);
 
+    if (VIDC_BUFH_RSTVAL != (int32)frameDataPtr->metadata_handle)
+    {
+        frameDataPtr->non_contiguous_metadata = true;
+    } else {
+        frameDataPtr->non_contiguous_metadata = false;
+    }
+
     rc = device_ioctl(
         mHandle,
         VIDC_IOCTL_EMPTY_INPUT_BUFFER,
@@ -1053,6 +1060,13 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
     MM_DBG_MSG("GstClient::fillBuffer-%s type %d, handle %d, len %d, meta_fd %d",
         mNamePtr, frameDataPtr->buf_type,
         frameDataPtr->frame_handle, frameDataPtr->data_len, frameDataPtr->metadata_handle);
+
+    if (VIDC_BUFH_RSTVAL != (int32)frameDataPtr->metadata_handle)
+    {
+        frameDataPtr->non_contiguous_metadata = true;
+    } else {
+        frameDataPtr->non_contiguous_metadata = false;
+    }
 
     rc = device_ioctl(
         mHandle,
