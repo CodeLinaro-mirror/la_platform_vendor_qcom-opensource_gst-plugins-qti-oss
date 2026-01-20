@@ -902,11 +902,10 @@ error_setup_output:
 
 static GstFlowReturn
 gst_qvidc_vdec_acquire_buffer (GstVideoDecoder * decoder, BUFFER_PORT_TYPE port,
-    GstBuffer ** buffer)
+    GstBuffer ** buffer, GstBufferPoolAcquireParamsExt * params_ext)
 {
   GstQvidcVdec *dec = GST_QVIDC_VDEC (decoder);
   GstFlowReturn ret = GST_FLOW_ERROR;
-  GstBufferPoolAcquireParamsExt params_ext;
   GstBufferPool *pool = NULL;
   guint try_cnt = 0;
   gint64 end_time = 0;
@@ -928,9 +927,7 @@ gst_qvidc_vdec_acquire_buffer (GstVideoDecoder * decoder, BUFFER_PORT_TYPE port,
     }
     g_mutex_unlock (&dec->pending_lock);
 
-    memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
-    params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-    ret = gst_buffer_pool_acquire_buffer (pool, buffer, &params_ext);
+    ret = gst_buffer_pool_acquire_buffer (pool, buffer, params_ext);
     if (ret == GST_FLOW_OK && *buffer != NULL) {
       break;
     }
@@ -957,10 +954,15 @@ gst_qvidc_vdec_queue_eos (GstVideoDecoder * decoder)
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *inter_buf = NULL;
   GstMemory *inter_mem = NULL;
+  GstBufferPoolAcquireParamsExt params_ext;
 
   GST_DEBUG_OBJECT (dec, "queue EOS");
 
-  ret = gst_qvidc_vdec_acquire_buffer (decoder, BUFFER_PORT_INPUT, &inter_buf);
+  memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
+  params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
+
+  ret = gst_qvidc_vdec_acquire_buffer (decoder, BUFFER_PORT_INPUT,
+      &inter_buf, &params_ext);
 
   if (ret != GST_FLOW_OK || inter_buf == NULL) {
     GST_ERROR_OBJECT (dec, "Failed to acquire_buffer from in port pool");
@@ -1958,7 +1960,14 @@ gst_qvidc_vdec_decode (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   GST_DEBUG_OBJECT (dec, "acquire_inter_buffer");
 
   if (dec->comp_started) {
-    ret = gst_qvidc_vdec_acquire_buffer (decoder, BUFFER_PORT_INPUT, &inter_buf);
+    GstBufferPoolAcquireParamsExt params_ext;
+    memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
+    params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
+    if (inBuf.fd > 0) {
+      params_ext.fd = inBuf.fd;
+    }
+    ret = gst_qvidc_vdec_acquire_buffer (decoder, BUFFER_PORT_INPUT,
+        &inter_buf, &params_ext);
   }
 
   if (ret != GST_FLOW_OK || inter_buf == NULL) {
