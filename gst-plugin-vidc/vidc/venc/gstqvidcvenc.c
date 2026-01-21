@@ -1528,6 +1528,113 @@ gst_qvidc_venc_stop (GstVideoEncoder * encoder)
   return TRUE;
 }
 
+static GstFlowReturn
+gst_qvidc_venc_acquire_buffer (GstVideoEncoder * encoder, BUFFER_PORT_TYPE port,
+    GstBuffer ** buffer)
+{
+  GstQvidcVenc *enc = GST_QVIDC_VENC (encoder);
+  GstFlowReturn ret = GST_FLOW_ERROR;
+  GstBufferPoolAcquireParamsExt params_ext;
+  GstBufferPool *pool = NULL;
+  guint try_cnt = 0;
+  gint64 end_time = 0;
+
+  GST_DEBUG_OBJECT (enc, "port %d acquire_buffer ", port);
+  if (port == BUFFER_PORT_INPUT) {
+    pool = enc->in_port_pool;
+  } else {
+    pool = enc->out_port_pool;
+  }
+
+  do {
+    g_mutex_lock (&enc->pending_lock);
+    if (try_cnt > MAX_TRY_CNT || enc->error_detected) {
+      GST_ERROR_OBJECT (enc, "reach max try %u or error detected %u",
+          try_cnt, (guint) enc->error_detected);
+      g_mutex_unlock (&enc->pending_lock);
+      break;
+    }
+    g_mutex_unlock (&enc->pending_lock);
+
+    memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
+    params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
+    ret = gst_buffer_pool_acquire_buffer (pool, buffer, &params_ext);
+    if (ret == GST_FLOW_OK && *buffer != NULL) {
+      break;
+    }
+
+    end_time =
+        g_get_monotonic_time () + G_TIME_SPAN_MILLISECOND * 100;
+    g_mutex_lock (&enc->pending_lock);
+    if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
+      GST_ERROR_OBJECT (enc, "Timed out on wait, try_cnt %u", try_cnt);
+    }
+    g_mutex_unlock (&enc->pending_lock);
+    try_cnt++;
+  } while (ret != GST_FLOW_OK || *buffer == NULL);
+
+  GST_DEBUG_OBJECT (enc, "port %d acquire_buffer %p ", port, *buffer);
+
+  return ret;
+}
+
+static GstFlowReturn
+gst_qvidc_venc_queue_eos (GstVideoEncoder * encoder)
+{
+  GstQvidcVenc *enc = GST_QVIDC_VENC (encoder);
+  GstFlowReturn ret = GST_FLOW_OK;
+  GstBuffer *inter_buf = NULL;
+  GstMemory *inter_mem = NULL;
+
+  GST_DEBUG_OBJECT (enc, "queue EOS");
+
+  ret = gst_qvidc_venc_acquire_buffer (encoder, BUFFER_PORT_INPUT, &inter_buf);
+
+  if (ret != GST_FLOW_OK || inter_buf == NULL) {
+    GST_ERROR_OBJECT (enc, "Failed to acquire_buffer from in port pool");
+    ret = GST_FLOW_ERROR;
+  } else {
+    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer done");
+    inter_mem = gst_buffer_peek_memory (inter_buf, 0);
+    if (inter_mem) {
+      gint fd = -1;
+      if (gst_is_dmabuf_memory (inter_mem)) {
+        fd = gst_dmabuf_memory_get_fd (inter_mem);
+      } else {
+        fd = gst_fd_memory_get_fd (inter_mem);
+      }
+      GST_DEBUG_OBJECT (enc,
+          "Acquired internal buffer fd: %d in buffer: %p mem %p from pool: %p",
+          fd, inter_buf, inter_mem, enc->in_port_pool);
+
+      gint meta_fd = -1;
+      guint metasize = 0;
+      gst_vidc_buffer_get_custom_meta (inter_buf, "GstQVIDCEMeta", &meta_fd, &metasize);
+
+      BufferDescriptor inBuf;
+      memset (&inBuf, 0, sizeof (BufferDescriptor));
+      inBuf.fd = fd;
+      inBuf.capacity = gst_memory_get_sizes (inter_mem, NULL, NULL);
+      inBuf.port_type = BUFFER_PORT_INPUT;
+      inBuf.flag = FLAG_TYPE_END_OF_STREAM;
+      inBuf.meta_fd = meta_fd;
+      inBuf.metasize = metasize;
+
+      if (!vidc_queue (enc->comp, &inBuf)) {
+        GST_ERROR_OBJECT (enc, "queueBuffer %d failed, buf %p", inBuf.fd, inter_buf);
+        gst_buffer_pool_release_buffer (enc->in_port_pool, inter_buf);
+        ret = GST_FLOW_ERROR;
+      }
+    } else {
+      GST_ERROR_OBJECT (enc, "failed to get mem from buf %p", inter_buf);
+      gst_buffer_pool_release_buffer (enc->in_port_pool, inter_buf);
+      ret = GST_FLOW_ERROR;
+    }
+  }
+
+  return ret;
+}
+
 /* Dispatch any pending remaining data at EOS. Class can refuse to encode new data after. */
 static GstFlowReturn
 gst_qvidc_venc_finish (GstVideoEncoder * encoder)
@@ -1537,33 +1644,51 @@ gst_qvidc_venc_finish (GstVideoEncoder * encoder)
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *buffer = NULL;
   GstMemory *mem = NULL;
-  guint count = 0;
 
   GST_DEBUG_OBJECT (enc, "finish");
-  //TODO: queue EOS buffer
 
   /* wait for all the pending buffers to return */
   GST_VIDEO_ENCODER_STREAM_UNLOCK (encoder);
+
+  ret = gst_qvidc_venc_queue_eos (encoder);
+  if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (enc, "queue EOS failed");
+    goto out;
+  }
 
   g_mutex_lock (&enc->pending_lock);
 
   end_time =
       g_get_monotonic_time () + (EOS_WAITING_TIMEOUT * G_TIME_SPAN_SECOND);
+
+  GST_DEBUG_OBJECT (enc, "start waiting until EOS signal");
   while (!enc->eos_reached) {
     GST_DEBUG_OBJECT (enc, "wait until EOS signal is triggered");
 
+    if (enc->error_detected) {
+      GST_ERROR_OBJECT (enc, "error detected %u", (guint) enc->error_detected);
+      break;
+    }
+
     if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
-      GST_ERROR_OBJECT (enc, "Timed out on wait, exiting!");
+      GST_ERROR_OBJECT (enc, "Timed out on wait EOS, exiting!");
       break;
     }
   }
 
-  enc->eos_reached = FALSE;
+  if (!enc->eos_reached) {
+    GST_ERROR_OBJECT (enc, "EOS not reached");
+    ret = GST_FLOW_ERROR;
+  }
 
   g_mutex_unlock (&enc->pending_lock);
+
+out:
   GST_VIDEO_ENCODER_STREAM_LOCK (encoder);
 
-  return GST_FLOW_OK;
+  GST_DEBUG_OBJECT (enc, "EOS reached %d", enc->eos_reached);
+
+  return ret;
 }
 
 static gboolean
@@ -2309,7 +2434,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
           outBuffer->index, outBuffer->fd, outBuffer->size, outBuffer->capacity,
           outBuffer->timestamp, outBuffer->flag);
 
-      if (outBuffer->fd > 0 || outBuffer->size > 0) {
+      if (outBuffer->fd > 0 && outBuffer->size > 0) {
         ret = push_frame_downstream (encoder, outBuffer);
         if (ret != GST_FLOW_FLUSHING && ret != GST_FLOW_OK) {
           GST_ERROR_OBJECT (enc, "Failed to push frame downstream");
@@ -2331,6 +2456,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
     case EVENT_ERROR:{
       g_mutex_lock (&enc->pending_lock);
       enc->error_detected = TRUE;
+      g_cond_signal (&enc->pending_cond);
       g_mutex_unlock (&enc->pending_lock);
 
       gst_buffer_pool_set_flushing (enc->in_port_pool, TRUE);
@@ -2649,7 +2775,6 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   gboolean mem_mapped = FALSE;
   gboolean status = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
-  guint try_cnt = 0;
 
   GST_DEBUG_OBJECT (enc, "enter");
 
@@ -2705,42 +2830,10 @@ gst_qvidc_venc_encode (GstVideoEncoder * encoder, GstVideoCodecFrame * frame)
   GstMemory *inter_mem = NULL;
 
   GST_DEBUG_OBJECT (enc, "acquire_inter_buffer");
-  do {
-    g_mutex_lock (&enc->pending_lock);
-    if (try_cnt > MAX_TRY_CNT || enc->error_detected) {
-      GST_ERROR_OBJECT (enc, "reach max try %u or error detected %u",
-          try_cnt, (guint) enc->error_detected);
-      g_mutex_unlock (&enc->pending_lock);
-      ret = GST_FLOW_ERROR;
-      break;
-    }
-    g_mutex_unlock (&enc->pending_lock);
 
-    GstBufferPoolAcquireParamsExt params_ext;
-    memset (&params_ext, 0, sizeof (GstBufferPoolAcquireParamsExt));
-    params_ext.params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-    if (inBuf.fd > 0)
-      params_ext.fd = inBuf.fd;
-    ret =
-        gst_buffer_pool_acquire_buffer (enc->in_port_pool, &inter_buf,
-            &params_ext);
-    if (ret == GST_FLOW_OK) {
-      break;
-    } else {
-      GST_DEBUG_OBJECT (enc, "acquire_inter_buffer failed");
-    }
-
-    GST_DEBUG_OBJECT (enc, "try wait and acquire again");
-    guint64 end_time =
-        g_get_monotonic_time () + (ACQUIRE_TIMEOUT * G_TIME_SPAN_MILLISECOND);
-    g_mutex_lock (&(enc->pending_lock));
-    if (!g_cond_wait_until (&enc->pending_cond, &enc->pending_lock, end_time)) {
-      GST_ERROR_OBJECT (enc, "Timed out on wait");
-    }
-    g_mutex_unlock (&(enc->pending_lock));
-    try_cnt++;
-    GST_DEBUG_OBJECT (enc, "acquire_inter_buffer pending_lock done");
-  } while (enc->input_setup);
+  if (enc->input_setup) {
+    ret = gst_qvidc_venc_acquire_buffer (encoder, BUFFER_PORT_INPUT, &inter_buf);
+  }
 
   if (ret != GST_FLOW_OK || inter_buf == NULL) {
     GST_ERROR_OBJECT (enc, "Failed to acquire_buffer downstream");
