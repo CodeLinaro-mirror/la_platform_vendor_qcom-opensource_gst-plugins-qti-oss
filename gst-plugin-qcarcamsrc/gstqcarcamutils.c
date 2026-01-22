@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef HAVE_CONFIG_H
@@ -8,11 +8,6 @@
 #include "gstqcarcamutils.h"
 #include "gstqcarcamdmabuf.h"
 
-#ifdef KPI_USE_SYSLOG
-#include <syslog.h>
-#endif
-#include <fcntl.h>
-
 GST_DEBUG_CATEGORY_EXTERN (gst_qcarcam_src_debug);
 #define GST_CAT_DEFAULT gst_qcarcam_src_debug
 
@@ -21,12 +16,9 @@ GST_DEBUG_CATEGORY_EXTERN (gst_qcarcam_src_debug);
 #define GST_QCARCAM_META_API_TYPE (gst_qcarcam_meta_api_get_type())
 #define GST_QCARCAM_META_INFO     (gst_qcarcam_meta_get_info())
 
-#define KPI_MARKER_NODE "/sys/kernel/boot_kpi/kpi_values"
-
 #define gst_buffer_get_qcarcam_meta(b) \
     ((GstQcarcamMeta *)gst_buffer_get_meta((b),GST_QCARCAM_META_API_TYPE))
 
-int kpi_place_marker(const char* str);
 GType
 gst_qcarcam_meta_api_get_type (void);
 const GstMetaInfo *
@@ -40,7 +32,7 @@ gst_qcarcam_meta_api_get_type (void)
   if (g_once_init_enter (&type)) {
     static const gchar *tags[] = { NULL };
     GType _type = gst_meta_api_type_register ("GstQcarcamMetaAPI", tags);
-    GST_INFO ("type %" G_GSIZE_FORMAT, (gsize) _type);
+    SG_INFO ("type %" G_GSIZE_FORMAT, (gsize) _type);
     g_once_init_leave (&type, _type);
   }
 
@@ -66,7 +58,7 @@ gst_qcarcam_meta_get_info (void)
     const GstMetaInfo *mi = gst_meta_register (GST_QCARCAM_META_API_TYPE,
         "GstQcarcamMeta", sizeof (GstQcarcamMeta),
         gst_qcarcam_meta_init, NULL, NULL);
-    GST_INFO ("meta info %p", mi);
+    SG_INFO_LITE ("meta info %p", mi);
     g_once_init_leave (&meta_info, mi);
   }
 
@@ -117,7 +109,7 @@ _modifier_attach (GstBuffer * buffer, DmaBufDesc * desc)
   guint64 *modifier = g_slice_new (guint64);
 
   if (!modifier) {
-    GST_ERROR ("new modifier error");
+    SG_ERR_LITE ("new modifier error");
     return;
   }
 
@@ -154,23 +146,3 @@ do_dmabuf_free (GstBuffer * buffer)
 
   return TRUE;
 }
-
-int kpi_place_marker(const char* str)
-{
-#ifdef KPI_USE_SYSLOG
-  syslog(LOG_NOTICE, "%s\n", str);
-  return 1;
-#else
-  int fd = open(KPI_MARKER_NODE, O_WRONLY);
-  if(fd >= 0) {
-    int ret = write(fd, str, strlen(str));
-    if (ret <= 0)
-      GST_ERROR("kpi write error ret %d, str %s, fd %d", ret, str, fd);
-    close(fd);
-    return ret;
-  }
-  GST_ERROR("open kpi marker node failed");
-  return -1;
-#endif
-}
-

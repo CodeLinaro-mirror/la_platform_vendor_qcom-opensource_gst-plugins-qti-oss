@@ -165,13 +165,11 @@ gst_qcarcam_src_init (GstQcarcamSrc * qcarcamsrc)
   gst_base_src_set_live (GST_BASE_SRC (qcarcamsrc), TRUE);
   ret = qcarcam_dmabuf_load_libs_once();
   if (!ret)
-    GST_ERROR_OBJECT (qcarcamsrc, "qcarcamsrc load libs failed");
+    SG_ERR_OBJ_LITE (qcarcamsrc, "qcarcamsrc load libs failed");
   ret = qcarcamqcx_init(&qcarcam_init);
   if (!ret)
-    GST_ERROR_OBJECT (qcarcamsrc, "qcarcamsrc init failed");
+    SG_ERR_OBJ_LITE (qcarcamsrc, "qcarcamsrc init failed");
 
-  //log_heartbeat_init(&qcarcamsrc->logbeat, LOG_HEARTBEAT_TS_PERIOD_INIT, LOG_HEARTBEAT_TS_PERIOD_MIN, LOG_HEARTBEAT_TS_PERIOD_MAX);
-  kpi_place_marker("M - qcarcamsrc init");
 }
 
 static void
@@ -251,10 +249,9 @@ gst_qcarcam_src_change_state (GstElement * element,
 {
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
   GstQcarcamSrc *src = GST_QCARCAM_SRC (element);
-  char tips[39];
-  GST_INFO_OBJECT(src, "Doing self transition: 0x%x(%s)", transition, gst_state_change_get_name(transition));
-  snprintf(tips, sizeof(tips), "M - qcarcamsrc trans<0x%x>", transition);
-  kpi_place_marker(tips);
+
+  SG_INFO_OBJ_LITE(src, "Doing self transition: 0x%x(%s)", transition, gst_state_change_get_name(transition));
+
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
     break;
@@ -262,13 +259,11 @@ gst_qcarcam_src_change_state (GstElement * element,
     break;
   }
 
-  GST_INFO_OBJECT(src, "Doing parent transition: 0x%x", transition);
-  snprintf(tips, sizeof(tips), "M - qcarcamsrc trans<0x%x>", transition);
-  kpi_place_marker(tips);
+  SG_INFO_OBJ_LITE(src, "Doing parent transition: 0x%x", transition);
+
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-  snprintf(tips, sizeof(tips), "M - qcarcamsrc trans d<0x%x,%d>", transition, ret);
-  kpi_place_marker(tips);
-  GST_INFO_OBJECT(src, "Done transition: 0x%x, ret %d(%s)", transition, ret, gst_element_state_change_return_get_name(ret));
+
+  SG_INFO_OBJ_LITE(src, "Done transition: 0x%x, ret %d(%s)", transition, ret, gst_element_state_change_return_get_name(ret));
   return ret;
 }
 static gboolean
@@ -315,13 +310,13 @@ gboolean qcarcam_handle_new_frame(GstQcarcamSrc *self, QCarCamFrameInfo_t *frame
 {
   gboolean ret = FALSE;
   QCarCamFrameInfo_t *frame = (QCarCamFrameInfo_t *)malloc(sizeof(QCarCamFrameInfo_t));
-  GST_ERROR_OBJECT(self,"enter self %p, frameinfo %p, frame %p", self, frame_info, frame);
   if (frame) {
+    SG_INFO_OBJ_LITE(self,"frameinfo %p, frame %p", frame_info, frame);
     memcpy (frame, frame_info, sizeof(QCarCamFrameInfo_t));
     g_queue_push_tail(&self->buffers, frame);
     ret = TRUE;
   }
-  GST_ERROR_OBJECT(self,"exit self %p", self);
+
   return ret;
 
 }
@@ -334,7 +329,7 @@ static QCarCamRet_e qcarcam_event_cb(const QCarCamHndl_t hndl,
   GstQcarcamSrc *self = GST_QCARCAM_SRC (pPrivateData);
   if (hndl != self->hndl)
   {
-    GST_ERROR_OBJECT(self,"event_cb called with invalid qcarcam handle 0x%lx", hndl);
+    SG_ERR_OBJ_LITE(self,"event_cb called with invalid qcarcam handle 0x%lx", hndl);
     return QCARCAM_RET_FAILED;
   }
 
@@ -345,7 +340,7 @@ static QCarCamRet_e qcarcam_event_cb(const QCarCamHndl_t hndl,
       if (self->started)
       {
         g_mutex_lock(&self->lock);
-        GST_INFO_OBJECT(self, "received QCARCAM_EVENT_FRAME_READY");
+        SG_INFO_OBJ_LITE(self, "received QCARCAM_EVENT_FRAME_READY");
         qcarcam_handle_new_frame(self, &(pPayload->frameInfo));
         g_mutex_unlock(&self->lock);
         g_mutex_lock(&self->buf_lock);
@@ -359,17 +354,17 @@ static QCarCamRet_e qcarcam_event_cb(const QCarCamHndl_t hndl,
     case QCARCAM_EVENT_ERROR:
       if (pPayload->errInfo.errorId == QCARCAM_ERROR_FATAL)
       {
-        GST_ERROR_OBJECT(self, "Fatal Error, abort");
+        SG_ERR_OBJ_LITE(self, "Fatal Error, abort");
       }
       else
       {
-        GST_ERROR_OBJECT(self, "Unhandled Error %d %d",
+        SG_ERR_OBJ_LITE(self, "Unhandled Error %d %d",
           pPayload->errInfo.errorId,
           pPayload->errInfo.errorCode);
       }
       break;
     default:
-      GST_ERROR_OBJECT(self, "Received unsupported event %d", eventId);
+      SG_ERR_OBJ_LITE(self, "Received unsupported event %d", eventId);
       break;
   }
    return QCARCAM_RET_OK;
@@ -382,7 +377,7 @@ gst_qcarcamsrc_negotiate (GstBaseSrc * src)
   GstQcarcamSrc *qcarcamsrc = (GstQcarcamSrc *) src;
 
   if (!(ret = GST_BASE_SRC_CLASS (parent_class)->negotiate (src))) {
-    GST_ERROR_OBJECT (qcarcamsrc, "failed in parent negotiate !!!");
+    SG_ERR_OBJ_LITE (qcarcamsrc, "failed in parent negotiate !");
   }
 
   return ret;
@@ -392,12 +387,8 @@ static GstFlowReturn
 gst_qcarcamsrc_create (GstPushSrc * src, GstBuffer ** buffer)
 {
   GstQcarcamSrc *qcarcamsrc = (GstQcarcamSrc *) src;
-  gint32 retry_time = 0, retry_time_residual;
-  gint32 recv_len = 0;
   GstFlowReturn error = GST_FLOW_OK;
   QCarCamFrameInfo_t *frame_info;
-  char tips[39];
-  int need_show_log = 0;
   GstMemory *mem;
   gint fd = -1;
   gsize size = 0, info_size = 0;
@@ -407,15 +398,15 @@ gst_qcarcamsrc_create (GstPushSrc * src, GstBuffer ** buffer)
   GstVideoInfo *info = &qcarcamsrc->info;
   GstVideoInfo *ainfo = &qcarcamsrc->aligned_info;
 
-  GST_ERROR_OBJECT (qcarcamsrc, "enter src %p", qcarcamsrc);
+  SG_INFO_OBJ_LITE (qcarcamsrc, "enter src %p", qcarcamsrc);
 
   if (qcarcamsrc->started) {
-    GST_ERROR_OBJECT (qcarcamsrc, "src %p", qcarcamsrc);
+    SG_INFO_OBJ_LITE (qcarcamsrc, "src %p", qcarcamsrc);
     g_mutex_lock(&qcarcamsrc->buf_lock);
     while (g_queue_is_empty (&qcarcamsrc->buffers)) {
       wait_until = g_get_monotonic_time () + DEFALUT_WAIT_TIME * G_TIME_SPAN_SECOND;
         if (!g_cond_wait_until (&qcarcamsrc->buf_cond, &qcarcamsrc->buf_lock, wait_until)) {
-          GST_INFO_OBJECT (qcarcamsrc, "timed out to wait a valid frame");
+          SG_INFO_OBJ_LITE (qcarcamsrc, "timed out to wait a valid frame");
             g_mutex_unlock(&qcarcamsrc->buf_lock);
             return GST_FLOW_FLUSHING;
         }
@@ -424,11 +415,11 @@ gst_qcarcamsrc_create (GstPushSrc * src, GstBuffer ** buffer)
     g_mutex_lock(&qcarcamsrc->lock);
     if (!g_queue_is_empty (&qcarcamsrc->buffers)) {
       frame_info = (QCarCamFrameInfo_t *) g_queue_pop_head (&qcarcamsrc->buffers);
-      GST_ERROR_OBJECT (qcarcamsrc, "frame info %p", frame_info);
+      SG_INFO_OBJ_LITE (qcarcamsrc, "frame info %p", frame_info);
       *buffer = gst_buffer_new ();
       gst_buf = *buffer;
       if (gst_buf == NULL) {
-        GST_ERROR_OBJECT (qcarcamsrc, "buffer new error");
+        SG_ERR_OBJ_LITE (qcarcamsrc, "buffer new error");
         error = GST_FLOW_ERROR;
         return error;
       }
@@ -454,7 +445,7 @@ gst_qcarcamsrc_create (GstPushSrc * src, GstBuffer ** buffer)
         (GstMiniObjectDisposeFunction) gst_qcarcam_src_buffer_dispose;
         error = GST_FLOW_OK;
       } else {
-        GST_ERROR_OBJECT (qcarcamsrc, "dmabuf mem error");
+        SG_ERR_OBJ_LITE (qcarcamsrc, "dmabuf mem error");
         gst_memory_unref (mem);
         error = GST_FLOW_ERROR;
       }
@@ -470,7 +461,6 @@ static gboolean
 gst_qcarcam_src_start (GstBaseSrc * basesrc)
 {
   gboolean ret = FALSE;
-  char tips[39];
   unsigned int num_inputs = 0;
   uint32_t mode_id = 0;
   QCarCamInput_t *inputs;
@@ -478,32 +468,25 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   uint32_t param = 0;
   GstQcarcamSrc *qcarcamsrc = GST_QCARCAM_SRC (basesrc);
 
-  GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc start");
-  kpi_place_marker("M - qcarcamsrc start");
+  SG_INFO_OBJ_LITE(qcarcamsrc,"qcarcamsrc start");
 
   g_queue_init (&qcarcamsrc->buffers);
   ret = qcarcamqcx_query_inputs(NULL, 0, &num_inputs);
   if (!ret)
     return ret;
-  snprintf(tips, sizeof(tips), "M - qcarcamsrc query inputs num<%d>", num_inputs);
-  kpi_place_marker(tips);
   inputs = (QCarCamInput_t *)malloc(sizeof(QCarCamInput_t) * num_inputs);
   if (!inputs) {
-    GST_ERROR_OBJECT(qcarcamsrc, "Failed to allocate inputs");
+    SG_ERR_OBJ_LITE(qcarcamsrc, "Failed to allocate inputs");
     return FALSE;
   }
   ret = qcarcamqcx_query_inputs(inputs, num_inputs, &(qcarcamsrc->queryfilled));
   if (!ret || qcarcamsrc->queryfilled != num_inputs) {
-    snprintf(tips, sizeof(tips), "M - qcarcamsrc query inputs failed<%d>", ret);
-    kpi_place_marker(tips);
-    snprintf(tips, sizeof(tips), "M - qcarcamsrc queryfilled<%d>, numinput<%d>", qcarcamsrc->queryfilled, num_inputs);
-    kpi_place_marker(tips);
-    GST_ERROR_OBJECT (qcarcamsrc,"qcarcamsrc query inputs failed %d, queryfilled %d, numinput %d exit!", ret, qcarcamsrc->queryfilled, num_inputs);
+    SG_ERR_OBJ_LITE (qcarcamsrc,"qcarcamsrc query inputs failed %d, queryfilled %d, numinput %d exit!", ret, qcarcamsrc->queryfilled, num_inputs);
     goto error_free_inputs;
   }
 
   for (int i = 0; i < num_inputs; i++) {
-    GST_INFO_OBJECT (qcarcamsrc, "inputs[%d] is %d", i, inputs[i].inputId);
+    SG_INFO_OBJ_LITE (qcarcamsrc, "inputs[%d] is %d", i, inputs[i].inputId);
     if (inputs[i].inputId == qcarcamsrc->input_id) {
       memcpy(&qcarcamsrc->input, &inputs[i], sizeof(QCarCamInput_t));
       break;
@@ -511,14 +494,14 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   }
 
   if (qcarcamsrc->input.numModes > QCARCAM_MAX_NUM_MODES) {
-    GST_ERROR_OBJECT(qcarcamsrc, "Invalid number of modes %d for input %d",
+    SG_ERR_OBJ_LITE(qcarcamsrc, "Invalid number of modes %d for input %d",
         qcarcamsrc->input.numModes, qcarcamsrc->input.inputId);
     goto error_free_inputs;
   }
 
   QCarCamMode_t *modes = (QCarCamMode_t *)malloc(sizeof(QCarCamMode_t) * qcarcamsrc->input.numModes);
   if (!modes) {
-    GST_ERROR_OBJECT(qcarcamsrc, "Failed to allocate modes");
+    SG_ERR_OBJ_LITE(qcarcamsrc, "Failed to allocate modes");
     goto error_free_inputs;
   }
   QCarCamInputModes_t querymodes = {};
@@ -533,13 +516,12 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   }
   GST_INFO_OBJECT (qcarcamsrc, "mode id is %d, property mode id %d", mode_id, qcarcamsrc->mode_id);
   if (!ret || modes[mode_id].numSources > QCARCAM_INPUT_MAX_NUM_SOURCES) {
-    GST_ERROR_OBJECT(qcarcamsrc, "qcarcamsrc query input mode failed %d", ret);
+    SG_ERR_OBJ_LITE(qcarcamsrc, "qcarcamsrc query input mode failed %d", ret);
     goto error_free_modes;
   }
   memcpy(&qcarcamsrc->source, &(modes[mode_id].sources[0]), sizeof(QCarCamInputSrc_t));
 
   GST_DEBUG_OBJECT (qcarcamsrc,"will open qcarcam qcarcamsrc->input_id %d", qcarcamsrc->input_id);
-  kpi_place_marker("M - qcarcamsrc will open qcarcam");
   openParams.opMode = QCARCAM_OPMODE_ISP;
   openParams.numInputs = 1;
   openParams.inputs[0].inputId = qcarcamsrc->input_id;
@@ -548,16 +530,14 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
   openParams.flags |= QCARCAM_OPEN_FLAGS_REQUEST_MODE;
   ret = qcarcamqcx_open(&openParams, &qcarcamsrc->hndl);
   if (!ret || qcarcamsrc->hndl == QCARCAM_HNDL_INVALID) {
-    GST_ERROR_OBJECT(qcarcamsrc, "Failed to open qcarcam");
+    SG_ERR_OBJ_LITE(qcarcamsrc, "Failed to open qcarcam");
     goto error_free_inputs;
   }
   ret = qcarcamqcx_register_event_callback(qcarcamsrc->hndl, &qcarcam_event_cb, qcarcamsrc);
   param = QCARCAM_EVENT_FRAME_READY | QCARCAM_EVENT_INPUT_SIGNAL | QCARCAM_EVENT_ERROR;
   ret = qcarcamqcx_setparam(qcarcamsrc->hndl, QCARCAM_STREAM_CONFIG_PARAM_EVENT_MASK, &param, sizeof(param));
   if (!ret) {
-    snprintf(tips, sizeof(tips), "M - qcarcamsrc set event param err");
-    kpi_place_marker(tips);
-    GST_ERROR_OBJECT (qcarcamsrc,"qcarcamsrc set event param err, exit!");
+    SG_ERR_OBJ_LITE (qcarcamsrc,"qcarcamsrc set event param err, exit!");
     goto error_close;
   }
   qcarcamsrc->isp_config.id = 0;
@@ -575,14 +555,12 @@ gst_qcarcam_src_start (GstBaseSrc * basesrc)
                   &qcarcamsrc->isp_config,
                   sizeof(QCarCamIspUsecaseConfig_t));
   if (!ret) {
-    snprintf(tips, sizeof(tips), "M - qcarcamsrc set isp param err");
-    kpi_place_marker(tips);
-    GST_ERROR_OBJECT (qcarcamsrc,"qcarcamsrc set isp param err, exit!");
+    SG_ERR_OBJ_LITE (qcarcamsrc,"qcarcamsrc set isp param err, exit!");
     goto error_close;
   }
   qcarcamsrc->started = TRUE;
 
-  GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc start %d", qcarcamsrc->started);
+  SG_INFO_OBJ_LITE(qcarcamsrc,"qcarcamsrc start %d", qcarcamsrc->started);
   return TRUE;
 
 error_close:
@@ -596,16 +574,13 @@ error_free_modes:
   if (modes) {
     free(modes);
     modes = NULL;
-    snprintf(tips, sizeof(tips), "M - qcarcamsrc free modes");
-    kpi_place_marker(tips);
-    GST_ERROR_OBJECT (qcarcamsrc,"qcarcamsrc free modes!");
+    SG_ERR_OBJ_LITE (qcarcamsrc,"qcarcamsrc free modes!");
   }
 error_free_inputs:
   if (inputs) {
     free(inputs);
     inputs = NULL;
   }
-  kpi_place_marker("M - qcarcamsrc started fail!");
   return FALSE;
 }
 
@@ -614,14 +589,11 @@ gst_qcarcam_src_stop (GstBaseSrc * basesrc)
 {
   gboolean ret = FALSE;
   QCarCamFrameInfo_t *frame_info = NULL;
-  char tips[39];
   GstQcarcamSrc *qcarcamsrc = GST_QCARCAM_SRC (basesrc);
-  kpi_place_marker("M - qcarcamsrc stop begin");
-  GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc stop begin");
+  SG_INFO_OBJ_LITE(qcarcamsrc,"qcarcamsrc stop begin");
   if (qcarcamsrc->started && qcarcamsrc->hndl != QCARCAM_HNDL_INVALID) {
     ret = qcarcamqcx_stop(qcarcamsrc->hndl);
-    kpi_place_marker("M - qcarcamsrc stop");
-    GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc stop");
+    SG_INFO_OBJ_LITE(qcarcamsrc,"qcarcamsrc stop");
   }
   qcarcamsrc->started = FALSE;
 
@@ -632,8 +604,7 @@ gst_qcarcam_src_stop (GstBaseSrc * basesrc)
   }
   g_queue_clear (&qcarcamsrc->buffers);
 
-  kpi_place_marker("M - qcarcamsrc stop end");
-  GST_INFO_OBJECT(qcarcamsrc,"qcarcamsrc stop end");
+  SG_INFO_OBJ_LITE(qcarcamsrc,"qcarcamsrc stop end");
   return ret;
 }
 static gboolean
@@ -649,13 +620,14 @@ gst_qcarcam_src_buffer_dispose (GstBuffer * qcarcamsrcbuf)
   DmaBufDesc *desc = gst_qcarcam_meta_get_desc(qcarcamsrcbuf);
   if (!desc) {
     GST_ERROR ("desc is null");
+    gst_buffer_unref (qcarcamsrcbuf);
     return FALSE;
   }
   src = (GstQcarcamSrc*)(desc->ptr);
   mem = gst_buffer_get_memory (qcarcamsrcbuf, 0);
   GST_LOG_OBJECT (src, "buffer %p, mem %p", qcarcamsrcbuf, mem);
   if (G_UNLIKELY (!mem)) {
-    GST_WARNING_OBJECT (src, "cannot get mem from %p",
+    SG_WARN_OBJ_LITE (src, "cannot get mem from %p",
       qcarcamsrcbuf);
     gst_buffer_unref (qcarcamsrcbuf);
     return FALSE;
@@ -690,7 +662,6 @@ gst_qcarcam_src_set_caps (GstBaseSrc * src, GstCaps * caps)
   GstVideoFormat format;
   GstQcarcamSrc *qcarcamsrc;
   gint width, height, stride_w, stride_h;
-  gint fps_n, fps_d, cur_fps;
   gboolean ret = TRUE;
   gint stride_w_ymeta, stride_h_ymeta, plane_sz_ymeta, plane_sz_y;
 
@@ -745,7 +716,7 @@ done:
 /* Wrong errors */
 invalid_caps:
   {
-    GST_WARNING_OBJECT (qcarcamsrc, "invalid caps !!!");
+    SG_WARN_OBJ_LITE (qcarcamsrc, "invalid caps !");
     return FALSE;
   }
 }
@@ -766,7 +737,7 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
   QCarCamRequest_t request = {};
   DmaBufDesc *desc = NULL;
 
-  GST_INFO_OBJECT (self, "%" GST_PTR_FORMAT, query);
+  SG_INFO_OBJ (self, "%" GST_PTR_FORMAT, query);
 
   min = QCARCAMSRC_BUFFERS;
   self->desc = (DmaBufDesc *)calloc(min, sizeof(DmaBufDesc));
@@ -824,7 +795,7 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
          qcamBuf->planes[0].size = desc->buffer_size_dimensions;
          break;
        default:
-         GST_ERROR_OBJECT(self, "plane number %d, should be 1/2/3", desc->layout.num_planes);
+         SG_ERR_OBJ_LITE(self, "plane number %d, should be 1/2/3", desc->layout.num_planes);
          return FALSE;
      }
 
@@ -839,23 +810,23 @@ gst_qcarcam_src_decide_allocation (GstBaseSrc * src, GstQuery * query)
   ret = qcarcamqcx_set_bufs(self->hndl, &self->buffer_list);
   if (!ret)
   {
-    GST_ERROR_OBJECT (self, "qcarcamsrc set buf failed");
+    SG_ERR_OBJ_LITE (self, "qcarcamsrc set buf failed");
     return FALSE;
   }
   ret = qcarcamqcx_reserve(self->hndl);
   if (!ret)
   {
-    GST_ERROR_OBJECT (self, "qcarcamsrc reserve failed");
+    SG_ERR_OBJ_LITE (self, "qcarcamsrc reserve failed");
     return FALSE;
   }
   if (!GST_BASE_SRC_CLASS (parent_class)->decide_allocation (src, query)) {
-    GST_ERROR_OBJECT (self, "failed in parent decide_allocation");
+    SG_ERR_OBJ_LITE (self, "failed in parent decide_allocation");
     return FALSE;
   }
   ret = qcarcamqcx_start(self->hndl);
   if (!ret)
   {
-    GST_ERROR_OBJECT (self, "qcarcamsrc start failed");
+    SG_ERR_OBJ_LITE (self, "qcarcamsrc start failed");
     return FALSE;
   }
 
