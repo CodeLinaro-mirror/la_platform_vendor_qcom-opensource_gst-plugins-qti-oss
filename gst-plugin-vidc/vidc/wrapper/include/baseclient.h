@@ -146,6 +146,8 @@ public:
 
     bool isInitialized() { return mInitialized; }
 
+    bool isDevOpened() { return mHandle != NULL; }
+
     bool isLoaded();
 
     bool isIdle();
@@ -290,6 +292,16 @@ protected:
         (
             vidc_drv_msg_info_type& info,
             uint32 length);
+
+    virtual void setEndOfStream(bool val)
+    {
+        mEndOfStream = val;
+    }
+
+    virtual bool isEndOfStream()
+    {
+        return mEndOfStream;
+    }
 
     void resetPort(vidc_buffer_type buffer, const char* namePtr);
 
