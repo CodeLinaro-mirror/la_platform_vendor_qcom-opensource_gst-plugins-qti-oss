@@ -63,28 +63,28 @@ BaseClient::BaseClient(const char* namePtr)
     if (mHandle == NULL) {
         mState = VIDC_STATE_UNLOADED;
         MM_ERROR_MSG("BaseClient::BaseClient-%s Error opening vidc driver", mNamePtr);
+    } else {
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer), "%sThread", mNamePtr);
+        ThreadClass::ThreadEntryType threadFcn = [this]() {
+            return threadMain();
+        };
+        mThread.start(buffer, threadFcn, 0x8000); // Start the cmd processing thread
+
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer), "%sBufferThreadEBD", mNamePtr);
+        ThreadClass::ThreadEntryType threadBufferEBDFcn = [this]() {
+            return threadBufferEBD();
+        };
+        mBufferThreadEBD.start(buffer, threadBufferEBDFcn, 0x8000); // Start the EBD processing thread
+
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer), "%sBufferThreadFBD", mNamePtr);
+        ThreadClass::ThreadEntryType threadBufferFBDFcn = [this]() {
+            return threadBufferFBD();
+        };
+        mBufferThreadFBD.start(buffer, threadBufferFBDFcn, 0x8000); // Start the FBD processing thread
     }
-
-    memset(buffer, 0, sizeof(buffer));
-    snprintf(buffer, sizeof(buffer) - 1, "%sThread", mNamePtr);
-    ThreadClass::ThreadEntryType threadFcn = [this]() {
-        return threadMain();
-    };
-    mThread.start(buffer, threadFcn, 0x8000); // Start the cmd processing thread
-
-    memset(buffer, 0, sizeof(buffer));
-    snprintf(buffer, sizeof(buffer) - 1, "%sBufferThreadEBD", mNamePtr);
-    ThreadClass::ThreadEntryType threadBufferEBDFcn = [this]() {
-        return threadBufferEBD();
-    };
-    mBufferThreadEBD.start(buffer, threadBufferEBDFcn, 0x8000); // Start the EBD processing thread
-
-    memset(buffer, 0, sizeof(buffer));
-    snprintf(buffer, sizeof(buffer) - 1, "%sBufferThreadFBD", mNamePtr);
-    ThreadClass::ThreadEntryType threadBufferFBDFcn = [this]() {
-        return threadBufferFBD();
-    };
-    mBufferThreadFBD.start(buffer, threadBufferFBDFcn, 0x8000); // Start the FBD processing thread
 }
 
 BaseClient::~BaseClient()
@@ -320,11 +320,7 @@ void BaseClient::fillDone(
     std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
     uLockState.lock();
     if (VIDC_STATE_EXECUTING != mState) {
-        uLockState.unlock();
-        // We are not executing and the buffers are
-        // being returned.  Don't notify the client.
         MM_DBG_MSG("BaseClient::fillDone-%s buffer returned not executing", mNamePtr);
-        return;
     }
 
     uLockState.unlock();
@@ -362,8 +358,8 @@ void BaseClient::fillDone(
         // The buffer was empty, recycle it but don't notify client.
         if (!(frameData.flags & VIDC_FRAME_FLAG_EOS)) // Allow to call client callback for EOS case
         {
-            fillBuffer(frameData);
-            return;
+            MM_DBG_MSG("BaseClient::fillDone-%s len=0, mark as read-only", mNamePtr);
+            frameData.flags |= VIDC_FRAME_FLAG_READONLY;
         }
     }
     if (mFilledCallback) // If a client callback is registered

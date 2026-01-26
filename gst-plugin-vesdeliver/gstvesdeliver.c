@@ -36,6 +36,8 @@ static const char *vm_name = "qcom,cp_bitstream";
 
 GST_DEBUG_CATEGORY (vesdeliver_debug);
 #define GST_CAT_DEFAULT vesdeliver_debug
+#define THRESHOLD_ALLOC_BUFFER_COUNT 30
+#define THRESHOLD_ALLOC_BUFFER_COUNT_REVISED 12
 
 enum
 {
@@ -520,9 +522,11 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   int buf_fd = -1;
 
   if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
-    GST_LOG_OBJECT (vesdeliver, "Input buf %p with sz %" G_GSIZE_FORMAT ", pts %"
-        GST_TIME_FORMAT ", only caps change", inbuf, gst_buffer_get_size(inbuf),
-        GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)));
+    gsize buf_sz = 0;
+    gsize len = gst_buffer_get_sizes (inbuf, NULL, &buf_sz);
+    GST_LOG_OBJECT (vesdeliver, "Input buf %p with len %" G_GSIZE_FORMAT ", sz %"
+        G_GSIZE_FORMAT ", pts %" GST_TIME_FORMAT ", only caps change", inbuf, len,
+        buf_sz, GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)));
     return GST_FLOW_OK;
   }
 
@@ -531,7 +535,7 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstMapInfo input_map = { };
   gst_buffer_map (inbuf, &input_map, GST_MAP_READ);
   GST_DEBUG_OBJECT (vesdeliver,
-      "Input buffer %p with size: %" G_GSIZE_FORMAT ", timestamp: %"
+      "Input buffer %p with len: %" G_GSIZE_FORMAT ", timestamp: %"
       GST_TIME_FORMAT ", offset: %" G_GUINT64_FORMAT, inbuf, input_map.size,
       GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)), GST_BUFFER_OFFSET (inbuf));
 
@@ -808,6 +812,7 @@ static gboolean
 gst_vesdeliver_set_caps (GstBaseTransform * trans, GstCaps * in_caps, GstCaps * out_caps)
 {
   GstVesDeliver *vesdeliver = GST_VESDELIVER (trans);
+  GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (vesdeliver->allocator);
   GstStructure *in_structure;
   const gchar *format;
   gint width, height;
@@ -831,6 +836,19 @@ gst_vesdeliver_set_caps (GstBaseTransform * trans, GstCaps * in_caps, GstCaps * 
   vesdeliver->input_format = g_strdup (format);
   vesdeliver->input_width = width;
   vesdeliver->input_height = height;
+
+  /* Update allocator param.
+   * Set threshold_buf_count to THRESHOLD_ALLOC_BUFFER_COUNT_REVISED if secure mode
+   * is LEND_DMABUF and resolution is more than 2560*1440.
+   */
+  alloc->param.threshold_buf_count = THRESHOLD_ALLOC_BUFFER_COUNT;
+  if (alloc->param.secure_mode == LEND_DMABUF
+      && vesdeliver->input_width * vesdeliver->input_height > 2560*1440) {
+    alloc->param.threshold_buf_count = THRESHOLD_ALLOC_BUFFER_COUNT_REVISED;
+  }
+
+  GST_INFO_OBJECT (vesdeliver, "set threshold_buf_count to %d",
+      alloc->param.threshold_buf_count);
 
   return TRUE;
 }
