@@ -62,6 +62,8 @@
         return (rc);                       \
     }
 
+#define VIDC_BUFH_RSTVAL (-1)
+
 // Base class for components that use VIDC data types
 // For methods that return a bool: true is success, false is failure
 class BaseClient {
@@ -143,6 +145,8 @@ public:
     virtual bool initialize() = 0;
 
     bool isInitialized() { return mInitialized; }
+
+    bool isDevOpened() { return mHandle != NULL; }
 
     bool isLoaded();
 
@@ -288,6 +292,16 @@ protected:
         (
             vidc_drv_msg_info_type& info,
             uint32 length);
+
+    virtual void setEndOfStream(bool val)
+    {
+        mEndOfStream = val;
+    }
+
+    virtual bool isEndOfStream()
+    {
+        return mEndOfStream;
+    }
 
     void resetPort(vidc_buffer_type buffer, const char* namePtr);
 
