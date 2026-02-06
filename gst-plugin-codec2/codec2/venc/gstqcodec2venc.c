@@ -2266,9 +2266,9 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
     ret = gst_video_encoder_finish_frame (encoder, frame);
   }
   if (ret == GST_FLOW_FLUSHING) {
-    GST_WARNING_OBJECT (enc, "downstream is flushing");
+    GST_WARNING_OBJECT (enc, "downstream is flushing(Frame number: %u, enc %p, f-idx %lu)", frame->system_frame_number, enc, enc->frame_index);
   } else if (ret != GST_FLOW_OK) {
-    SG_ERR_OBJ (enc, "failed to finish frame, outbuf: %p", outbuf);
+    SG_ERR_OBJ (enc, "failed to finish frame, outbuf: %p(Frame number: %u, enc %p, f-idx %lu), ret %d", outbuf, frame->system_frame_number, enc, enc->frame_index, ret);
   }
 
 out:
@@ -2305,7 +2305,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       if (outBuffer->fd > 0 || outBuffer->size > 0) {
         ret = push_frame_downstream (encoder, outBuffer);
         if (ret != GST_FLOW_FLUSHING && ret != GST_FLOW_OK) {
-          SG_ERR_OBJ (enc, "Failed to push frame downstream");
+          SG_ERR_OBJ (enc, "Failed to push frame downstream, ret %d", ret);
         }
 
         enc->num_output_done++;

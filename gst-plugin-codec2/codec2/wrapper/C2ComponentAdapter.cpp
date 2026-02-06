@@ -1205,7 +1205,7 @@ void C2ComponentAdapter::handleWorkDone(
                     this, bufferIdx, timestamp);
                 onOutputBufferAvailable(NULL, bufferIdx, timestamp, interlaceInfo, frameQp, outputFrameFlag);
             } else {
-                GST_LOG("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
+                SG_ERR("Incorrect number of output buffers: %lu", worklet->output.buffers.size());
             }
 
         }
