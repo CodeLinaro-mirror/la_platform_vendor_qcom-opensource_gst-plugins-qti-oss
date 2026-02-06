@@ -1669,11 +1669,11 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
 
   ret = gst_video_decoder_finish_frame (decoder, frame);
   if (ret == GST_FLOW_FLUSHING) {
-    GST_DEBUG_OBJECT (dec, "downstream is flushing");
+    GST_DEBUG_OBJECT (dec, "downstream is flushing(Frame number: %u, dec %p, f-idx %lu)", frame->system_frame_number, dec, dec->frame_index);
   } else if (ret == GST_FLOW_EOS) {
-    GST_DEBUG_OBJECT (dec, "downstream is in eos");
+    GST_DEBUG_OBJECT (dec, "downstream is in eos(Frame number: %u, dec %p, f-idx %lu)", frame->system_frame_number, dec, dec->frame_index);
   } else if (ret != GST_FLOW_OK) {
-    SG_ERR_OBJ (dec, "Failed(%d) to push frame downstream", ret);
+    SG_ERR_OBJ (dec, "Failed(%d) to push frame downstream, outbuf: %p/%p(Frame number: %u, dec %p, f-idx %lu)", ret, outbuf, frame->output_buffer, frame->system_frame_number, dec, dec->frame_index);
   }
 
 out:
