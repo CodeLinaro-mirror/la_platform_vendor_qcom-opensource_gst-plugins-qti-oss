@@ -201,6 +201,7 @@ gst_drm_decryptor_sinkpad_chain (GstPad *pad, GstObject *parent, GstBuffer *in_b
 {
   GstDrmDecryptor *decryptor = GST_DRM_DECRYPTOR (parent);
   GstBuffer *out_buffer = NULL;
+  GstFlowReturn result = GST_FLOW_OK;
 
   // TODO: Video backend is failing to handle vp9 clear content on secure path.
   // Added this temporary check to skip clear content until the issue is fixed.
@@ -218,10 +219,15 @@ gst_drm_decryptor_sinkpad_chain (GstPad *pad, GstObject *parent, GstBuffer *in_b
     }
   }
 
-  if (gst_buffer_pool_acquire_buffer (decryptor->pool, &out_buffer, NULL)
-      != GST_FLOW_OK) {
-    GST_ERROR_OBJECT (decryptor, "Failed to acquire secure buffer from pool!");
-    return GST_FLOW_ERROR;
+  result = gst_buffer_pool_acquire_buffer (decryptor->pool, &out_buffer, NULL);
+  if (result != GST_FLOW_OK) {
+    if (result == GST_FLOW_FLUSHING) {
+      GST_INFO_OBJECT (decryptor, "Failed to acquire secure buffer from pool, we are flushing");
+      return result;
+    } else {
+      GST_ERROR_OBJECT (decryptor, "Failed to acquire secure buffer from pool, result %d", result);
+      return GST_FLOW_ERROR;
+    }
   }
 
   if (gst_drm_decryptor_engine_execute (decryptor->engine, in_buffer,
@@ -279,6 +285,22 @@ gst_drm_decryptor_sinkpad_event (GstPad *pad, GstObject *parent, GstEvent *event
       g_return_val_if_fail (decryptor->engine != NULL, FALSE);
       break;
     }
+    case GST_EVENT_FLUSH_START:
+      if (decryptor->pool && gst_buffer_pool_is_active (decryptor->pool)) {
+        GST_LOG_OBJECT (decryptor, "Setting bufferpool to flushing");
+        gst_buffer_pool_set_flushing (decryptor->pool, TRUE);
+        GST_LOG_OBJECT (decryptor, "Bufferpool flushed");
+      }
+      success = gst_pad_event_default (pad, parent, event);
+      break;
+    case GST_EVENT_FLUSH_STOP:
+      if (decryptor->pool && gst_buffer_pool_is_active (decryptor->pool)) {
+        GST_LOG_OBJECT (decryptor, "Setting bufferpool to not flushing");
+        gst_buffer_pool_set_flushing (decryptor->pool, FALSE);
+        GST_LOG_OBJECT (decryptor, "Bufferpool not flushed");
+      }
+      success = gst_pad_event_default (pad, parent, event);
+      break;
     default:
       success = gst_pad_event_default (pad, parent, event);
       break;

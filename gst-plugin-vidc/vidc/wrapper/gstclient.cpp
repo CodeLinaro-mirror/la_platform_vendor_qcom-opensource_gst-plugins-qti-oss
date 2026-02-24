@@ -655,7 +655,11 @@ bool GstClient::setConfiguration(ConfigType& config)
 {
     MM_DBG_MSG("GstClient::setConfiguration");
     mConfig = config;
-    return true;
+    if (mHandle) {
+        return true;
+    }
+
+    return false;
 }
 
 bool GstClient::getConfiguration(ConfigType* config)
@@ -790,6 +794,13 @@ bool GstClient::stateExecuting()
     uLockState.lock();
     MM_DBG_MSG("GstClient::stateExecuting-%s state %d", mNamePtr, mState);
 
+    if (isEndOfStream()) {
+        uLockState.unlock();
+        MM_ERROR_MSG("GstClient::stateExecuting started invalid, EOS");
+        rcBool = false;
+        return rcBool;
+    }
+
     if (mState == VIDC_STATE_IDLE) {
         uLockState.unlock();
         if (!mInputStarted) {
@@ -920,10 +931,6 @@ bool GstClient::stateIdle()
                     "GstClient::stateIdle-%s Error waiting for drain command return, command %d",
                     mNamePtr, command);
                 MM_DBG_MSG("GstClient::stateIdle VidcIoctl completed VIDC_IOCTL_DRAIN before VIDC_IOCTL_STOP");
-                command = mQueueCompleted.pop(); // Wait for command to complete
-                RETURN_BOOL_ON_ERROR(command == COMMAND_LAST_FLAG,
-                    "GstClient::stateIdle-%s Error waiting for drain last flag command return, command %d",
-                    mNamePtr, command);
             }
         }
 
@@ -981,7 +988,7 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_LOADED) {
+    if (mState == VIDC_STATE_LOADED || mState == VIDC_STATE_IDLE || isEndOfStream()) {
         MM_DBG_MSG("GstClient::emptyBuffer-%s in wrong state %d", mNamePtr, mState);
         uLockState.unlock();
         return false;
@@ -999,6 +1006,13 @@ bool GstClient::emptyBuffer(vidc_frame_data_type frameData)
     rc = flattenMetaData(frameData);
     RETURN_BOOL_ON_ERROR(rc == VIDC_ERR_NONE,
         "GstClient::emptyBuffer-%s flattenMeta error", mNamePtr);
+
+    if (VIDC_BUFH_RSTVAL != (int32)frameDataPtr->metadata_handle)
+    {
+        frameDataPtr->non_contiguous_metadata = true;
+    } else {
+        frameDataPtr->non_contiguous_metadata = false;
+    }
 
     rc = device_ioctl(
         mHandle,
@@ -1040,7 +1054,7 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
     }
 
     uLockState.lock();
-    if (mState == VIDC_STATE_LOADED) {
+    if (mState == VIDC_STATE_LOADED || mState == VIDC_STATE_IDLE || isEndOfStream()) {
         MM_DBG_MSG("GstClient::fillBuffer-%s in wrong state %d",
             mNamePtr, mState);
         uLockState.unlock();
@@ -1053,6 +1067,13 @@ bool GstClient::fillBuffer(vidc_frame_data_type frameData)
     MM_DBG_MSG("GstClient::fillBuffer-%s type %d, handle %d, len %d, meta_fd %d",
         mNamePtr, frameDataPtr->buf_type,
         frameDataPtr->frame_handle, frameDataPtr->data_len, frameDataPtr->metadata_handle);
+
+    if (VIDC_BUFH_RSTVAL != (int32)frameDataPtr->metadata_handle)
+    {
+        frameDataPtr->non_contiguous_metadata = true;
+    } else {
+        frameDataPtr->non_contiguous_metadata = false;
+    }
 
     rc = device_ioctl(
         mHandle,
@@ -1191,9 +1212,13 @@ void GstClient::EmptyCallback(BaseClient* base, vidc_frame_data_type& frameData)
 
 void GstClient::FilledCallback(BaseClient* base, vidc_frame_data_type& frameData)
 {
+    std::unique_lock<std::mutex> uLockState(mStateMutex, std::defer_lock);
     MM_DBG_MSG("GstClient::FilledCallback-%s", mNamePtr);
     if (frameData.flags & VIDC_FRAME_FLAG_EOS) {
         MM_DBG_MSG("GstClient::FilledCallback-%s, EOS detected", mNamePtr);
+        uLockState.lock();
+        setEndOfStream(true);
+        uLockState.unlock();
     }
 
     std::vector<std::shared_ptr<MetaInfo>> infos;

@@ -278,15 +278,15 @@ bool C2dConverter::configure(const C2dFormat *src, const C2dFormat *dst,
     bool ret = false;
     int  quality = param->qualityIndicator;
 
-    SG_INFO_LITE ("src: format=%d,width=%d,height=%d,stride=%d, "
-        "dst: format=%d,width=%d,height=%d,stride=%d, quality=%d",
+    SG_INFO_LITE ("c2d inst=%p: src: format=%d,width=%d,height=%d,stride=%d, "
+        "dst: format=%d,width=%d,height=%d,stride=%d, quality=%d", this,
         src->format, src->width, src->height, src->stride,
         dst->format, dst->width, dst->height, dst->stride, quality);
 
     pthread_mutex_lock(&mMutex);
     /* New a C2dConverter and can configure it only once. */
     if (mConfigured) {
-        SG_ERR_LITE ("Already configured");
+        SG_ERR_LITE ("c2d inst=%p: Already configured", this);
         goto out;
     }
 
@@ -348,7 +348,7 @@ void C2dConverter::destroy()
 {
     pthread_mutex_lock(&mMutex);
 
-    SG_INFO_LITE ("mConfigured=%d,srcFormat=%d,srcWidth=%lu,srcHeight=%lu,dstFormat=%d,dstWidth=%lu,dstHeight=%lu",
+    SG_INFO_LITE ("c2d inst=%p: mConfigured=%d,srcFormat=%d,srcWidth=%lu,srcHeight=%lu,dstFormat=%d,dstWidth=%lu,dstHeight=%lu", this,
               mConfigured, mSrcFormat, mSrcWidth, mSrcHeight, mDstFormat, mDstWidth, mDstHeight);
 
     if (mConfigured) {
@@ -373,7 +373,7 @@ bool C2dConverter::setSrcCrop(int x, int y, int w, int h)
     mBlit.source_rect.height = h << 16;
     mBlit.config_mask |= C2D_SOURCE_RECT_BIT;
 
-    SG_INFO_LITE ("x=%d,y=%d,w=%d,h=%d,mask=%x", x, y, w, h, mBlit.config_mask);
+    SG_INFO_LITE ("c2d inst=%p: x=%d,y=%d,w=%d,h=%d,mask=%x", this, x, y, w, h, mBlit.config_mask);
 
     pthread_mutex_unlock(&mMutex);
 
@@ -383,7 +383,7 @@ bool C2dConverter::setSrcCrop(int x, int y, int w, int h)
 bool C2dConverter::setFlip(int flip)
 {
     if (flip && C2D_MIRROR_V_BIT != flip && C2D_MIRROR_H_BIT != flip) {
-        SG_ERR_LITE ("Invald flip=0x%x", flip);
+        SG_ERR_LITE ("c2d inst=%p: Invald flip=0x%x", this, flip);
         return false;
     }
 
@@ -394,7 +394,7 @@ bool C2dConverter::setFlip(int flip)
     else
         mBlit.config_mask &= ~(C2D_MIRROR_V_BIT | C2D_MIRROR_H_BIT);
 
-    SG_INFO_LITE ("flip=%x,mask=%x", flip, mBlit.config_mask);
+    SG_INFO_LITE ("c2d inst=%p: flip=%x,mask=%x", this, flip, mBlit.config_mask);
 
     pthread_mutex_unlock(&mMutex);
 
@@ -408,17 +408,17 @@ bool C2dConverter::convert(int srcFd, void *srcBase, void *srcData, int dstFd, v
     void *dstMappedGpuAddr = NULL;
     bool status = false;
 
-    GST_DEBUG ("C2D conv begin: srcFd=%d,srcBase=%p,srcData=%p,dstFd=%d,dstBase=%p,dstData=%p",
+    GST_DEBUG ("c2d inst=%p: C2D conv begin: srcFd=%d,srcBase=%p,srcData=%p,dstFd=%d,dstBase=%p,dstData=%p", this,
                srcFd, srcBase, srcData, dstFd, dstBase, dstData);
     if (srcFd < 0 || !srcBase || !srcData || dstFd < 0 || !dstBase || !dstData) {
-        SG_ERR_LITE ("Invalid parameter(s)");
+        SG_ERR_LITE ("c2d inst=%p: Invalid parameter(s)", this);
         return false;
     }
 
     pthread_mutex_lock(&mMutex);
 
     if (!mConfigured) {
-        SG_ERR_LITE ("Configure c2d firstly");
+        SG_ERR_LITE ("c2d inst=%p: Configure c2d firstly", this);
         goto out;
     }
 
@@ -433,7 +433,7 @@ bool C2dConverter::convert(int srcFd, void *srcBase, void *srcData, int dstFd, v
         ret = updateRgbSurface(srcMappedGpuAddr, srcData, true);
     }
     if (ret != C2D_STATUS_OK) {
-        SG_ERR_LITE ("Update src surface def failed (%d)", ret);
+        SG_ERR_LITE ("c2d inst=%p: Update src surface def failed (%d)", this, ret);
         goto out;
     }
 
@@ -443,24 +443,24 @@ bool C2dConverter::convert(int srcFd, void *srcBase, void *srcData, int dstFd, v
       ret = updateRgbSurface(dstMappedGpuAddr, dstData, false);
     }
     if (ret != C2D_STATUS_OK) {
-        SG_ERR_LITE ("Update dst surface def failed (%d)", ret);
+        SG_ERR_LITE ("c2d inst=%p: Update dst surface def failed (%d)", this, ret);
         goto out;
     }
 
     mBlit.surface_id = mSrcSurface;
-    GST_LOG ("Will call c2dDraw()");
+    GST_LOG ("c2d inst=%p: Will call c2dDraw()", this);
     ret = c2dDraw(mDstSurface, C2D_TARGET_ROTATE_0, 0, 0, 0, &mBlit, 1);
     if (ret == C2D_STATUS_OK && (ret2 = c2dFinish(mDstSurface)) == C2D_STATUS_OK) {
-        GST_LOG ("c2dDraw and c2dFinish completed ok!");
+        GST_LOG ("c2d inst=%p: c2dDraw and c2dFinish completed ok!", this);
         status = true;
     } else {
-        SG_ERR_LITE ("c2dDraw failed (%d) or c2dFinish failed (%d)", ret, ret2);
+        SG_ERR_LITE ("c2d inst=%p: c2dDraw failed (%d) or c2dFinish failed (%d)", this, ret, ret2);
     }
 
 out:
     releaseMappedGpuAddr(srcMappedGpuAddr, dstMappedGpuAddr);
     pthread_mutex_unlock(&mMutex);
-    GST_DEBUG ("C2D conv end");
+    GST_DEBUG ("c2d inst=%p: C2D conv end", this);
     return status;
 }
 
@@ -490,7 +490,7 @@ C2dConverter::createSurface(ColorConvertFormat format, size_t width, size_t heig
                                 (isSource ? &mSrcSurfaceDef : &mDstSurfaceDef);
         *surfaceYUVDef = (C2D_YUV_SURFACE_DEF *)calloc(1, sizeof(C2D_YUV_SURFACE_DEF));
         if (*surfaceYUVDef == NULL) {
-            SG_ERR_LITE ("surfaceYUVDef allocation failed");
+            SG_ERR_LITE ("c2d inst=%p: surfaceYUVDef allocation failed", this);
             return false;
         }
 
@@ -514,7 +514,7 @@ C2dConverter::createSurface(ColorConvertFormat format, size_t width, size_t heig
                                 (isSource ? &mSrcSurfaceDef : &mDstSurfaceDef);
         *surfaceRGBDef = (C2D_RGB_SURFACE_DEF *)calloc(1, sizeof(C2D_RGB_SURFACE_DEF));
         if (*surfaceRGBDef == NULL) {
-            SG_ERR_LITE ("surfaceRGBDef allocation failed");
+            SG_ERR_LITE ("c2d inst=%p: surfaceRGBDef allocation failed", this);
             return false;
         }
 
@@ -534,7 +534,7 @@ C2dConverter::createSurface(ColorConvertFormat format, size_t width, size_t heig
     ret = c2dCreateSurface(isSource ? &mSrcSurface : &mDstSurface,
               isSource ? C2D_SOURCE : C2D_TARGET, surfaceType, surfaceDef);
     if (C2D_STATUS_OK != ret) {
-        SG_ERR_LITE ("c2dCreateSurface failed, ret=%d", ret);
+        SG_ERR_LITE ("c2d inst=%p: c2dCreateSurface failed, ret=%d", this, ret);
         if (isSource) {
             free(mSrcSurfaceDef);
             mSrcSurfaceDef = NULL;
@@ -592,7 +592,7 @@ void C2dConverter::destroySurfaces()
 {
     if (mSrcSurface) {
         C2D_STATUS ret = c2dDestroySurface(mSrcSurface);
-        SG_INFO_LITE ("c2dDestroySurface ret=%d", ret);
+        SG_INFO_LITE ("c2d inst=%p: c2dDestroySurface ret=%d", this, ret);
         mSrcSurface = 0;
     }
 
@@ -603,7 +603,7 @@ void C2dConverter::destroySurfaces()
 
     if (mDstSurface) {
         C2D_STATUS ret = c2dDestroySurface(mDstSurface);
-        SG_INFO_LITE ("c2dDestroySurface ret=%d", ret);
+        SG_INFO_LITE ("c2d inst=%p: c2dDestroySurface ret=%d", this, ret);
         mDstSurface = 0;
     }
 
@@ -641,7 +641,7 @@ uint32_t C2dConverter::getC2DFormat(ColorConvertFormat format, bool isSource)
     case VENUS_P010:
         return C2D_COLOR_FORMAT_420_P010;
     default:
-        SG_ERR_LITE ("Format not supported, %d", format);
+        SG_ERR_LITE ("c2d inst=%p: Format not supported, %d", this, format);
         return -1;
     }
 }
@@ -665,7 +665,7 @@ size_t C2dConverter::calcYSize(ColorConvertFormat format, size_t width, size_t h
                VENUS_Y_SCANLINES(COLOR_FMT_P010, height));
     }
     default:
-        GST_DEBUG ("Format %d is not needed to handle", format);
+        GST_DEBUG ("c2d inst=%p: Format %d is not needed to handle", this, format);
         return 0;
     }
 }
@@ -677,16 +677,16 @@ size_t C2dConverter::calcSize(ColorConvertFormat format, size_t width, size_t he
     int alignedh = 0;
     int32_t size = 0;
 
-    SG_INFO_LITE ("format=%d,width=%lu,height=%lu, isSource %d", format, width, height, (int)isSource);
+    SG_INFO_LITE ("c2d inst=%p: format=%d,width=%lu,height=%lu, isSource %d", this, format, width, height, (int)isSource);
 
     switch (format) {
     case ARGB8888:  //It's a workaround, gbm/gfx have no support for GBM_FORMAT_BGRA8888(=GST ARGB=ARGB8888), then, alloc/use GBM_FORMAT_ABGR8888(=GST RGBA=RGBA8888=ADRENO_PIXELFORMAT_R8G8B8A8) buffer
-        GST_DEBUG ("ARGB8888 case, reuse RGBA8888 handling");
+        GST_DEBUG ("c2d inst=%p: ARGB8888 case, reuse RGBA8888 handling", this);
     case RGBA8888:
         computeFormatAlignedWidthHeight(width, height, format,
                                         &alignedw, &alignedh);
         size = alignedw * alignedh * 4;
-        SG_INFO_LITE ("%s alignedw %d,alignedh %d,size %d, ignore mSrcStride %zu", (ARGB8888==format)? "ARGB8888":"RGBA8888", alignedw, alignedh, size, mSrcStride);
+        SG_INFO_LITE ("c2d inst=%p: %s alignedw %d,alignedh %d,size %d, ignore mSrcStride %zu", this, (ARGB8888==format)? "ARGB8888":"RGBA8888", alignedw, alignedh, size, mSrcStride);
         break;
     case NV12_128m:
         alignedw = VENUS_Y_STRIDE(COLOR_FMT_NV12, width);
@@ -704,13 +704,13 @@ size_t C2dConverter::calcSize(ColorConvertFormat format, size_t width, size_t he
         computeFormatAlignedWidthHeight(width, height, format,
                                         &alignedw, &alignedh);
         size = alignedw * alignedh * 3;
-        SG_INFO_LITE ("%s alignedw %d alignedh %d,size=%d, ignore mSrcStride %zu", (BGR888 == format) ? "BGR888" : "RGB888", alignedw, alignedh, size, mSrcStride);
+        SG_INFO_LITE ("c2d inst=%p: %s alignedw %d alignedh %d,size=%d, ignore mSrcStride %zu", this, (BGR888 == format) ? "BGR888" : "RGB888", alignedw, alignedh, size, mSrcStride);
         break;
     case VENUS_P010:
         size = VENUS_BUFFER_SIZE(COLOR_FMT_P010, width, height);
         break;
     default:
-        SG_ERR_LITE ("Format not supported , %d", format);
+        SG_ERR_LITE ("c2d inst=%p: Format not supported , %d", this, format);
         break;
     }
 
@@ -740,31 +740,31 @@ void *C2dConverter::mapGpuAddress(int fd, void *buf, size_t len)
     void *gpuaddr = NULL;
 
     if (fd < 0 || !buf) {
-        SG_ERR_LITE("Invalid arg(s), fd %d, buf %p", fd, buf);
+        SG_ERR_LITE("c2d inst=%p: Invalid arg(s), fd %d, buf %p", this, fd, buf);
         return NULL;
     }
     //_validate_fd(fd);
 
     status = c2dMapAddr(fd, buf, len, 0, KGSL_USER_MEM_TYPE_ION, &gpuaddr);
     if (status != C2D_STATUS_OK) {
-        SG_ERR_LITE ("c2dMapAddr failed: status %d fd %d ptr %p len %lu flags %x",
+        SG_ERR_LITE ("c2d inst=%p: c2dMapAddr failed: status %d fd %d ptr %p len %lu flags %x", this,
               status, fd, buf, len, KGSL_USER_MEM_TYPE_ION);
         return NULL;
     }
-    GST_LOG ("c2d mapping created: gpuaddr %p fd %d ptr %p len %lu", gpuaddr, fd, buf, len);
+    GST_LOG ("c2d inst=%p: c2d mapping created: gpuaddr %p fd %d ptr %p len %lu", this, gpuaddr, fd, buf, len);
 
     return gpuaddr;
 }
 
 bool C2dConverter::unmapGpuAddress(void *gpuAddr)
 {
-    GST_DEBUG ("c2d unmap gpuaddr %p", gpuAddr);
+    GST_DEBUG ("c2d inst=%p: c2d unmap gpuaddr %p", this, gpuAddr);
 
     C2D_STATUS status = c2dUnMapAddr(gpuAddr);
     if (status != C2D_STATUS_OK) {
-        SG_ERR_LITE ("c2dUnMapAddr failed: status %d gpuaddr %p", status, gpuAddr);
+        SG_ERR_LITE ("c2d inst=%p: c2dUnMapAddr failed: status %d gpuaddr %p", this, status, gpuAddr);
     }else{
-        GST_LOG ("c2d unmap gpuaddr %p succeed", gpuAddr);
+        GST_LOG ("c2d inst=%p: c2d unmap gpuaddr %p succeed", this, gpuAddr);
     }
 
     return (status == C2D_STATUS_OK);
@@ -775,23 +775,23 @@ bool C2dConverter::openGbmDevice()
     mGbmDevFd = -1;
     mGbmDevice = NULL;
 #ifdef _ENABLE_UMD_
-    SG_INFO_LITE ("No need to open GBM device node");
+    SG_INFO_LITE ("c2d inst=%p: No need to open GBM device node", this);
 #else
 #define GBMDEV_DEVICE_NODE "/dev/dri/renderD128"
-    SG_INFO_LITE ("open %s is calling...", GBMDEV_DEVICE_NODE);
+    SG_INFO_LITE ("c2d inst=%p: open %s is calling...", this, GBMDEV_DEVICE_NODE);
     mGbmDevFd = open (GBMDEV_DEVICE_NODE, O_RDWR | O_CLOEXEC);
-    SG_INFO_LITE ("open %s ret %d", GBMDEV_DEVICE_NODE, mGbmDevFd);
+    SG_INFO_LITE ("c2d inst=%p: open %s ret %d", this, GBMDEV_DEVICE_NODE, mGbmDevFd);
     if (mGbmDevFd < 0) {
         int e = errno;
-        SG_ERR_LITE ("failed to open gbm device %s node, errno %d(%s)", GBMDEV_DEVICE_NODE, e, strerror(e));
+        SG_ERR_LITE ("c2d inst=%p: failed to open gbm device %s node, errno %d(%s)", this, GBMDEV_DEVICE_NODE, e, strerror(e));
         return false;
     }
 #endif
-    SG_INFO_LITE ("gbm_create_device(%d) is calling...", mGbmDevFd);
+    SG_INFO_LITE ("c2d inst=%p: gbm_create_device(%d) is calling...", this, mGbmDevFd);
     mGbmDevice = gbm_create_device (mGbmDevFd);
-    SG_INFO_LITE ("gbm_create_device(%d) ret %p", mGbmDevFd, mGbmDevice);
+    SG_INFO_LITE ("c2d inst=%p: gbm_create_device(%d) ret %p", this, mGbmDevFd, mGbmDevice);
     if (NULL == mGbmDevice) {
-        SG_ERR_LITE ("failed to create gbm_device with fd %d", mGbmDevFd);
+        SG_ERR_LITE ("c2d inst=%p: failed to create gbm_device with fd %d", this, mGbmDevFd);
         if (mGbmDevFd > 0) {
             close (mGbmDevFd);
         }
@@ -805,15 +805,15 @@ bool C2dConverter::openGbmDevice()
 void C2dConverter::closeGbmDevice()
 {
     if (mGbmDevice) {
-        SG_INFO_LITE ("gbm_device_destroy(%p) is calling...", mGbmDevice);
+        SG_INFO_LITE ("c2d inst=%p: gbm_device_destroy(%p) is calling...", this, mGbmDevice);
         gbm_device_destroy(mGbmDevice);
-        SG_INFO_LITE ("gbm_device_destroy(%p) completed", mGbmDevice);
+        SG_INFO_LITE ("c2d inst=%p: gbm_device_destroy(%p) completed", this, mGbmDevice);
     }
     mGbmDevice = NULL;
     if (mGbmDevFd > 0) {
-        SG_INFO_LITE ("close(%d) is calling...", mGbmDevFd);
+        SG_INFO_LITE ("c2d inst=%p: close(%d) is calling...", this, mGbmDevFd);
         close (mGbmDevFd);
-        SG_INFO_LITE ("close(%d) completed", mGbmDevFd);
+        SG_INFO_LITE ("c2d inst=%p: close(%d) completed", this, mGbmDevFd);
     }
     mGbmDevFd = -1;
 }
@@ -824,59 +824,59 @@ bool C2dConverter::allocateBuffer(struct C2DBuffer *buffer)
     void *va = NULL;
 
     if (!buffer) {
-        SG_ERR_LITE("Buffer param pointer is NULL");
+        SG_ERR_LITE("c2d inst=%p: Buffer param pointer is NULL", this);
         return false;
     }
 
     if (!buffer->width || !buffer->height) {
-        SG_ERR_LITE("Buffer param width/height is NULL");
+        SG_ERR_LITE("c2d inst=%p: Buffer param width/height is NULL", this);
         return false;
     }
     if (!buffer->gbm_format) {
-        SG_ERR_LITE("Buffer format is NULL");
+        SG_ERR_LITE("c2d inst=%p: Buffer format is NULL", this);
         return false;
     }
 
     if (buffer->ubwc_flags == true)
         flags |= GBM_BO_USAGE_UBWC_ALIGNED_QTI;
 
-    SG_INFO_LITE ("create a gbm_bo(wid:%d, hei:%d, flags:0x%x) for format %d !",
+    SG_INFO_LITE ("c2d inst=%p: create a gbm_bo(wid:%d, hei:%d, flags:0x%x) for format %d !", this,
                buffer->width, buffer->height, flags, buffer->gbm_format);
 
     buffer->gbm_bo = gbm_bo_create (mGbmDevice, buffer->width,
                      buffer->height, buffer->gbm_format, flags);
-    SG_INFO_LITE ("gbm_bo_create() ret %p", buffer->gbm_bo);
+    SG_INFO_LITE ("c2d inst=%p: gbm_bo_create() ret %p", this, buffer->gbm_bo);
     if (NULL == buffer->gbm_bo) {
-        SG_ERR_LITE ("failed to create a bo");
+        SG_ERR_LITE ("c2d inst=%p: failed to create a bo", this);
         return false;
     }
 
-    SG_INFO_LITE ("gbm_bo_get_fd() calling...");
+    SG_INFO_LITE ("c2d inst=%p: gbm_bo_get_fd() calling...", this);
     buffer->fd = gbm_bo_get_fd (buffer->gbm_bo);
-    SG_INFO_LITE ("gbm_bo_get_fd() ret %d", buffer->fd);
+    SG_INFO_LITE ("c2d inst=%p: gbm_bo_get_fd() ret %d", this, buffer->fd);
     buffer->meta_fd = -1;
-    SG_INFO_LITE ("gbm_perform(get meta fd) calling...");
+    SG_INFO_LITE ("c2d inst=%p: gbm_perform(get meta fd) calling...", this);
     gbm_perform (GBM_PERFORM_GET_METADATA_ION_FD, buffer->gbm_bo, &buffer->meta_fd);
-    SG_INFO_LITE ("gbm_perform() ret meta_fd %d", buffer->meta_fd);
+    SG_INFO_LITE ("c2d inst=%p: gbm_perform() ret meta_fd %d", this, buffer->meta_fd);
     if (buffer->fd < 0 || buffer->meta_fd < 0) {
-        SG_ERR_LITE ("bo_fd:%d, meta_fd:%d are invalid", buffer->fd, buffer->meta_fd);
+        SG_ERR_LITE ("c2d inst=%p: bo_fd:%d, meta_fd:%d are invalid", this, buffer->fd, buffer->meta_fd);
         goto fail;
     }
 
     if ((int)buffer->gbm_bo->size < (int)buffer->size) {
-        SG_WARN_LITE ("gbm buffer size should >= the value in gst_qvconv_align_info()!");
+        SG_WARN_LITE ("c2d inst=%p: gbm buffer size should >= the value in gst_qvconv_align_info()!", this);
     }
 
     buffer->size = buffer->gbm_bo->size;
-    SG_INFO_LITE ("mmap(fd %d) size %u calling...", buffer->fd, buffer->size);
+    SG_INFO_LITE ("c2d inst=%p: mmap(fd %d) size %u calling...", this, buffer->fd, buffer->size);
     va = mmap(NULL, buffer->size, PROT_READ|PROT_WRITE, MAP_SHARED, buffer->fd, 0);
     if (MAP_FAILED == va) {
         int e = errno;
-        SG_ERR_LITE ("failed to map buffer of size = %u, fd = 0x%x, errno %d(%s)", buffer->size, buffer->fd, e, strerror(e));
+        SG_ERR_LITE ("c2d inst=%p: failed to map buffer of size = %u, fd = 0x%x, errno %d(%s)", this, buffer->size, buffer->fd, e, strerror(e));
         goto fail;
     }
 
-    SG_INFO_LITE ("created gbm_bo %p(%u x %u, fmt %u, size %u, stride %u), exported fd %d, exported meta_fd %d, mmap va %p",
+    SG_INFO_LITE ("c2d inst=%p: created gbm_bo %p(%u x %u, fmt %u, size %u, stride %u), exported fd %d, exported meta_fd %d, mmap va %p", this,
             buffer->gbm_bo, buffer->gbm_bo->width, buffer->gbm_bo->height, buffer->gbm_bo->format,
             buffer->gbm_bo->size, buffer->gbm_bo->stride, buffer->fd, buffer->meta_fd, va);
 
@@ -896,7 +896,7 @@ fail:
 void C2dConverter::freeBuffer(struct C2DBuffer *buffer)
 {
     if (!buffer) {
-        SG_ERR_LITE ("Buffer param pointer is NULL");
+        SG_ERR_LITE ("c2d inst=%p: Buffer param pointer is NULL", this);
         return;
     }
 
@@ -906,7 +906,7 @@ void C2dConverter::freeBuffer(struct C2DBuffer *buffer)
     }
 
     if (buffer->gbm_bo) {
-        SG_INFO_LITE ("destroy gbm_bo %p(%u x %u, fmt %u, size %u, stride %u), exported fd %d, exported meta_fd %d",
+        SG_INFO_LITE ("c2d inst=%p: destroy gbm_bo %p(%u x %u, fmt %u, size %u, stride %u), exported fd %d, exported meta_fd %d", this,
                 buffer->gbm_bo, buffer->gbm_bo->width, buffer->gbm_bo->height, buffer->gbm_bo->format,
                 buffer->gbm_bo->size, buffer->gbm_bo->stride, buffer->fd, buffer->meta_fd);
 
@@ -1004,7 +1004,7 @@ bool C2dConverter::dumpSurface(int fd, bool source)
                 base += stride;
             }
         } else {
-            SG_ERR_LITE ("Not support dump format: %d", format);
+            SG_ERR_LITE ("c2d inst=%p: Not support dump format: %d", this, format);
             return false;
         }
     } else {
@@ -1022,7 +1022,7 @@ bool C2dConverter::dumpSurface(int fd, bool source)
         case RGB888:
             bpp = 3; break;
         default:
-            SG_ERR_LITE ("Not support dump format: %d", format);
+            SG_ERR_LITE ("c2d inst=%p: Not support dump format: %d", this, format);
             return false;
         }
 
@@ -1039,7 +1039,7 @@ bool C2dConverter::dumpSurface(int fd, bool source)
 out:
     if (nbytes < 0 || false == ret) {
         int e = errno;
-        SG_ERR_LITE ("file write error: %s, errno %d, nbytes %zd", strerror(e), e, nbytes);
+        SG_ERR_LITE ("c2d inst=%p: file write error: %s, errno %d, nbytes %zd", this, strerror(e), e, nbytes);
     }
     return ret;
 }
@@ -1067,7 +1067,7 @@ void* C2dConverter::getMappedGpuAddrByInode(int fd, ino_t inode, void *va, size_
 
     auto i = mMappedGpuAddrsInode.find(inode);
     if (i != mMappedGpuAddrsInode.end()) {
-        GST_LOG("found gpu addr %p, inode 0x%lx, fd %d, va %p, dup fd %d, sz %zu",
+        GST_LOG("c2d inst=%p: found gpu addr %p, inode 0x%lx, fd %d, va %p, dup fd %d, sz %zu", this,
             i->second.gpuAddr, inode, fd, va, i->second.dupFd, size);
         return i->second.gpuAddr;
     }
@@ -1076,15 +1076,15 @@ void* C2dConverter::getMappedGpuAddrByInode(int fd, ino_t inode, void *va, size_
     int dupFd = dup(fd);
     if (dupFd == -1) {
         int e = errno;
-        SG_ERR_LITE("dup fd error: %s, fd %d, va %p, sz %zu", strerror(e), fd, va, size);
+        SG_ERR_LITE("c2d inst=%p: dup fd error: %s, fd %d, va %p, sz %zu", this, strerror(e), fd, va, size);
     } else {
         gpuAddr = mapGpuAddress(dupFd, va, size);
         if (NULL != gpuAddr) {
                 mMappedGpuAddrsInode.insert({inode, {dupFd, gpuAddr}});
-                SG_INFO_LITE("insert gpu addr %p, inode 0x%lx, fd %d, va %p, dup fd %d, sz %zu",
+                SG_INFO_LITE("c2d inst=%p: insert gpu addr %p, inode 0x%lx, fd %d, va %p, dup fd %d, sz %zu", this,
                     gpuAddr, inode, fd, va, dupFd, size);
         } else {
-            SG_ERR_LITE("mapGpuAddress error, fd %d(dup %d), va %p, sz %zu", fd, dupFd, va, size);
+            SG_ERR_LITE("c2d inst=%p: mapGpuAddress error, fd %d(dup %d), va %p, sz %zu", this, fd, dupFd, va, size);
         }
     }
 
@@ -1096,7 +1096,7 @@ void* C2dConverter::getMappedGpuAddrByInode(int fd, ino_t inode, void *va, size_
     size_t mapSize = mMappedGpuAddrsInode.size();
     g_warn_if_fail(mapSize <= MAX_NUM_BUF_CACHED && "cached number of gpu address is too large!");
     if (mapSize > MAX_NUM_BUF_CACHED)
-        SG_WARN_LITE("cached %lu gpu address is too large!", mapSize);
+        SG_WARN_LITE("c2d inst=%p: cached %lu gpu address is too large!", this, mapSize);
 
     return gpuAddr;
 }
@@ -1105,16 +1105,16 @@ void* C2dConverter::getMappedGpuAddrByFd(int fd, void *va, size_t size)
 {
     auto i = mMappedGpuAddrsFd.find(fd);
     if (i != mMappedGpuAddrsFd.end()) {
-        GST_LOG("found gpu addr %p, fd %d, va %p, sz %zu", i->second, fd, va, size);
+        GST_LOG("c2d inst=%p: found gpu addr %p, fd %d, va %p, sz %zu", this, i->second, fd, va, size);
         return i->second;
     }
 
     void *gpuAddr = mapGpuAddress(fd, va, size);
     if (NULL != gpuAddr) {
         mMappedGpuAddrsFd.insert({fd, gpuAddr});
-        SG_INFO_LITE("insert gpu addr %p, fd %d, va %p, sz %zu", gpuAddr, fd, va, size);
+        SG_INFO_LITE("c2d inst=%p: insert gpu addr %p, fd %d, va %p, sz %zu", this, gpuAddr, fd, va, size);
     } else {
-        SG_ERR_LITE("mapGpuAddress error, fd %d, va %p, sz %zu", fd, va, size);
+        SG_ERR_LITE("c2d inst=%p: mapGpuAddress error, fd %d, va %p, sz %zu", this, fd, va, size);
     }
 
     return gpuAddr;
@@ -1132,15 +1132,15 @@ inline bool C2dConverter::acquireMappedGpuAddr(int srcFd, void *srcData, void **
     ino_t srcInode = 0, dstInode = 0;
     off_t srcSz = 0, dstSz = 0;
 
-    GST_LOG("cache gpu addr src %u:%u, dst %u:%u, fd (%d,%d)", cacheSrc, srcInt, cacheDst, dstInt, srcFd, dstFd);
+    GST_LOG("c2d inst=%p: cache gpu addr src %u:%u, dst %u:%u, fd (%d,%d)", this, cacheSrc, srcInt, cacheDst, dstInt, srcFd, dstFd);
 
     if (!srcInt) {
         if (0 != getInode(srcFd, &srcInode, &srcSz)) {
-            SG_ERR_LITE("src ext buf getInode(fd %d) error!", srcFd);
+            SG_ERR_LITE("c2d inst=%p: src ext buf getInode(fd %d) error!", this, srcFd);
             goto out;
         }
         if (mSrcSize > (size_t)srcSz) {
-            SG_ERR_LITE("src ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, it's error!", srcFd, srcInode, mSrcSize, (long long)srcSz);
+            SG_ERR_LITE("c2d inst=%p: src ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, it's error!", this, srcFd, srcInode, mSrcSize, (long long)srcSz);
             gst_printerrln("src ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, error!", srcFd, srcInode, mSrcSize, (long long)srcSz);
             g_warn_if_fail(mSrcSize <= (size_t)srcSz && "src ext buf c2d map sz should <= fstat sz");
             goto out;
@@ -1148,11 +1148,11 @@ inline bool C2dConverter::acquireMappedGpuAddr(int srcFd, void *srcData, void **
     }
     if (!dstInt) {
         if (0 != getInode(dstFd, &dstInode, &dstSz)) {
-            SG_ERR_LITE("dst ext buf getInode(fd %d) error!", dstFd);
+            SG_ERR_LITE("c2d inst=%p: dst ext buf getInode(fd %d) error!", this, dstFd);
             goto out;
         }
         if (mDstSize > (size_t)dstSz) {
-            SG_ERR_LITE("dst ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, it's error!", dstFd, dstInode, mDstSize, (long long)dstSz);
+            SG_ERR_LITE("c2d inst=%p: dst ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, it's error!", this, dstFd, dstInode, mDstSize, (long long)dstSz);
             gst_printerrln("dst ext buf (fd %d, inode 0x%lx) c2d map sz %zu > fstat sz %lld, error!", dstFd, dstInode, mDstSize, (long long)dstSz);
             g_warn_if_fail(mDstSize <= (size_t)dstSz && "dst ext buf c2d map sz should <= fstat sz");
             goto out;
@@ -1169,7 +1169,7 @@ inline bool C2dConverter::acquireMappedGpuAddr(int srcFd, void *srcData, void **
     }
 
     if (NULL == src) {
-        SG_ERR_LITE("error: src gpu address NULL");
+        SG_ERR_LITE("c2d inst=%p: error: src gpu address NULL", this);
         goto out;
     }
 
@@ -1183,7 +1183,7 @@ inline bool C2dConverter::acquireMappedGpuAddr(int srcFd, void *srcData, void **
     }
 
     if (NULL == dst) {
-        SG_ERR_LITE("error: dst gpu address NULL");
+        SG_ERR_LITE("c2d inst=%p: error: dst gpu address NULL", this);
         if (!cacheSrc) {
             unmapGpuAddress(src);
             src = NULL;
@@ -1195,7 +1195,7 @@ inline bool C2dConverter::acquireMappedGpuAddr(int srcFd, void *srcData, void **
 out:
     *srcGpuAddr = src;
     *dstGpuAddr = dst;
-    GST_LOG("srcGpuAddr %p dstGpuAddr %p ret %u", *srcGpuAddr, *dstGpuAddr, ret);
+    GST_LOG("c2d inst=%p: srcGpuAddr %p dstGpuAddr %p ret %u", this, *srcGpuAddr, *dstGpuAddr, ret);
     return ret;
 }
 
@@ -1212,12 +1212,12 @@ inline void C2dConverter::releaseMappedGpuAddr(void *srcGpuAddr, void *dstGpuAdd
 
 void C2dConverter::clearMappedGpuAddrs(void)
 {
-    SG_INFO_LITE("cached %lu gpu address by inode", mMappedGpuAddrsInode.size());
-    SG_INFO_LITE("cached %lu gpu address by fd", mMappedGpuAddrsFd.size());
+    SG_INFO_LITE("c2d inst=%p: cached %lu gpu address by inode", this, mMappedGpuAddrsInode.size());
+    SG_INFO_LITE("c2d inst=%p: cached %lu gpu address by fd", this, mMappedGpuAddrsFd.size());
 
     if (mMappedGpuAddrsInode.size() > 0) {
         for (const auto &i : mMappedGpuAddrsInode) {
-            SG_INFO_LITE("clear gpu addr %p, inode 0x%lx, dup fd %d",
+            SG_INFO_LITE("c2d inst=%p: clear gpu addr %p, inode 0x%lx, dup fd %d", this,
                 i.second.gpuAddr, i.first, i.second.dupFd);
             unmapGpuAddress(i.second.gpuAddr);
             close(i.second.dupFd);
@@ -1227,7 +1227,7 @@ void C2dConverter::clearMappedGpuAddrs(void)
 
     if (mMappedGpuAddrsFd.size() > 0) {
         for (const auto &i : mMappedGpuAddrsFd) {
-            SG_INFO_LITE("clear gpu addr %p, fd %d", i.second, i.first);
+            SG_INFO_LITE("c2d inst=%p: clear gpu addr %p, fd %d", this, i.second, i.first);
             unmapGpuAddress(i.second);
         }
         mMappedGpuAddrsFd.clear();
