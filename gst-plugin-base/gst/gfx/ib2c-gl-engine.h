@@ -39,7 +39,7 @@ typedef std::tuple<std::vector<GraphicTuple>, Surface, uint32_t> SurfaceTuple;
 
 class Engine : public IEngine {
  public:
-  Engine();
+  Engine(bool is_secure = false);
   ~Engine();
 
   uint64_t CreateSurface(const Surface& surface, uint32_t flags) override;

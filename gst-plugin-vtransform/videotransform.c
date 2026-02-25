@@ -70,6 +70,7 @@ G_DEFINE_TYPE (GstVideoTransform, gst_video_transform, GST_TYPE_BASE_TRANSFORM);
 #define DEFAULT_PROP_DESTINATION_WIDTH  0
 #define DEFAULT_PROP_DESTINATION_HEIGHT 0
 #define DEFAULT_PROP_BACKGROUND         0xFF808080
+#define DEFAULT_PROP_IS_SECURE          FALSE
 
 #define DEFAULT_PROP_MIN_BUFFERS      2
 #define DEFAULT_PROP_MAX_BUFFERS      24
@@ -97,6 +98,7 @@ enum
   PROP_CROP,
   PROP_DESTINATION,
   PROP_BACKGROUND,
+  PROP_IS_SECURE,
 };
 
 static GType
@@ -256,6 +258,12 @@ gst_video_transform_create_pool (GstVideoTransform * vtrans, GstCaps * caps,
 
   if ((pool = gst_image_buffer_pool_new ()) == NULL) {
     GST_ERROR_OBJECT (vtrans, "Failed to create image pool!");
+    return NULL;
+  }
+
+  if (vtrans->is_secure && !gst_image_buffer_set_secure (pool, vtrans->is_secure)) {
+    GST_ERROR_OBJECT (vtrans, "Failed to secure buffer:%d !", vtrans->is_secure);
+    gst_clear_object (&pool);
     return NULL;
   }
 
@@ -706,8 +714,15 @@ gst_video_transform_set_caps (GstBaseTransform * base, GstCaps * incaps,
   if (vtrans->converter != NULL)
     gst_video_converter_engine_free (vtrans->converter);
 
-  vtrans->converter = gst_video_converter_engine_new (vtrans->backend,
-      vtrans->backendparam);
+  if (vtrans->is_secure) {
+    GstStructure *settings = gst_structure_new ("qtivtransform",
+      "is-secure", G_TYPE_BOOLEAN, vtrans->is_secure,
+      NULL);
+    vtrans->converter = gst_video_converter_engine_new (vtrans->backend, settings);
+    gst_structure_free (settings);
+  } else {
+    vtrans->converter = gst_video_converter_engine_new (vtrans->backend, NULL);
+  }
 
   // Disable passthrough in order to decide output allocation.
   gst_base_transform_set_passthrough (base, FALSE);
@@ -1632,6 +1647,7 @@ gst_video_transform_transform (GstBaseTransform * base, GstBuffer * inbuffer,
   composition.buffer = outbuffer;
   composition.info = vtrans->outinfo;
   composition.datatype = 0;
+  composition.is_secure = vtrans->is_secure;
 
   composition.bgcolor = vtrans->background;
   composition.bgfill = TRUE;
@@ -1753,6 +1769,9 @@ gst_video_transform_set_property (GObject * object, guint prop_id,
     case PROP_BACKGROUND:
       vtrans->background = g_value_get_uint (value);
       break;
+    case PROP_IS_SECURE:
+      vtrans->is_secure = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1830,6 +1849,9 @@ gst_video_transform_get_property (GObject * object, guint prop_id,
     }
     case PROP_BACKGROUND:
       g_value_set_uint (value, vtrans->background);
+      break;
+    case PROP_IS_SECURE:
+      g_value_set_boolean (value, vtrans->is_secure);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1924,6 +1946,11 @@ gst_video_transform_class_init (GstVideoTransformClass * klass)
           "Background color", 0, 0xFFFFFFFF, DEFAULT_PROP_BACKGROUND,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_PLAYING));
+  g_object_class_install_property (gobject, PROP_IS_SECURE,
+      g_param_spec_boolean ("secure", "Secure",
+          "use secure buffers", DEFAULT_PROP_IS_SECURE,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_PLAYING));
 
   // TODO: Temporary solution to flush cached buffers in the video converter
   // until proper solution is implemented using flush start/stop
@@ -1972,6 +1999,7 @@ gst_video_transform_init (GstVideoTransform * vtrans)
   vtrans->destination.y = DEFAULT_PROP_DESTINATION_Y;
   vtrans->destination.w = DEFAULT_PROP_DESTINATION_WIDTH;
   vtrans->destination.h = DEFAULT_PROP_DESTINATION_HEIGHT;
+  vtrans->is_secure = DEFAULT_PROP_IS_SECURE;
 
   vtrans->ininfo = NULL;
   vtrans->outinfo = NULL;

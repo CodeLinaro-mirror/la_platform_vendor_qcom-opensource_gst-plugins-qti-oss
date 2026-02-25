@@ -98,6 +98,8 @@ struct _GstVideoTransform {
   GstVideoRectangle       crop;
   GstVideoRectangle       destination;
   guint                   background;
+
+  gboolean                is_secure;
 };
 
 struct _GstVideoTransformClass {

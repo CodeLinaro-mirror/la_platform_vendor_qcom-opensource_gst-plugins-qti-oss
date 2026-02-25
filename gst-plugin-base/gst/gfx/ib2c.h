@@ -180,12 +180,14 @@ enum ConfigMask : uint32_t {
 /** SurfaceFlags
  * @kInput: Allows surface to be used as a source.
  * @kOutput: Allows surface to be used as a destination.
+ * @kSecure: Marks surface as requiring secure/protected memory access.
  *
  * Whether the surface will be used as source, destination of both.
  */
 enum SurfaceFlags : uint32_t {
   kInput  = (1 << 0),
   kOutput = (1 << 1),
+  kSecure = (1 << 2),
 };
 
 /** Plane
@@ -430,11 +432,13 @@ class IEngine {
 /* NewGlEngine
  * @vendor: The company responsible for this GL implementation.
  * @renderer: The name of the renderer.
+ * @is_secure: Whether to create a secure/protected EGL context.
  *
  * Main API for loading an instance of OpenGLES based engine.
  *
  * Returns: Pointer to new engine instance.
  **/
-IEngine* NewGlEngine(const char** vendor, const char** renderer);
+IEngine* NewGlEngine(const char** vendor, const char** renderer,
+                     bool is_secure = false);
 
 } // namespace ib2c
