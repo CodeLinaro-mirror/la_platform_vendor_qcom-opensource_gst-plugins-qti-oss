@@ -143,6 +143,7 @@ extern "C" {
 #define CONFIG_FUNCTION_KEY_LTR_USE_INDEX "ltr_use_index"
 #define CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER "external_buffer"
 #define CONFIG_FUNCTION_KEY_HDR_STATIC_INFO "hdr_static_info"
+#define CONFIG_FUNCTION_KEY_VUI_TIMING_INFO "vui_timing_info"
 
 #define C2_TICKS_PER_SECOND 1000000
 
@@ -535,6 +536,9 @@ typedef struct {
             gfloat maxFall;
         } hdr_static_info;
 
+        struct {
+            gboolean enable;
+        } vui_timing_info;
     };
 } ConfigParams;
 

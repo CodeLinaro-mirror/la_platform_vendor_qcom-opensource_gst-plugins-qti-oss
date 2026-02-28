@@ -62,6 +62,8 @@
         return (rc);                       \
     }
 
+#define VIDC_BUFH_RSTVAL (-1)
+
 // Base class for components that use VIDC data types
 // For methods that return a bool: true is success, false is failure
 class BaseClient {
