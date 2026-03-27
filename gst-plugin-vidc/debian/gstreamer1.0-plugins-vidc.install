@@ -1,0 +1,13 @@
+# debian/gstreamer1.0-plugins-vidc.install
+# Runtime package file list.
+# Maps to bb: FILES:${PN} += "${libdir}/gstreamer-1.0/*.so"
+#             SOLIBS = ".so"  FILES_SOLIBSDEV = ""  (no soname symlink split)
+#
+# GStreamer plugin (vidc/meson.build: library gstqvidc, install_dir: gstreamer-1.0)
+usr/lib/*/gstreamer-1.0/libgstqvidc.so
+#
+# vidcwrapper shared library (vidc/wrapper/meson.build: library vidcwrapper,
+# soversion=1, installed to ${libdir})
+# bb SOLIBS=".so" and FILES_SOLIBSDEV="" means the unversioned .so stays in
+# the runtime package rather than being split into the -dev package.
+usr/lib/*/libvidcwrapper.so*

@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+# debian/rules for gstreamer1.0-plugins-vidc
+#
+# Build system: Meson (bb: inherit meson pkgconfig)
+#
+# Meson options applied (from bb EXTRA_OEMESON and user request):
+#   -Dav1-dec=enabled  : enable AV1 decoder (adds gstqvidcav1dec.c,
+#                        defines GST_SUPPORT_AV1_DEC)
+#   -Dusedmaheap=true  : enable DMA buffer heap (defines USE_DMAHEAP in
+#                        vidcwrapper)
+#
+# Build produces two libraries:
+#   libvidcwrapper.so.1  -> installed to /usr/lib/  (soversion=1)
+#   libgstqvidc.so       -> installed to /usr/lib/gstreamer-1.0/
+#
+# Extra CFLAGS (from bb CFLAGS / CXXFLAGS):
+#   -I/usr/include/mm-osal/include
+
+export DH_VERBOSE = 1
+
+# Pass meson options via DEB_MESON_OPTIONS or override_dh_auto_configure
+MESON_OPTIONS = \
+	-Dav1-dec=enabled \
+	-Dusedmaheap=true
+
+%:
+	dh $@ --buildsystem=meson
+
+override_dh_auto_configure:
+	dh_auto_configure --buildsystem=meson -- \
+		$(MESON_OPTIONS) \
+		-Dc_args="-I/usr/include/mm-osal/include" \
+		-Dcpp_args="-I/usr/include/mm-osal/include"
+
+override_dh_auto_build:
+	dh_auto_build --buildsystem=meson
+
+override_dh_auto_install:
+	dh_auto_install --buildsystem=meson --destdir=debian/tmp
+
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info

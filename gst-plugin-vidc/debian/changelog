@@ -1,0 +1,6 @@
+gstreamer1.0-plugins-vidc (1.0.0) noble; urgency=medium
+
+  * Initial Debian packaging converted from Yocto/BitBake recipe.
+  * Build options: -Dav1-dec=enabled -Dusedmaheap=true.
+
+ -- weirli  <weirli@qti.qualcomm.com>  Thu, 26 Mar 2026 00:00:00 +0000
