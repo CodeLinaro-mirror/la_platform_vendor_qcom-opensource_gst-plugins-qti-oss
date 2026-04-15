@@ -172,7 +172,18 @@ gst_drm_decryptor_create_pool (GstDrmDecryptor *decryptor)
         break;
   }
 
-  if (!(pool = gst_mem_buffer_pool_new (GST_MEMORY_BUFFER_POOL_TYPE_SECURE))) {
+#if defined(ENABLE_DRM_OPTIMIZATION)
+  // Use non-contiguous memory when DRM optimization is enabled
+  // From kernel 5.15, GST_MEMORY_BUFFER_POOL_TYPE_ION lead to dma heap, it's non-contiguous by default.
+  // On kernel 5.4, ion probably is non-contiguous or contiguous.
+  // Therefore, ENABLE_DRM_OPTIMIZATION is just for kernel >= 5.15.
+  pool = gst_mem_buffer_pool_new (GST_MEMORY_BUFFER_POOL_TYPE_ION);
+#else
+  // Use physically contiguous memory by default
+  pool = gst_mem_buffer_pool_new (GST_MEMORY_BUFFER_POOL_TYPE_SECURE);
+#endif
+
+  if (!pool) {
     GST_ERROR_OBJECT (decryptor, "Failed to create new buffer pool !");
     return NULL;
   }
