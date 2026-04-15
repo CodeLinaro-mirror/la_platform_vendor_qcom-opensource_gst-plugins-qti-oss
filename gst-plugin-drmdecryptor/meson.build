@@ -48,6 +48,10 @@ if get_option('widevine').enabled()
   gstdrmdecryptor_cpp_args += ['-DENABLE_WIDEVINE']
 endif
 
+if get_option('drm-optimization')
+  gstdrmdecryptor_cpp_args += ['-DENABLE_DRM_OPTIMIZATION']
+endif
+
 if get_option('ASAN')
   gstdrmdecryptor_cpp_args += ['-fsanitize=address']
 endif
