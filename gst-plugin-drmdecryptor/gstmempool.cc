@@ -126,6 +126,8 @@ open_ion_device (GstMemBufferPool * mempool, gboolean secure)
 {
   GstMemBufferPoolPrivate *priv = mempool->priv;
 
+  //This secure parameter just mean it's system-secure heap or not.
+  //Besides system-secure, other heap also probably support secure feature.
   if (secure) {
     GST_INFO_OBJECT (mempool, "Open /dev/dma_heap/system-secure");
     priv->devfd = open ("/dev/dma_heap/system-secure", O_RDONLY | O_CLOEXEC);
@@ -140,7 +142,7 @@ open_ion_device (GstMemBufferPool * mempool, gboolean secure)
   }
 
   if (priv->devfd < 0) {
-    GST_ERROR_OBJECT (mempool, "Failed to open ION device FD!");
+    GST_ERROR_OBJECT (mempool, "Failed to open ION/DMA device FD!");
     return FALSE;
   }
 
@@ -466,10 +468,10 @@ gst_mem_buffer_pool_new (const gchar * type)
     GST_INFO_OBJECT (mempool, "Using SYSTEM memory");
     success = TRUE;
   } else if (GST_IS_ION_MEMORY_TYPE (mempool->priv->memtype)) {
-    GST_INFO_OBJECT (mempool, "Using ION memory");
+    GST_INFO_OBJECT (mempool, "Using ION/DMA memory");
     success = open_ion_device (mempool, FALSE);
   } else if (GST_IS_SECURE_MEMORY_TYPE (mempool->priv->memtype)) {
-    GST_INFO_OBJECT (mempool, "Using SECURE memory");
+    GST_INFO_OBJECT (mempool, "Using system-secure heap memory");
     success = open_ion_device (mempool, TRUE);
   } else {
     GST_ERROR_OBJECT (mempool, "Invalid memory type %s!",
