@@ -996,8 +996,8 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     }
   }
 
-  SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u), out-data(%u/%u), dec(%p) f-idx %lu",
-      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+  SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
   //In dec + enc pipeline, if ctrl+c halfway, there is still enc output after stop. Then, reset those 1 cycle idx here again.
   dec->in_data_idx_1cycle = 0;
   dec->out_data_idx_1cycle = 0;
@@ -1082,8 +1082,8 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
-  SG_INFO_OBJ (dec, "stop: handled in-data(%u/%u), out-data(%u/%u), dec(%p) f-idx %lu",
-      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+  SG_INFO_OBJ (dec, "stop: handled in-data(%u/%u), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
   dec->in_data_idx_1cycle = 0;
   dec->out_data_idx_1cycle = 0;
 
