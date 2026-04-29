@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE=1
+#export DEB_BUILD_OPTIONS="nocheck"
+#export DPKG_OPTIONS="--force-overwrite"
+#export DEB_ALLOW_UNSATIFIED_DEPENDENCIES=1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
+
+
+#/opt/lycodebase/lyau011c2/sources/graphics-bins/include/private/C2D  need remove this when c2d ready
+
+%:
+	dh $@ --buildsystem=meson
+
+override_dh_auto_configure:
+	#workaround: gbm not in /usr/lib/aarch64-linux-gnu/. -lgbm fail
+	#ln -s /usr/lib/libgbm.so /usr/lib/aarch64-linux-gnu/libgbm.so
+	dh_auto_configure -- \
+		-Dmmmcolorfmt=true \
+		-Duseumd=true \
+		-DASAN=false
+
+
+override_dh_auto_build:
+	dh_auto_build --buildsystem=meson
+
+override_dh_auto_install:
+	dh_auto_install --buildsystem=meson --destdir=debian/tmp
+
+override_dh_auto_test:
+	# Skip tests for now
+	@echo "Tests skipped"
+
+override_dh_missing:
+	dh_missing --list-missing

@@ -1,0 +1,34 @@
+Source: gstreamer1.0-plugins-qvconv
+Section: libs
+Priority: optional
+Maintainer: weirli <weirli@qti.qualcomm.com>
+Build-Depends: debhelper-compat (= 13),
+               meson (>= 0.47),
+               pkg-config,
+               libgstreamer1.0-dev,
+               libgstreamer-plugins-base1.0-dev,
+               libgstreamer-plugins-bad1.0-dev,
+               libglib2.0-dev (>= 2.36),
+               gbm-sa-dev,
+               adreno-dev,
+               display-commonsys-intf-linux-dev,
+               display-kernel-headers-dev
+Standards-Version: 4.6.0
+Homepage: https://www.qualcomm.com/
+
+Package: gstreamer1.0-plugins-qvconv
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         gstreamer1.0-plugins-base
+Description: QVconv Plugin for GStreamer
+ QTI color converter plugin for GStreamer, convert color formats between
+ UYVY, NV12_UBWC, NV12, BGR and RGBA.
+ .
+ Features:
+  - Color conversion: UYVY->NV12
+  - Scaling: resolution up/down scaling
+  - Flipping: horizontal and vertical flipping
+ .
+ This package contains the GStreamer plugin.

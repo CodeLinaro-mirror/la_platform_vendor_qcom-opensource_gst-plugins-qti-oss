@@ -1,0 +1,9 @@
+gstreamer1.0-plugins-qvconv (1.0.0) noble; urgency=medium
+
+  * Initial Debian package release
+  * Converted from Yocto/Bitbake recipe
+  * QTI color converter plugin for GStreamer
+  * Support UYVY, NV12_UBWC, NV12, BGR and RGBA formats
+  * Support resolution scaling and flipping
+
+ -- weirli  <weirli@qti.qualcomm.com>  Mon, 30 Mar 2026 16:00:00 +0800
