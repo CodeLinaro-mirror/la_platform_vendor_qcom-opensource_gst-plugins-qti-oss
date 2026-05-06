@@ -52,16 +52,34 @@ enum
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_DMABUF_CAPS));
+    GST_STATIC_CAPS (
+        /* Clear content */
+        H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS ";"
+        /* CENC encrypted content */
+        PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";"
+        PLAYREADY_CENC_VP9_CAPS  ";" WIDEVINE_CENC_VP9_CAPS  ";"
+        PLAYREADY_CENC_AV1_CAPS  ";" WIDEVINE_CENC_AV1_CAPS  ";"
+        /* Raw DMABuf output */
+        VIDEO_RAW_DMABUF_CAPS
+    )
+);
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_CAPS));
+    GST_STATIC_CAPS (
+        /* Clear content */
+        H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS ";"
+        /* CENC encrypted content */
+        PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";"
+        PLAYREADY_CENC_VP9_CAPS  ";" WIDEVINE_CENC_VP9_CAPS  ";"
+        PLAYREADY_CENC_AV1_CAPS  ";" WIDEVINE_CENC_AV1_CAPS  ";"
+        /* Raw video output */
+        VIDEO_RAW_CAPS
+    )
+);
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
@@ -107,7 +125,7 @@ gst_vesdeliver_secure_mode_get_type (void)
     static const GEnumValue values[] = {
       {SECURE_DISABLE, "Non-secure mode", "disable"},
       {SECURE_COPY, "Secure copy mode", "secure-copy"},
-      {LEND_DMABUF, "Lend dmabuf mode", "lend-dmabuf"},
+      {LEND_DMABUF, "Lend dmabuf or ionbuf mode", "lend-dmabuf"},
       {0, NULL, NULL}
     };
 
@@ -612,6 +630,26 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
         GST_WARNING_OBJECT (vesdeliver, "The dmabuf is not exclusive owned");
       }
     }
+#else
+#ifdef ION_FLAG_ION_LEND_BUF
+    if (LEND_DMABUF == vesdeliver->secure) {
+      if (vesdeliver->allocator) {
+        int ret = -1;
+        GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (vesdeliver->allocator);
+        ret = alloc->ion_lend_buf(alloc->ion_fd, buf_fd,
+                          ION_VMID_CP_BITSTREAM, ION_PERM_READ | ION_PERM_WRITE);
+        if (ret != 0) {
+          GST_ERROR_OBJECT(vesdeliver, "Failed to lend ionbuf, buf_fd=%d ret=%d",
+              buf_fd, ret);
+        } else {
+          GST_DEBUG_OBJECT (vesdeliver, "Lend ionbuf with buf_fd=%d successfully.",
+              buf_fd);
+        }
+      } else {
+        GST_ERROR_OBJECT(vesdeliver, "There is no allocator to do buffer lending.");
+      }
+    }
+#endif
 #endif
   }
 

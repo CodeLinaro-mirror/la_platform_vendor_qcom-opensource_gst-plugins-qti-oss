@@ -399,7 +399,7 @@ gst_qvconv_init (GstQvconv *qvconv)
     return;
   }
 
-  SG_INFO_OBJ_LITE (qvconv, "get c2d_conv instance %p", c2d);
+  SG_INFO_OBJ (qvconv, "get c2d_conv instance %p for plugin instance %" GST_PTR_FORMAT, c2d, qvconv);
 
   qvconv->c2d_hndl = c2d;
 
@@ -1176,8 +1176,8 @@ gst_qvconv_start (GstBaseTransform * trans)
 
   priv->idx_in_one_cycle = 0;
 
-  SG_INFO_OBJ (qvconv, "start instance %" GST_PTR_FORMAT "@%p, handled %u/%u frames",
-      qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx);
+  SG_INFO_OBJ (qvconv, "start instance %" GST_PTR_FORMAT "@%p, handled %u/%u frames, c2d inst=%p",
+      qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, qvconv->c2d_hndl);
 
   return TRUE;
 }
@@ -1187,6 +1187,7 @@ gst_qvconv_stop (GstBaseTransform * trans)
 {
   GstQvconv *qvconv = GST_QVCONV (trans);
   GstQvconvPrivate *priv = qvconv->priv;
+  C2dConverter *c2d = qvconv->c2d_hndl;
 
   gst_qvconv_destroy_c2d (qvconv);
 
@@ -1197,8 +1198,8 @@ gst_qvconv_stop (GstBaseTransform * trans)
     priv->pool = NULL;
   }
 
-  SG_INFO_OBJ (qvconv, "stop instance %" GST_PTR_FORMAT "@%p, handled %u/%u frames",
-      qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx);
+  SG_INFO_OBJ (qvconv, "stop instance %" GST_PTR_FORMAT "@%p, handled %u/%u frames, c2d inst=%p",
+      qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d);
 
   return TRUE;
 }
@@ -1223,9 +1224,9 @@ gst_qvconv_align_info (GstQvconv * qvconv, GstVideoInfo * info, const GstVideoMe
   offset1 = GST_VIDEO_INFO_PLANE_OFFSET (info, 1);
 
   SG_INFO_OBJ_LITE (qvconv, "GstVideoInfo: format %s-%d,width %d,height %d,"
-      "stride0 %d,stride1 %d,offset0 %lu,offset1 %lu,size %lu",
+      "stride0 %d,stride1 %d,offset0 %lu,offset1 %lu,size %lu, qvconv %p",
       GST_VIDEO_INFO_NAME (info), format, width, height,
-      stride0, stride1, offset0, offset1, GST_VIDEO_INFO_SIZE (info));
+      stride0, stride1, offset0, offset1, GST_VIDEO_INFO_SIZE (info), qvconv);
 
   /* GstVideoMeta overrides GstVideoInfo. */
   if (meta) {
@@ -1763,7 +1764,7 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
 
   if (!priv->active) {
     SG_INFO_OBJ (qvconv, "first buffer comes, configure c2d inst=%p, meta=%p, instance %"
-        GST_PTR_FORMAT "@%p, input need copy %d, in_mem %p, force inputcopy %d", c2d, QGVMeta, qvconv, qvconv, (int)need_copy, in_mem, (int)priv->do_inputcopy);
+        GST_PTR_FORMAT "@%p, input need copy %d, in_mem %p, force inputcopy %d, PTS: %" GST_TIME_FORMAT, c2d, QGVMeta, qvconv, qvconv, (int)need_copy, in_mem, (int)priv->do_inputcopy, GST_TIME_ARGS(GST_BUFFER_PTS(inbuf)));
     /* GstVideoMeta overrides GstVideoInfo for v4l2src->qvconv case.
      * v4l2src gets stride from QC camera driver, and stride can be configured
      * as no padding or as GBM-aligned with padding.
@@ -1849,12 +1850,12 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
 
   if ((priv->idx_in_one_cycle & 255) == 0) {
     SG_INFO_OBJ (qvconv, "do converting, input fd: %d, input ptr: %p, input offset: %d "
-        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst %p", c2d_input_buffer.fd, c2d_input_buffer.ptr,
-        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d);
+        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst=%p, PTS: %" GST_TIME_FORMAT, c2d_input_buffer.fd, c2d_input_buffer.ptr,
+        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d, GST_TIME_ARGS(GST_BUFFER_PTS(inbuf)));
   } else {
     GST_DEBUG_OBJECT (qvconv, "do converting, input fd: %d, input ptr: %p, input offset: %d "
-        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst %p", c2d_input_buffer.fd, c2d_input_buffer.ptr,
-        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d);
+        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst=%p, PTS: %" GST_TIME_FORMAT, c2d_input_buffer.fd, c2d_input_buffer.ptr,
+        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d, GST_TIME_ARGS(GST_BUFFER_PTS(inbuf)));
   }
 
   if (!c2d->convert (c2d_input_buffer.fd, c2d_input_buffer.ptr,
@@ -1866,8 +1867,8 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
 
   if ((priv->idx_in_one_cycle & 255) == 0) {
     SG_INFO_OBJ (qvconv, "do converting finish, input fd: %d, input ptr: %p, input offset: %d "
-        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst %p", c2d_input_buffer.fd, c2d_input_buffer.ptr,
-        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d);
+        "output fd: %d, output ptr: %p, inst %" GST_PTR_FORMAT "@%p, idx %u/%u, c2d inst=%p, PTS: %" GST_TIME_FORMAT, c2d_input_buffer.fd, c2d_input_buffer.ptr,
+        input_ion_offset, c2d_output_buffer.fd, c2d_output_buffer.ptr, qvconv, qvconv, priv->idx_in_one_cycle, priv->execute_idx, c2d, GST_TIME_ARGS(GST_BUFFER_PTS(inbuf)));
   }
 
 #ifdef QVCONV_DUMP_C2D_BUFFER
