@@ -2002,11 +2002,11 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
 
   if (enc->in_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->in_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+    SG_INFO_OBJ (enc, "Frame number: %u, in buf %p, frame PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, frame->input_buffer, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
   } else {
-    GST_DEBUG_OBJECT (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, in buf %p, frame PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, frame->input_buffer, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
   }
   enc->in_data_idx_1cycle++;
   enc->in_data_idx_total++;
@@ -2225,11 +2225,11 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   }
 
   if (enc->out_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->out_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+    SG_INFO_OBJ (enc, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
   } else {
-    GST_DEBUG_OBJECT (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
   }
   enc->out_data_idx_1cycle++;
   enc->out_data_idx_total++;
