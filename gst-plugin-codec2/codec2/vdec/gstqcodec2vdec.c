@@ -1238,11 +1238,11 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
 
   if (dec->in_data_idx_1cycle < DEC_SHOWLOG_NUMBER || 0 == (dec->in_data_idx_1cycle % DEC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (dec, "Frame number: %u, Distance from Sync: %d, PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
-        frame->system_frame_number, frame->distance_from_sync, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+    SG_INFO_OBJ (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
   }else{
-    GST_DEBUG_OBJECT (dec, "Frame number: %u, Distance from Sync: %d, PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
-        frame->system_frame_number, frame->distance_from_sync, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+    GST_DEBUG_OBJECT (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
   }
   dec->in_data_idx_1cycle++;
   dec->in_data_idx_total++;
@@ -1657,11 +1657,11 @@ push_frame_downstream (GstVideoDecoder * decoder, BufferDescriptor * decode_buf)
     frame->output_buffer = outbuf;
 
     if (dec->out_data_idx_1cycle < DEC_SHOWLOG_NUMBER || 0 == (dec->out_data_idx_1cycle % DEC_SHOWLOG_INTERVAL)) {
-      SG_INFO_OBJ (dec, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", duration: %lu, fps_d: %d, fps_n: %d interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
-          frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_BUFFER_DURATION (outbuf), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+      SG_INFO_OBJ (dec, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), fps_d: %d, fps_n: %d, interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
+          frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
     } else {
-      GST_DEBUG_OBJECT (dec, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", duration: %lu, fps_d: %d, fps_n: %d interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
-          frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_BUFFER_DURATION (outbuf), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
+      GST_DEBUG_OBJECT (dec, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), fps_d: %d, fps_n: %d, interlace:%d, out-idx(%u/%u), dec(%p) f-idx %lu",
+          frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), vinfo->fps_d, vinfo->fps_n, decode_buf->interlaceMode, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec->frame_index);
     }
     dec->out_data_idx_1cycle++;
     dec->out_data_idx_total++;
