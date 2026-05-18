@@ -1660,8 +1660,8 @@ gst_qvconv_set_info (GstVideoFilter * filter, GstCaps * incaps,
   GST_DEBUG ("reconfigured %d %d", GST_VIDEO_INFO_FORMAT (in_info),
       GST_VIDEO_INFO_FORMAT (out_info));
 
-  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info in caps %" GST_PTR_FORMAT "", incaps);
-  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info out caps %" GST_PTR_FORMAT "", outcaps);
+  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info(%p) in caps %" GST_PTR_FORMAT "", qvconv, incaps);
+  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info(%p) out caps %" GST_PTR_FORMAT "", qvconv, outcaps);
   if (is_input_ubwc || gst_qvconv_caps_has_compression (incaps, "ubwc")) {
     priv->input_buffer.ubwc_flags = TRUE;
   }
