@@ -24,6 +24,7 @@
 #define PLAY                   "p"
 #define STOP                   "s"
 #define QUIT                   "q"
+#define SEEK                   "k"
 
 // For inter-thread communication
 #define TERMINATE_MESSAGE      "APP_TERMINATE_MSG"
@@ -896,20 +897,33 @@ toggle_play (GstAppContext * appctx)
 }
 
 static gboolean
-decide_mp4 (gchar * pipeline, gchar ** manifest_url, gboolean * mp4_content)
+decide_local_file (gchar * pipeline, gchar ** manifest_url, gboolean * local_file)
 {
   gchar *str = g_strdup (pipeline);
 
   if (!split_string (&str, "!", 2, 0))
     return FALSE;
 
-  if (g_str_has_suffix (str, "mp4")) {
-    *mp4_content = TRUE;
+  // Determine if the pipeline reads from a local file by checking the file
+  // extension of the source element (the part before the first '!').
+  // Supported local container formats: MP4/MOV, MPEG-TS, MKV/WebM, AVI.
+  // Use a lowercase copy for case-insensitive suffix matching.
+  gchar *str_lower = g_ascii_strdown (str, -1);
+  if (g_str_has_suffix (str_lower, ".mp4")  ||
+      g_str_has_suffix (str_lower, ".mov")  ||
+      g_str_has_suffix (str_lower, ".ts")   ||
+      g_str_has_suffix (str_lower, ".mkv")  ||
+      g_str_has_suffix (str_lower, ".webm") ||
+      g_str_has_suffix (str_lower, ".avi")) {
+    *local_file = TRUE;
+    g_free (str_lower);
     g_free (str);
     return TRUE;
   }
+  g_free (str_lower);
 
-  // Parse the string to get manifest url.
+  // Not a local file; treat the source element as a remote manifest URL
+  // (DASH or HLS) and extract the URL from the element property string.
   if (!split_string (&str, "=", 2, 1))
     return FALSE;
 
@@ -965,8 +979,104 @@ print_menu ()
   g_print ("%.2s %s %.2s : %.2s %s\n", SPACE, PLAY, SPACE, SPACE, "Play/Pause");
   g_print ("%.2s %s %.2s : %.2s %s\n", SPACE, STOP, SPACE, SPACE, "Stop");
   g_print ("%.2s %s %.2s : %.2s %s\n", SPACE, QUIT, SPACE, SPACE, "Quit");
+  g_print ("%.2s %s %.2s : %.2s %s\n", SPACE, SEEK, SPACE, SPACE, "Seek");
+  // Example: after 'k', input '12.5' for absolute seek, or '+5'/'-10' for relative seek
 
   g_print ("\nChoose an option: ");
+}
+
+static gboolean
+pipeline_seek_seconds (GstAppContext *appctx, gdouble seconds, gboolean relative)
+{
+  gboolean seekable = FALSE;
+  gint64 start = 0, end = 0;
+  GstQuery *query = NULL;
+
+  if (appctx == NULL || appctx->pipeline == NULL) {
+    g_printerr ("ERROR: Pipeline is not initialized.\n");
+    return FALSE;
+  }
+
+  // Check if pipeline is in a seekable state
+  if (appctx->current_state < GST_STATE_PAUSED) {
+    g_printerr ("ERROR: Pipeline must be in PAUSED or PLAYING state to seek.\n");
+    return FALSE;
+  }
+
+  query = gst_query_new_seeking (GST_FORMAT_TIME);
+  if (G_UNLIKELY(query == NULL)) {
+    g_printerr ("ERROR: Failed to create seeking query.\n");
+    return FALSE;
+  }
+
+  if (!gst_element_query (appctx->pipeline, query)) {
+    gst_query_unref (query);
+    g_printerr ("ERROR: Failed to query seeking capability.\n");
+    return FALSE;
+  }
+
+  gst_query_parse_seeking (query, NULL /* fmt */,
+                           &seekable, &start, &end);
+  gst_query_unref (query);
+
+  if (seekable) {
+    g_print ("Seek is enabled from %" GST_TIME_FORMAT " to %" GST_TIME_FORMAT "\n",
+        GST_TIME_ARGS (start), GST_TIME_ARGS (end));
+  } else {
+    g_print ("Seek is not supported by this pipeline.\n");
+    return FALSE;
+  }
+
+  // Query current position if relative seek is requested
+  gint64 cur = GST_CLOCK_TIME_NONE;
+  if (relative) {
+    if (!gst_element_query_position (appctx->pipeline, GST_FORMAT_TIME, &cur) ||
+        cur == GST_CLOCK_TIME_NONE) {
+      g_printerr ("ERROR: Failed to query current position.\n");
+      return FALSE;
+    }
+  }
+
+  // relative == TRUE: seek from current position by +/-seconds
+  // relative == FALSE: seek to absolute seconds from start
+  gint64 delta_ns = (gint64) (seconds * GST_SECOND);
+  gint64 position = relative ? (cur + delta_ns) : delta_ns;
+
+  // Clamp to [start, end)
+  if (position < start) {
+    position = start;
+  }
+  if (end > 0 && position >= end) {
+    gint64 backoff = 100 * GST_MSECOND;
+    if (end > start + backoff)
+      position = end - backoff;
+    else
+      position = start;
+  }
+
+  if (relative) {
+    g_print ("Seeking relative: from %" GST_TIME_FORMAT " by %+.3f s to %" GST_TIME_FORMAT "\n",
+             GST_TIME_ARGS (cur), seconds, GST_TIME_ARGS (position));
+  } else {
+    g_print ("Seeking absolute: to %" GST_TIME_FORMAT " (%.3f s)\n",
+             GST_TIME_ARGS (position), seconds);
+  }
+
+  gboolean ok = gst_element_seek (
+      appctx->pipeline,
+      1.0 /* rate */,
+      GST_FORMAT_TIME,
+      (GstSeekFlags)(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+      GST_SEEK_TYPE_SET, position,
+      GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
+
+  if (!ok) {
+    g_printerr ("ERROR: gst_element_seek failed.\n");
+    return FALSE;
+  }
+
+  g_print ("Seek done.\n");
+  return TRUE;
 }
 
 static gpointer
@@ -990,6 +1100,29 @@ main_menu (gpointer data)
       toggle_play (appctx);
     else if (g_str_equal (str, STOP))
       update_pipeline_state (appctx, GST_STATE_NULL);
+    else if (g_str_equal (str, SEEK)) {
+      g_print ("Enter seconds (e.g. 12.5 or +5/-10): ");
+      gchar *sec_input = NULL;
+      if (!wait_stdin_message (appctx->messages, &sec_input) || !sec_input) {
+        g_free (sec_input);
+        continue;
+      }
+      g_strstrip (sec_input);
+      gchar *endptr = NULL;
+      gdouble seconds = g_ascii_strtod (sec_input, &endptr);
+      // Reject trailing non-numeric garbage, and empty input
+      if (sec_input[0] == '\0' ||
+          endptr == sec_input ||
+          (endptr != NULL && *endptr != '\0')) {
+        g_print ("Invalid seconds: '%s'\n", sec_input);
+      } else {
+        gboolean is_relative = (sec_input[0] == '+' || sec_input[0] == '-');
+        if (!pipeline_seek_seconds (appctx, seconds, is_relative)) {
+          g_print ("Seek operation failed. Please try again.\n");
+        }
+      }
+      g_free (sec_input);
+    }
   }
   g_free (str);
 
@@ -1009,17 +1142,19 @@ main (gint argc, gchar *argv[])
   GThread *mthread = NULL;
   GError *err = NULL;
   gchar **args = NULL;
-  gchar *mp4_pro_header = NULL, *header = NULL, *manifest_url = NULL;
+  gchar *pro_header_arg = NULL, *wv_pssh_arg = NULL, *header = NULL, *manifest_url = NULL;
   DrmLicense license = LICENSE_INVALID;
   guint bus_watch_id = 0, intrpt_watch_id = 0, stdin_watch_id = 0;
   gint status = -1;
-  gboolean mp4_content = FALSE;
+  gboolean local_file = FALSE;
 
   gst_init (&argc, &argv);
 
   GOptionEntry options[] = {
-      {"pro-header", 'p', 0, G_OPTION_ARG_STRING, &mp4_pro_header,
-          "MP4 content PlayReady header", NULL},
+      {"pro-header", 'p', 0, G_OPTION_ARG_STRING, &pro_header_arg,
+          "Local file PlayReady PRO header (base64 encoded)", NULL},
+      {"widevine-pssh", 'w', 0, G_OPTION_ARG_STRING, &wv_pssh_arg,
+          "Local file Widevine complete PSSH box (base64 encoded)", NULL},
       {G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &args, NULL},
       {NULL}
   };
@@ -1051,29 +1186,44 @@ main (gint argc, gchar *argv[])
     goto exit;
   }
 
-  // Parse args to decide whether it's an MP4 content.
-  if (!decide_mp4 (*args, &manifest_url, &mp4_content)) {
+  // Determine whether the pipeline reads from a local file or streams from
+  // a remote manifest URL (DASH/HLS).
+  if (!decide_local_file (*args, &manifest_url, &local_file)) {
     g_print ("Erroneous pipeline!\n");
     goto exit;
   }
 
-  // If MP4 content is provided, PRO header is mandatory.
-  if (mp4_content && mp4_pro_header == NULL) {
-    g_print ("You must give PlayReady header with MP4 content.\n");
-    g_print ("\nFor help: gst-drm-player-example [-h | --help]\n\n");
-
-    goto exit;
-  } else if (mp4_content) {
-    license = LICENSE_PLAYREADY;
-    header = g_strdup (mp4_pro_header);
+  // For local file playback, a DRM header must be supplied explicitly via
+  // command-line options, since the file itself is not parsed for DRM info.
+  if (local_file) {
+    if (pro_header_arg != NULL && wv_pssh_arg != NULL) {
+      g_print ("Please provide only one of --pro-header or --widevine-pssh.\n");
+      goto exit;
+    } else if (pro_header_arg != NULL) {
+      license = LICENSE_PLAYREADY;
+      header = g_strdup (pro_header_arg);
+    } else if (wv_pssh_arg != NULL) {
+#ifdef ENABLE_WIDEVINE
+      license = LICENSE_WIDEVINE;
+      header = g_strdup (wv_pssh_arg);
+#else
+      g_print ("Widevine CDM libs not present, can't proceed!\n");
+      goto exit;
+#endif
+    } else {
+      g_print ("Local file content requires either --pro-header (PlayReady) or "
+          "--widevine-pssh (Widevine).\n");
+      g_print ("\nFor help: gst-drm-player-example [-h | --help]\n\n");
+      goto exit;
+    }
   }
 
-  // Download manifest from the given url using libcurl.
-  if (!mp4_content && fetch_manifest (manifest_url) != CURLE_OK)
+  // Download manifest from the given URL using libcurl.
+  if (!local_file && fetch_manifest (manifest_url) != CURLE_OK)
     goto exit;
 
-  // Parse manifest to detect license type and get license header.
-  if (!mp4_content &&
+  // Parse manifest to detect license type and extract the DRM header.
+  if (!local_file &&
       ((license = parse_manifest (&header)) == LICENSE_INVALID)) {
     g_printerr ("ERROR: Invalid license! Can't proceed...\n");
     goto exit;
@@ -1144,7 +1294,8 @@ main (gint argc, gchar *argv[])
 
 exit:
   gst_app_context_free (appctx);
-  g_free (mp4_pro_header);
+  g_free (pro_header_arg);
+  g_free (wv_pssh_arg);
   g_free (manifest_url);
 
   gst_deinit ();

@@ -25,8 +25,7 @@ G_DEFINE_TYPE (GstVesDeliverAllocator, gst_vesdeliver_allocator,
     GST_TYPE_DMABUF_ALLOCATOR);
 
 #define ALIGN(num, to) (((num) + (to - 1)) & (~(to - 1)))
-#define THRESHOLD_ALLOC_BUFFER_COUNT 30
-#define MAX_ALLOC_BUFFER_COUNT (THRESHOLD_ALLOC_BUFFER_COUNT + 10)
+#define ALLOC_BUFFER_COUNT_INCREMENT 10
 #define SHARED_BUF_WAIT_TIMEOUT_MS 100
 
 static void
@@ -45,7 +44,7 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator * alloc)
     const char *dlerr = dlerror ();
     if (NULL == dlerr)
       dlerr = "NULL";
-    GST_ERROR ("dlopen %s error: %s", lib_name, dlerr);
+    GST_ERROR_OBJECT (alloc, "dlopen %s error: %s", lib_name, dlerr);
     return;
   }
 #ifdef USE_DMAHEAP
@@ -56,8 +55,8 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator * alloc)
   alloc->alloc_fd = dlsym (alloc->lib_handle, "DmabufHeapAlloc");
 
   if (!alloc->create_allocator || !alloc->free_allocator || !alloc->alloc_fd) {
-    GST_ERROR
-        ("dlsym failed with create_allocator: %p, free_allocator: %p, alloc_fd: %p",
+    GST_ERROR_OBJECT
+        (alloc, "dlsym failed with create_allocator: %p, free_allocator: %p, alloc_fd: %p",
         alloc->create_allocator, alloc->free_allocator, alloc->alloc_fd);
     dlclose (alloc->lib_handle);
     alloc->lib_handle = NULL;
@@ -69,18 +68,36 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator * alloc)
 
   alloc->dmaheap_allocator = alloc->create_allocator ();
   if (!alloc->dmaheap_allocator) {
-    GST_ERROR ("Failed to create dma heap allocator");
+    GST_ERROR_OBJECT (alloc, "Failed to create dma heap allocator");
     return;
   }
 #else
+  int ion_dlsym_fail = 0;
   alloc->ion_open = dlsym (alloc->lib_handle, "ion_open");
   alloc->ion_close = dlsym (alloc->lib_handle, "ion_close");
   alloc->ion_alloc_fd = dlsym (alloc->lib_handle, "ion_alloc_fd");
+#ifdef ION_FLAG_ION_LEND_BUF
+  alloc->ion_lend_buf = dlsym (alloc->lib_handle, "ion_lend_buf");
+  alloc->ion_reclaim_buf = dlsym (alloc->lib_handle, "ion_reclaim_buf");
+
+  if (!alloc->ion_open || !alloc->ion_close || !alloc->ion_alloc_fd || !alloc->ion_lend_buf || !alloc->ion_reclaim_buf) {
+    ion_dlsym_fail = 1;
+    GST_ERROR_OBJECT
+        (alloc, "dlsym failed with ion_open: %p, ion_close: %p, ion_alloc_fd: %p, ion_lend_buf: %p, ion_reclaim_buf: %p",
+        alloc->ion_open, alloc->ion_close, alloc->ion_alloc_fd, alloc->ion_lend_buf, alloc->ion_reclaim_buf);
+  }
+#else
+  alloc->ion_lend_buf = NULL;
+  alloc->ion_reclaim_buf = NULL;
 
   if (!alloc->ion_open || !alloc->ion_close || !alloc->ion_alloc_fd) {
-    GST_ERROR
-        ("dlsym failed with ion_open: %p, ion_close: %p, ion_alloc_fd: %p",
+    ion_dlsym_fail = 1;
+    GST_ERROR_OBJECT
+        (alloc, "dlsym failed with ion_open: %p, ion_close: %p, ion_alloc_fd: %p",
         alloc->ion_open, alloc->ion_close, alloc->ion_alloc_fd);
+  }
+#endif
+  if (ion_dlsym_fail) {
     dlclose (alloc->lib_handle);
     alloc->lib_handle = NULL;
     return;
@@ -91,7 +108,7 @@ gst_vesdeliver_allocator_init (GstVesDeliverAllocator * alloc)
 
   alloc->ion_fd = alloc->ion_open ();
   if (alloc->ion_fd < 0) {
-    GST_ERROR ("Open ION device failed with %d", alloc->ion_fd);
+    GST_ERROR_OBJECT (alloc, "Open ION device failed with %d", alloc->ion_fd);
     return;
   }
 #endif
@@ -205,7 +222,7 @@ _acquire_buffer (GstAllocator * allocator, gsize alloc_size)
     }
 
     if (!acquired) {
-      if (list_size > THRESHOLD_ALLOC_BUFFER_COUNT) {
+      if (list_size > alloc->param.threshold_buf_count) {
         timeout =
             g_get_monotonic_time () +
             (SHARED_BUF_WAIT_TIMEOUT_MS * G_TIME_SPAN_MILLISECOND);
@@ -276,7 +293,7 @@ _insert_buffer_to_list (GstAllocator * allocator, GstMemory * mem, gint buf_fd,
     buf->size = alloc_size;
     buf->used = TRUE;
     g_mutex_lock (&alloc->buf_lock);
-    if (g_slist_length (alloc->buffer_list) >= THRESHOLD_ALLOC_BUFFER_COUNT) {
+    if (g_slist_length (alloc->buffer_list) >= alloc->param.threshold_buf_count) {
       // remove the min unused buffer from the buffer list
       _try_remove_buffer_from_list (allocator);
     }
@@ -309,6 +326,8 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
 #ifdef USE_DMAHEAP
   const char *heap_name = (alloc->param.secure_mode == LEND_DMABUF
       && alloc->param.buf_contiguous) ? contiguous_mem_heap_name : "qcom,system-uncached";
+
+  GST_DEBUG_OBJECT (alloc, "will allocate dma buf fd for sz %" G_GSIZE_FORMAT " bytes", alloc_size);
   if (is_secure_heap) {
     buf_fd =
         alloc->alloc_fd (alloc->dmaheap_allocator, "system-secure", alloc_size,
@@ -319,12 +338,15 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
   }
 
   if (buf_fd < 0) {
-    GST_ERROR ("failed to allocate buffer from DMA %s heap", is_secure_heap ?
+    GST_ERROR_OBJECT (alloc, "failed to allocate buffer from DMA %s heap", is_secure_heap ?
         "system-secure" : heap_name);
     ret = GST_FLOW_ERROR;
+  } else {
+    GST_DEBUG_OBJECT (alloc, "allocate buf fd successfully, dma fd = %d", buf_fd);
   }
 #else
-  guint heap_mask = ION_HEAP (ION_SYSTEM_HEAP_ID);
+  guint heap_mask = (alloc->param.secure_mode == LEND_DMABUF
+      && alloc->param.buf_contiguous) ? ION_HEAP (ION_DISPLAY_HEAP_ID) : ION_HEAP (ION_SYSTEM_HEAP_ID);
   guint flags = 0;
   int rc = -EINVAL;
 
@@ -334,17 +356,20 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
         ION_HEAP (ION_SECURE_HEAP_ID) | ION_HEAP (ION_SECURE_DISPLAY_HEAP_ID);
   }
 
+  GST_DEBUG_OBJECT (alloc, "will allocate ion buf fd for sz %" G_GSIZE_FORMAT " bytes", alloc_size);
   rc = alloc->ion_alloc_fd (alloc->ion_fd, alloc_size, 0, heap_mask, flags,
       &buf_fd);
 
   if (rc || buf_fd < 0) {
-    GST_ERROR ("ion_alloc_fd failed with rc = %d", rc);
+    GST_ERROR_OBJECT (alloc, "ion_alloc_fd failed with rc = %d", rc);
     ret = GST_FLOW_ERROR;
+  } else {
+    GST_DEBUG_OBJECT (alloc, "allocate buf fd successfully, ion fd = %d", buf_fd);
   }
 #endif
 
   if (ret == GST_FLOW_OK) {
-    mem = gst_dmabuf_allocator_alloc (allocator, buf_fd, alloc_size);
+    mem = gst_dmabuf_allocator_alloc (allocator, buf_fd, alloc_size);//Created gstmemory will close fd when gstmemory finalize. If want to control it, use gst_dmabuf_allocator_alloc_with_flags.
     if (mem) {
       GST_INFO_OBJECT (alloc,
           "Allocate %s gstmemory with size = %" G_GSIZE_FORMAT ", fd = %d",
@@ -354,6 +379,9 @@ _alloc_buffer (GstAllocator * allocator, gsize alloc_size)
         /* save the buffer to list for recycling */
         _insert_buffer_to_list (allocator, mem, buf_fd, alloc_size);
       }
+    } else {
+      GST_ERROR_OBJECT (alloc, "Failed to allocate gstmemory for sz %" G_GSIZE_FORMAT ", fd %d, will close fd", alloc_size, buf_fd);
+      close(buf_fd);
     }
   }
 
@@ -374,9 +402,9 @@ gst_vesdeliver_allocator_alloc (GstAllocator * allocator, gsize size,
     mem = _acquire_buffer (allocator, alloc_size);
     if (!mem) {
       list_size = g_slist_length (alloc->buffer_list);
-      if (list_size >= MAX_ALLOC_BUFFER_COUNT) {
+      if (list_size >= alloc->param.threshold_buf_count + ALLOC_BUFFER_COUNT_INCREMENT) {
         GST_ERROR_OBJECT (alloc, "allocated buffer count reach the limit %d",
-            MAX_ALLOC_BUFFER_COUNT);
+            alloc->param.threshold_buf_count + ALLOC_BUFFER_COUNT_INCREMENT);
         need_alloc = FALSE;
       }
     } else {
@@ -415,10 +443,24 @@ _recycle_buffer (GstAllocator * allocator, GstMemory * mem)
           GST_DEBUG_OBJECT (alloc,
               "Reclaim the dmabuf with fd=%d successfully", buf->fd);
         } else {
-          GST_ERROR_OBJECT (alloc, "Failed to reclaim the dmabuf with fd=%d",
-              buf->fd);
+          GST_ERROR_OBJECT (alloc, "Failed to reclaim the dmabuf with fd=%d ret=%d",
+              buf->fd, ret);
         }
       }
+#else
+#ifdef ION_FLAG_ION_LEND_BUF
+      if (param->secure_mode == LEND_DMABUF && alloc->ion_reclaim_buf) {
+        int ret = -1;
+        ret = alloc->ion_reclaim_buf(alloc->ion_fd, buf->fd, ION_VMID_CP_BITSTREAM);
+        if (0 == ret) {
+          GST_DEBUG_OBJECT (alloc,
+              "Reclaim the ionbuf with fd=%d successfully.", buf->fd);
+        } else {
+          GST_ERROR_OBJECT (alloc, "Failed to reclaim the ionbuf with fd=%d ret=%d",
+              buf->fd, ret);
+        }
+      }
+#endif
 #endif
       g_cond_signal (&alloc->buf_cond);
     }

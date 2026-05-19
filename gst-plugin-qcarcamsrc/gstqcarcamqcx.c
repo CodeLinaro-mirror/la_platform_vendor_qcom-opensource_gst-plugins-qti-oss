@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
 #ifdef HAVE_CONFIG_H
@@ -6,6 +6,7 @@
 #endif
 
 #include "gstqcarcamqcx.h"
+#include "gstqcarcamutils.h"
 
 #include <gst/gstinfo.h>
 
@@ -19,7 +20,7 @@ gboolean qcarcamqcx_init(const QCarCamInit_t *pInitParams)
 
   GST_DEBUG("QCARCAM init params:%p", pInitParams);
   if (!pInitParams) {
-    GST_ERROR("error input parameter pInitParams:%p", pInitParams);
+    SG_ERR_LITE("error input parameter pInitParams:%p", pInitParams);
     return ret;
   }
 
@@ -27,7 +28,7 @@ gboolean qcarcamqcx_init(const QCarCamInit_t *pInitParams)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_init error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_init error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -43,7 +44,7 @@ gboolean qcarcamqcx_uninit(void)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_uninit error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_uninit error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -55,7 +56,7 @@ gboolean qcarcamqcx_query_inputs(QCarCamInput_t *pInputs, const uint32_t size, u
 
   GST_DEBUG("QCARCAM query inputs :%p, retsize :%p", pInputs, pRetSize);
   if (!pRetSize) {
-    GST_ERROR("error input parameter retseze:%p", pRetSize);
+    SG_ERR_LITE("error input parameter retseze:%p", pRetSize);
     return ret;
   }
 
@@ -63,7 +64,7 @@ gboolean qcarcamqcx_query_inputs(QCarCamInput_t *pInputs, const uint32_t size, u
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_query_inputs error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_query_inputs error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -75,7 +76,7 @@ gboolean qcarcamqcx_open(const QCarCamOpen_t* pOpenParams, QCarCamHndl_t* pHndl)
 
   GST_DEBUG("QCARCAM open param :%p, pHndl :%p", pOpenParams, pHndl);
   if (!pOpenParams || !pHndl) {
-    GST_ERROR("error input parameter param:%p, pHndl:%p", pOpenParams, pHndl);
+    SG_ERR_LITE("error input parameter param:%p, pHndl:%p", pOpenParams, pHndl);
     return ret;
   }
 
@@ -83,9 +84,9 @@ gboolean qcarcamqcx_open(const QCarCamOpen_t* pOpenParams, QCarCamHndl_t* pHndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_open error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_open error: %d", qcarcam_ret);
 
-  GST_DEBUG("QCARCAM open pHndl :%d", *pHndl);
+  GST_DEBUG("QCARCAM open pHndl :%ld", *pHndl);
   return ret;
 }
 
@@ -94,10 +95,10 @@ gboolean qcarcamqcx_close(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM close hndl :%d", hndl);
+  GST_DEBUG("QCARCAM close hndl :%ld", hndl);
 
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -105,7 +106,7 @@ gboolean qcarcamqcx_close(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_close error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_close error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -115,9 +116,9 @@ gboolean qcarcamqcx_set_bufs(const QCarCamHndl_t hndl, const QCarCamBufferList_t
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM set bufs hndl :%d", hndl);
+  GST_DEBUG("QCARCAM set bufs hndl :%ld", hndl);
   if (!pBuffers || !hndl) {
-    GST_ERROR("error input parameter pbuf:%p, hndl:%d", pBuffers, hndl);
+    SG_ERR_LITE("error input parameter pbuf:%p, hndl:%ld", pBuffers, hndl);
     return ret;
   }
 
@@ -125,7 +126,7 @@ gboolean qcarcamqcx_set_bufs(const QCarCamHndl_t hndl, const QCarCamBufferList_t
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_set_bufs error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_set_bufs error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -137,7 +138,7 @@ gboolean qcarcamqcx_release_bufs(const QCarCamHndl_t hndl, const uint32_t buffer
 
   GST_DEBUG("QCARCAM release bufs hndl :%d", hndl);
   if (0 == bufferlistId || 0 == hndl) {
-    GST_ERROR("error input parameter buf list id:%d, hndl:%d", bufferlistId, hndl);
+    SG_ERR_LITE("error input parameter buf list id:%d, hndl:%ld", bufferlistId, hndl);
     return ret;
   }
 
@@ -145,7 +146,7 @@ gboolean qcarcamqcx_release_bufs(const QCarCamHndl_t hndl, const uint32_t buffer
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_release_bufs error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_release_bufs error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -155,10 +156,10 @@ gboolean qcarcamqcx_start(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM start hndl :%d", hndl);
+  GST_DEBUG("QCARCAM start hndl :%ld", hndl);
 
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -166,7 +167,7 @@ gboolean qcarcamqcx_start(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_start error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_start error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -176,10 +177,10 @@ gboolean qcarcamqcx_stop(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM stop hndl :%d", hndl);
+  GST_DEBUG("QCARCAM stop hndl :%ld", hndl);
 
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -187,7 +188,7 @@ gboolean qcarcamqcx_stop(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_stop error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_stop error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -197,10 +198,10 @@ gboolean qcarcamqcx_pause(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM pause hndl :%d", hndl);
+  GST_DEBUG("QCARCAM pause hndl :%ld", hndl);
 
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -208,7 +209,7 @@ gboolean qcarcamqcx_pause(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_pause error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_pause error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -218,10 +219,10 @@ gboolean qcarcamqcx_resume(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM resume hndl :%d", hndl);
+  GST_DEBUG("QCARCAM resume hndl :%ld", hndl);
 
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -229,7 +230,7 @@ gboolean qcarcamqcx_resume(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_resume error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_resume error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -242,9 +243,9 @@ gboolean qcarcamqcx_get_frame(const QCarCamHndl_t hndl,
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM get frame hndl :%d", hndl);
+  GST_DEBUG("QCARCAM get frame hndl :%ld", hndl);
   if (!pFrameInfo || 0 == hndl) {
-    GST_ERROR("error input parameter frameinfo:%p, hndl:%d", pFrameInfo, hndl);
+    SG_ERR_LITE("error input parameter frameinfo:%p, hndl:%d", pFrameInfo, hndl);
     return ret;
   }
 
@@ -252,7 +253,7 @@ gboolean qcarcamqcx_get_frame(const QCarCamHndl_t hndl,
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_get_frame error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_get_frame error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -265,9 +266,9 @@ gboolean qcarcamqcx_release_frame(const QCarCamHndl_t hndl,
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM release frame hndl :%d", hndl);
+  GST_DEBUG("QCARCAM release frame hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%d", hndl);
     return ret;
   }
 
@@ -275,7 +276,7 @@ gboolean qcarcamqcx_release_frame(const QCarCamHndl_t hndl,
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_release_frame error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_release_frame error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -287,9 +288,9 @@ gboolean qcarcamqcx_register_event_callback(const QCarCamHndl_t hndl,
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM register event callback hndl :%d", hndl);
+  GST_DEBUG("QCARCAM register event callback hndl :%ld", hndl);
   if (0 == hndl || !pPrivateData) {
-    GST_ERROR("error input parameter hndl:%d, private data: %p", hndl, pPrivateData);
+    SG_ERR_LITE("error input parameter hndl:%ld, private data: %p", hndl, pPrivateData);
     return ret;
   }
 
@@ -297,7 +298,7 @@ gboolean qcarcamqcx_register_event_callback(const QCarCamHndl_t hndl,
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_register_event_callback error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_register_event_callback error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -307,9 +308,9 @@ gboolean qcarcamqcx_unregister_event_callback(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM unregister event callback hndl :%d", hndl);
+  GST_DEBUG("QCARCAM unregister event callback hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%d", hndl);
     return ret;
   }
 
@@ -317,7 +318,7 @@ gboolean qcarcamqcx_unregister_event_callback(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_unregister_event_callback error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_unregister_event_callback error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -327,9 +328,9 @@ gboolean qcarcamqcx_reserve(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM reserve hndl :%d", hndl);
+  GST_DEBUG("QCARCAM reserve hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -337,7 +338,7 @@ gboolean qcarcamqcx_reserve(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_reserve error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_reserve error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -347,9 +348,9 @@ gboolean qcarcamqcx_release(const QCarCamHndl_t hndl)
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM release hndl :%d", hndl);
+  GST_DEBUG("QCARCAM release hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -357,7 +358,7 @@ gboolean qcarcamqcx_release(const QCarCamHndl_t hndl)
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_release error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_release error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -369,7 +370,7 @@ gboolean qcarcamqcx_query_input_modes(const uint32_t inputId, QCarCamInputModes_
 
   GST_DEBUG("QCARCAM query input modes inputid :%d", inputId);
   if (!pInputModes) {
-    GST_ERROR("error input parameter input mode:%p", pInputModes);
+    SG_ERR_LITE("error input parameter input mode:%p", pInputModes);
     return ret;
   }
 
@@ -377,7 +378,7 @@ gboolean qcarcamqcx_query_input_modes(const uint32_t inputId, QCarCamInputModes_
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_query_input_modes error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_query_input_modes error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -391,9 +392,9 @@ gboolean qcarcamqcx_setparam(
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM set param hndl :%d", hndl);
+  GST_DEBUG("QCARCAM set param hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -401,7 +402,7 @@ gboolean qcarcamqcx_setparam(
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_setparam error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_setparam error: %d", qcarcam_ret);
 
   return ret;
 }
@@ -411,9 +412,9 @@ gboolean qcarcamqcx_submit_request(const QCarCamHndl_t hndl, const QCarCamReques
   gboolean ret = FALSE;
   QCarCamRet_e qcarcam_ret = QCARCAM_RET_OK;
 
-  GST_DEBUG("QCARCAM submit request hndl :%d", hndl);
+  GST_DEBUG("QCARCAM submit request hndl :%ld", hndl);
   if (0 == hndl) {
-    GST_ERROR("error input parameter hndl:%d", hndl);
+    SG_ERR_LITE("error input parameter hndl:%ld", hndl);
     return ret;
   }
 
@@ -421,7 +422,7 @@ gboolean qcarcamqcx_submit_request(const QCarCamHndl_t hndl, const QCarCamReques
   if (qcarcam_ret == QCARCAM_RET_OK)
     ret = TRUE;
   else
-    GST_ERROR ("qcarcamqcx_submit_request error: %d", qcarcam_ret);
+    SG_ERR_LITE ("qcarcamqcx_submit_request error: %d", qcarcam_ret);
 
   return ret;
 }

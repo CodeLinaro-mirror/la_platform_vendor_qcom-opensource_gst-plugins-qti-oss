@@ -36,6 +36,8 @@ static const char *vm_name = "qcom,cp_bitstream";
 
 GST_DEBUG_CATEGORY (vesdeliver_debug);
 #define GST_CAT_DEFAULT vesdeliver_debug
+#define THRESHOLD_ALLOC_BUFFER_COUNT 30
+#define THRESHOLD_ALLOC_BUFFER_COUNT_REVISED 12
 
 enum
 {
@@ -50,16 +52,34 @@ enum
 static GstStaticPadTemplate sink_tmpl = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_DMABUF_CAPS));
+    GST_STATIC_CAPS (
+        /* Clear content */
+        H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS ";"
+        /* CENC encrypted content */
+        PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";"
+        PLAYREADY_CENC_VP9_CAPS  ";" WIDEVINE_CENC_VP9_CAPS  ";"
+        PLAYREADY_CENC_AV1_CAPS  ";" WIDEVINE_CENC_AV1_CAPS  ";"
+        /* Raw DMABuf output */
+        VIDEO_RAW_DMABUF_CAPS
+    )
+);
 
 static GstStaticPadTemplate src_tmpl = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";"
-        AV1_CAPS ";" PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
-        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";" VIDEO_RAW_CAPS));
+    GST_STATIC_CAPS (
+        /* Clear content */
+        H264_CAPS ";" H265_CAPS ";" VP8_CAPS ";" VP9_CAPS ";" MPEG2_CAPS ";" AV1_CAPS ";"
+        /* CENC encrypted content */
+        PLAYREADY_CENC_H264_CAPS ";" WIDEVINE_CENC_H264_CAPS ";"
+        PLAYREADY_CENC_H265_CAPS ";" WIDEVINE_CENC_H265_CAPS ";"
+        PLAYREADY_CENC_VP9_CAPS  ";" WIDEVINE_CENC_VP9_CAPS  ";"
+        PLAYREADY_CENC_AV1_CAPS  ";" WIDEVINE_CENC_AV1_CAPS  ";"
+        /* Raw video output */
+        VIDEO_RAW_CAPS
+    )
+);
 
 #define gst_vesdeliver_parent_class parent_class
 G_DEFINE_TYPE (GstVesDeliver, gst_vesdeliver, GST_TYPE_BASE_TRANSFORM);
@@ -105,7 +125,7 @@ gst_vesdeliver_secure_mode_get_type (void)
     static const GEnumValue values[] = {
       {SECURE_DISABLE, "Non-secure mode", "disable"},
       {SECURE_COPY, "Secure copy mode", "secure-copy"},
-      {LEND_DMABUF, "Lend dmabuf mode", "lend-dmabuf"},
+      {LEND_DMABUF, "Lend dmabuf or ionbuf mode", "lend-dmabuf"},
       {0, NULL, NULL}
     };
 
@@ -172,7 +192,13 @@ gst_vesdeliver_class_init (GstVesDeliverClass * klass)
       g_param_spec_boolean ("buf-contiguous", "Buffer Contiguous",
           "If enabled, will allocate physical contiguous DMA memory for bitstream buffer, "
           "only work in lend dmabuf mode",
+#ifdef ENABLE_DRM_OPTIMIZATION
+          // Use non-contiguous memory by default when DRM optimization is enabled
+          FALSE,
+#else
+          // Use physically contiguous memory by default
           TRUE,
+#endif
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
@@ -220,7 +246,13 @@ gst_vesdeliver_init (GstVesDeliver * vesdeliver)
 {
   vesdeliver->secure = SECURE_DISABLE;
   vesdeliver->buf_recycle = TRUE;
+#ifdef ENABLE_DRM_OPTIMIZATION
+  // Use non-contiguous memory by default when DRM optimization is enabled
+  vesdeliver->buf_contiguous = FALSE;
+#else
+  // Use physically contiguous memory by default
   vesdeliver->buf_contiguous = TRUE;
+#endif
   vesdeliver->allocator = NULL;
   vesdeliver->secure_handle = NULL;
   vesdeliver->transform_caps = TRANSFORM_DISABLE;
@@ -520,9 +552,11 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   int buf_fd = -1;
 
   if (TRANSFORM_DISABLE != vesdeliver->transform_caps) {
-    GST_LOG_OBJECT (vesdeliver, "Input buf %p with sz %" G_GSIZE_FORMAT ", pts %"
-        GST_TIME_FORMAT ", only caps change", inbuf, gst_buffer_get_size(inbuf),
-        GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)));
+    gsize buf_sz = 0;
+    gsize len = gst_buffer_get_sizes (inbuf, NULL, &buf_sz);
+    GST_LOG_OBJECT (vesdeliver, "Input buf %p with len %" G_GSIZE_FORMAT ", sz %"
+        G_GSIZE_FORMAT ", pts %" GST_TIME_FORMAT ", only caps change", inbuf, len,
+        buf_sz, GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)));
     return GST_FLOW_OK;
   }
 
@@ -531,7 +565,7 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstMapInfo input_map = { };
   gst_buffer_map (inbuf, &input_map, GST_MAP_READ);
   GST_DEBUG_OBJECT (vesdeliver,
-      "Input buffer %p with size: %" G_GSIZE_FORMAT ", timestamp: %"
+      "Input buffer %p with len: %" G_GSIZE_FORMAT ", timestamp: %"
       GST_TIME_FORMAT ", offset: %" G_GUINT64_FORMAT, inbuf, input_map.size,
       GST_TIME_ARGS (GST_BUFFER_PTS (inbuf)), GST_BUFFER_OFFSET (inbuf));
 
@@ -608,6 +642,26 @@ gst_vesdeliver_transform (GstBaseTransform * trans, GstBuffer * inbuf,
         GST_WARNING_OBJECT (vesdeliver, "The dmabuf is not exclusive owned");
       }
     }
+#else
+#ifdef ION_FLAG_ION_LEND_BUF
+    if (LEND_DMABUF == vesdeliver->secure) {
+      if (vesdeliver->allocator) {
+        int ret = -1;
+        GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (vesdeliver->allocator);
+        ret = alloc->ion_lend_buf(alloc->ion_fd, buf_fd,
+                          ION_VMID_CP_BITSTREAM, ION_PERM_READ | ION_PERM_WRITE);
+        if (ret != 0) {
+          GST_ERROR_OBJECT(vesdeliver, "Failed to lend ionbuf, buf_fd=%d ret=%d",
+              buf_fd, ret);
+        } else {
+          GST_DEBUG_OBJECT (vesdeliver, "Lend ionbuf with buf_fd=%d successfully.",
+              buf_fd);
+        }
+      } else {
+        GST_ERROR_OBJECT(vesdeliver, "There is no allocator to do buffer lending.");
+      }
+    }
+#endif
 #endif
   }
 
@@ -831,6 +885,22 @@ gst_vesdeliver_set_caps (GstBaseTransform * trans, GstCaps * in_caps, GstCaps * 
   vesdeliver->input_format = g_strdup (format);
   vesdeliver->input_width = width;
   vesdeliver->input_height = height;
+
+  /* Update allocator param.
+   * Set threshold_buf_count to THRESHOLD_ALLOC_BUFFER_COUNT_REVISED if secure mode
+   * is LEND_DMABUF and resolution is more than 2560*1440.
+   */
+  if (vesdeliver->allocator) {
+    GstVesDeliverAllocator *alloc = GST_VESDELIVER_ALLOCATOR (vesdeliver->allocator);
+    alloc->param.threshold_buf_count = THRESHOLD_ALLOC_BUFFER_COUNT;
+    if (alloc->param.secure_mode == LEND_DMABUF
+        && vesdeliver->input_width * vesdeliver->input_height > 2560*1440) {
+      alloc->param.threshold_buf_count = THRESHOLD_ALLOC_BUFFER_COUNT_REVISED;
+    }
+
+    GST_INFO_OBJECT (vesdeliver, "set threshold_buf_count to %d",
+        alloc->param.threshold_buf_count);
+  }
 
   return TRUE;
 }

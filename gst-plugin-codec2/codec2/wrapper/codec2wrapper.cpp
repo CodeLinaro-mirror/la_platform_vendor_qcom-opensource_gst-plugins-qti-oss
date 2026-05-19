@@ -139,6 +139,7 @@ std::unique_ptr<C2Param> setLTRMarkIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setLTRUseIndex(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setVideoDynamicFramerate(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf);
+std::unique_ptr<C2Param> setVUITimingInfoEnable(gpointer param, void* const comp_intf);
 
 // Function for C2 parameter configuration or vendor parameter configuration
 #if GST_QPRANGE_OPTION == 0
@@ -204,6 +205,7 @@ static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
     { CONFIG_FUNCTION_KEY_LTR_USE_INDEX, setLTRUseIndex },
     { CONFIG_FUNCTION_KEY_DYNAMIC_FRAMERATE, setVideoDynamicFramerate },
     { CONFIG_FUNCTION_KEY_EXTERNAL_BUFFER, setUseExternalBuf },
+    { CONFIG_FUNCTION_KEY_VUI_TIMING_INFO, setVUITimingInfoEnable },
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1060,6 +1062,27 @@ std::unique_ptr<C2Param> setUseExternalBuf(gpointer param, void* const comp_intf
     use_external_buf = intf_wrapper->updateParamFromConfig(kvpairs);
 
     return use_external_buf;
+}
+
+std::unique_ptr<C2Param> setVUITimingInfoEnable(gpointer param, void* const comp_intf)
+{
+    if (param == NULL || comp_intf == NULL) {
+        return nullptr;
+    }
+
+    ConfigParams* config = (ConfigParams*)param;
+    C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+    std::unique_ptr<C2Param> vui_timing_info_param;
+    android::ReflectedParamUpdater::Dict kvpairs;
+    android::ReflectedParamUpdater::Value enable_item;
+
+    enable_item.set((int32_t)config->vui_timing_info.enable);
+    kvpairs.emplace("vendor.qti-ext-enc-vui-timing-info.value", enable_item);
+    GST_DEBUG("set vui timing info enable : %d", config->vui_timing_info.enable);
+
+    vui_timing_info_param = intf_wrapper->updateParamFromConfig(kvpairs);
+
+    return vui_timing_info_param;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

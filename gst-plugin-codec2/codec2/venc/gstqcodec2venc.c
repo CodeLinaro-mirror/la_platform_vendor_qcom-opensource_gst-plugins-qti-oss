@@ -95,7 +95,7 @@ GST_DEBUG_CATEGORY (gst_qcodec2_venc_debug);
 #define DEFAULT_INIT_QUANT_P_FRAMES               (0xffffffff)
 #define DEFAULT_INIT_QUANT_B_FRAMES               (0xffffffff)
 #define DEFAULT_INPUTCOPY                         (FALSE)
-
+#define DEFAULT_VUI_TIMINGINFO_ENABLE             (FALSE)
 
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2Venc, gst_qcodec2_venc, GST_TYPE_VIDEO_ENCODER);
@@ -183,6 +183,7 @@ enum
   PROP_LTR_MARK,
   PROP_LTR_USE,
   PROP_INPUTCOPY,
+  PROP_VUI_TIMINGINFO_ENABLE,
 };
 
 FULL_RANGE toQCodec2VideoFullRange(GstVideoColorRange range)
@@ -686,6 +687,19 @@ make_force_idr_param (gboolean force_idr)
 
   param.config_name = CONFIG_FUNCTION_KEY_INTRA_VIDEO_FRAME_REQUEST;
   param.force_idr = force_idr;
+
+  return param;
+}
+
+static ConfigParams
+make_vui_timing_info_param (gboolean enable)
+{
+  ConfigParams param;
+
+  memset (&param, 0, sizeof (ConfigParams));
+
+  param.config_name = CONFIG_FUNCTION_KEY_VUI_TIMING_INFO;
+  param.vui_timing_info.enable = enable;
 
   return param;
 }
@@ -1315,8 +1329,8 @@ gst_qcodec2_venc_stop (GstVideoEncoder * encoder)
 {
   GstQcodec2Venc *enc = GST_QCODEC2_VENC (encoder);
 
-  SG_INFO_OBJ (enc, "stop: handled in-data(%u/%u), out-data(%u/%u), enc(%p) f-idx %lu",
-      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  SG_INFO_OBJ (enc, "stop: handled in-data(%u/%u), out-data(%u/%u), enc(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc, enc->frame_index, enc->width, enc->height, enc->comp_name ? enc->comp_name : "NULL", enc->comp);
   enc->in_data_idx_1cycle = 0;
   enc->out_data_idx_1cycle = 0;
 
@@ -1439,6 +1453,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
   ConfigParams temporal_layer;
   ConfigParams ltr_count;
   ConfigParams hdr_static_info;
+  ConfigParams vui_timing_info;
   gfloat fps = COMMON_FRAMERATE;
   GstCapsFeatures *features = NULL;
 
@@ -1733,6 +1748,17 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     g_ptr_array_add (config, &hdr_static_info);
   }
 
+  if (GST_IS_QCODEC2_H264_ENC(enc) || GST_IS_QCODEC2_H265_ENC(enc)) {
+    if (enc->vui_timinginfo_enable && enc->input_info.fps_n != 0 && enc->input_info.fps_d != 0) {
+      vui_timing_info = make_vui_timing_info_param (TRUE);
+    } else {
+      vui_timing_info = make_vui_timing_info_param (FALSE);
+    }
+    GST_DEBUG_OBJECT (enc, "set vui timing info enable prop: %d, input fps_n %d, fps_d %d",
+        enc->vui_timinginfo_enable, enc->input_info.fps_n, enc->input_info.fps_d);
+    g_ptr_array_add (config, &vui_timing_info);
+  }
+
   /* Create component */
   if (!gst_qcodec2_venc_create_component (encoder)) {
     SG_ERR_OBJ (enc, "Failed to create component");
@@ -1769,8 +1795,8 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     }
   }
 
-  SG_INFO_OBJ (enc, "set_format: handled in-data(%u/%u), out-data(%u/%u), enc(%p) f-idx %lu",
-      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+  SG_INFO_OBJ (enc, "set_format: handled in-data(%u/%u), out-data(%u/%u), enc(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      enc->in_data_idx_1cycle, enc->in_data_idx_total, enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc, enc->frame_index, enc->width, enc->height, enc->comp_name ? enc->comp_name : "NULL", enc->comp);
   //In dec + enc pipeline, if ctrl+c halfway, there is still enc output after stop. Then, reset those 1 cycle idx here again.
   enc->in_data_idx_1cycle = 0;
   enc->out_data_idx_1cycle = 0;
@@ -2002,11 +2028,11 @@ gst_qcodec2_venc_handle_frame (GstVideoEncoder * encoder,
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
 
   if (enc->in_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->in_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+    SG_INFO_OBJ (enc, "Frame number: %u, in buf %p, frame PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, frame->input_buffer, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
   } else {
-    GST_DEBUG_OBJECT (enc, "Frame number: %u, PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, in buf %p, frame PTS: %" GST_TIME_FORMAT ", in-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, frame->input_buffer, GST_TIME_ARGS (frame->pts), enc->in_data_idx_1cycle, enc->in_data_idx_total, enc, enc->frame_index);
   }
   enc->in_data_idx_1cycle++;
   enc->in_data_idx_total++;
@@ -2225,11 +2251,11 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
   }
 
   if (enc->out_data_idx_1cycle < ENC_SHOWLOG_NUMBER || 0 == (enc->out_data_idx_1cycle % ENC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+    SG_INFO_OBJ (enc, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
   } else {
-    GST_DEBUG_OBJECT (enc, "Frame number: %u, out buf: PTS: %" GST_TIME_FORMAT ", sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
-        frame->system_frame_number, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
+    GST_DEBUG_OBJECT (enc, "Frame number: %u, out buf %p, PTS: %" GST_TIME_FORMAT "(%" GST_TIME_FORMAT "), sz %" G_GSIZE_FORMAT ", out-idx(%u/%u), enc(%p) f-idx %lu",
+        frame->system_frame_number, outbuf, GST_TIME_ARGS (GST_BUFFER_PTS (outbuf)), GST_TIME_ARGS (frame->pts), gst_buffer_get_size (outbuf), enc->out_data_idx_1cycle, enc->out_data_idx_total, enc, enc->frame_index);
   }
   enc->out_data_idx_1cycle++;
   enc->out_data_idx_total++;
@@ -2240,9 +2266,9 @@ push_frame_downstream (GstVideoEncoder * encoder, BufferDescriptor * desc)
     ret = gst_video_encoder_finish_frame (encoder, frame);
   }
   if (ret == GST_FLOW_FLUSHING) {
-    GST_WARNING_OBJECT (enc, "downstream is flushing");
+    GST_WARNING_OBJECT (enc, "downstream is flushing(Frame number: %u, enc %p, f-idx %lu)", frame->system_frame_number, enc, enc->frame_index);
   } else if (ret != GST_FLOW_OK) {
-    SG_ERR_OBJ (enc, "failed to finish frame, outbuf: %p", outbuf);
+    SG_ERR_OBJ (enc, "failed to finish frame, outbuf: %p(Frame number: %u, enc %p, f-idx %lu), ret %d", outbuf, frame->system_frame_number, enc, enc->frame_index, ret);
   }
 
 out:
@@ -2279,7 +2305,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       if (outBuffer->fd > 0 || outBuffer->size > 0) {
         ret = push_frame_downstream (encoder, outBuffer);
         if (ret != GST_FLOW_FLUSHING && ret != GST_FLOW_OK) {
-          SG_ERR_OBJ (enc, "Failed to push frame downstream");
+          SG_ERR_OBJ (enc, "Failed to push frame downstream, ret %d", ret);
         }
 
         enc->num_output_done++;
@@ -2939,6 +2965,9 @@ gst_qcodec2_venc_set_property (GObject * object, guint prop_id,
     case PROP_INPUTCOPY:
       enc->force_inputcopy = g_value_get_boolean (value);
       break;
+    case PROP_VUI_TIMINGINFO_ENABLE:
+      enc->vui_timinginfo_enable = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3069,6 +3098,9 @@ gst_qcodec2_venc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INPUTCOPY:
       g_value_set_boolean (value, enc->force_inputcopy);
+      break;
+    case PROP_VUI_TIMINGINFO_ENABLE:
+      g_value_set_boolean (value, enc->vui_timinginfo_enable);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -3461,6 +3493,14 @@ gst_qcodec2_venc_class_init (GstQcodec2VencClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_VUI_TIMINGINFO_ENABLE,
+      g_param_spec_boolean ("vui-timinginfo",
+          "vui timinginfo enable setting",
+          "set vui timinginfo enable when fps in caps isn't 0 for 264 and 265",
+          DEFAULT_VUI_TIMINGINFO_ENABLE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_qcodec2_venc_signals[SIGNAL_FORCE_IDR] = g_signal_new ("force-idr",
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_STRUCT_OFFSET (GstQcodec2VencClass, force_idr),
@@ -3534,6 +3574,7 @@ gst_qcodec2_venc_init (GstQcodec2Venc * enc)
   enc->input_glmem_feature = FALSE;
 
   enc->max_input_buffers = 0;
+  enc->vui_timinginfo_enable = DEFAULT_VUI_TIMINGINFO_ENABLE;
 
   g_value_init (&enc->ltr_mark, GST_TYPE_ARRAY);
   g_value_init (&enc->ltr_use, GST_TYPE_ARRAY);
