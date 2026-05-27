@@ -99,6 +99,8 @@ G_BEGIN_DECLS
     (gst_qmmfsrc_noise_reduction_get_type())
 #define GST_TYPE_QMMFSRC_CAPTURE_MODE (gst_qmmfsrc_capture_mode_get_type())
 #define GST_TYPE_QMMFSRC_FRC_MODE (gst_qmmfsrc_frc_mode_get_type())
+#define GST_TYPE_QMMFSRC_SELECT_TSCP \
+    (gst_qmmfsrc_select_tscp_get_type())
 #define GST_TYPE_QMMFSRC_ROTATE (gst_qmmfsrc_rotate_get_type())
 #define GST_TYPE_QMMFSRC_CAM_OPMODE (gst_qmmfsrc_cam_opmode_get_type())
 #ifdef EIS_MODES_ENABLE
@@ -342,6 +344,14 @@ typedef enum {
   GST_PAD_ACTIVATION_MODE_SIGNAL = 1,
 } GstQmmfSrcPadActivationMode;
 
+enum
+{
+  SELECT_TSCP_DEFAULT,
+  SELECT_TSCP_SOE,
+  SELECT_TSCP_EOE,
+  SELECT_TSCP_SOF,
+};
+
 GType gst_qmmfsrc_control_mode_get_type (void);
 
 GType gst_qmmfsrc_effect_mode_get_type (void);
@@ -367,6 +377,8 @@ GType gst_qmmfsrc_noise_reduction_get_type (void);
 GType gst_qmmfsrc_capture_mode_get_type (void);
 
 GType gst_qmmfsrc_frc_mode_get_type (void);
+
+GType gst_qmmfsrc_select_tscp_get_type (void);
 
 GType gst_qmmfsrc_eis_mode_get_type (void);
 
