@@ -234,6 +234,11 @@ struct _GstQmmfContext {
 
   std::vector<std::vector<guint32>> req_group;
 
+  /// Camera tof range mode.
+  gint              tof_range_mode;
+  /// Camera tof image_type.
+  gint              tof_image_type;
+
   /// Super FrameRate Base
   gint32            superframerate;
 
@@ -2022,6 +2027,20 @@ gst_qmmf_context_open (GstQmmfContext * context)
   forcesensormode.mode = context->sensormode;
   xtraparam.Update (::qmmf::recorder::QMMF_FORCE_SENSOR_MODE, forcesensormode);
 
+  GST_ERROR("tof range_mode:%d, image_type:%d, tof_range_mode_off %d, image_type_off %d",
+          context->tof_range_mode, context->tof_image_type, TOF_RANGE_MODE_OFF, TOF_IMAGE_TYPE_OFF);
+
+  // set force sensor mode if tof_range_mode and tof_image_type valid
+  // tof_range_mode: TOF_RANGE_MODE_SHORT(0) / TOF_RANGE_MODE_LONG(1)
+  // tof_image_type: TOF_IMAGE_TYPE_VGA_DEPTH_QVGA_IR_BG(0)/1/2/3/4
+  ::qmmf::recorder::ForceSensorMode force_sensor_mode;
+  if (context->tof_range_mode != TOF_RANGE_MODE_OFF &&
+      context->tof_image_type != TOF_IMAGE_TYPE_OFF) {
+    force_sensor_mode.mode =
+        context->tof_range_mode * TOF_IMAGE_TYPE_MAX + context->tof_image_type;
+    xtraparam.Update (::qmmf::recorder::QMMF_FORCE_SENSOR_MODE, force_sensor_mode);
+  }
+
   // FrameRateControl
   ::qmmf::recorder::FrameRateControl frc;
   if (context->frc_mode == FRAME_SKIP) {
@@ -3805,6 +3824,16 @@ gst_qmmf_context_set_camera_param (GstQmmfContext * context, guint param_id,
 
       context->selecttscp = g_value_get_enum (value);
       meta.update(tag_id, &(context)->selecttscp, 1);
+      break;
+    }
+    case PARAM_CAMERA_TOF_RANGE_MODE:
+    {
+      context->tof_range_mode = g_value_get_enum (value);
+      break;
+    }
+    case PARAM_CAMERA_TOF_IMAGE_TYPE:
+    {
+      context->tof_image_type = g_value_get_enum (value);
       break;
     }
   }
