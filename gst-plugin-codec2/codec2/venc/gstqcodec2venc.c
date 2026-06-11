@@ -3127,12 +3127,13 @@ gst_qcodec2_venc_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
-      GST_LOG_OBJECT (enc, "encoder state change from PAUSED to READY");
+      SG_INFO_OBJ (enc, "encoder state change PAUSED => READY, enc(%" GST_PTR_FORMAT "@%p)", enc, enc);
       if (enc->comp) {
         c2component_cancelPendingWork (enc->comp);
       }
       break;
     default:
+      SG_INFO_OBJ (enc, "encoder state change %s => %s, enc(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), enc, enc);
       break;
   }
   return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
