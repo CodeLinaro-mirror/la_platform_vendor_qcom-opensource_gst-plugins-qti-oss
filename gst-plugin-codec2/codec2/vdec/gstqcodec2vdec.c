@@ -2196,12 +2196,13 @@ gst_qcodec2_vdec_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
-      GST_LOG_OBJECT (dec, "decoder state change from PAUSED to READY");
+      SG_INFO_OBJ (dec, "decoder state change PAUSED => READY, dec(%" GST_PTR_FORMAT "@%p)", dec, dec);
       if (dec->comp) {
         c2component_cancelPendingWork (dec->comp);
       }
       break;
     default:
+      SG_INFO_OBJ (dec, "decoder state change %s => %s, dec(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), dec, dec);
       break;
   }
   return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
