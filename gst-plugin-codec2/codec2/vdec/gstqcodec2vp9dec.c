@@ -42,8 +42,6 @@
 GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
 #define GST_CAT_DEFAULT gst_qcodec2_vdec_debug
 
-static GstFlowReturn gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
-    GstVideoCodecFrame * frame);
 static gboolean gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder);
 static gboolean gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state);
@@ -65,7 +63,6 @@ gst_qcodec2_vp9_dec_class_init (GstQcodec2VP9DecClass * klass)
       gst_static_pad_template_get (&gst_qcodec2_vp9_dec_sink_template));
   GstQcodec2VdecClass *qcodec2vdec_class = GST_QCODEC2_VDEC_CLASS (klass);
 
-  qcodec2vdec_class->handle_frame = gst_qcodec2_vp9_dec_handle_frame;
   qcodec2vdec_class->set_format = gst_qcodec2_vp9_dec_set_format;
   qcodec2vdec_class->open = gst_qcodec2_vp9_dec_open;
 
@@ -83,9 +80,7 @@ static gboolean
 gst_qcodec2_vp9_dec_open (GstQcodec2Vdec * decoder)
 {
   GstQcodec2Vdec *base_dec = decoder;
-  /* start C2 component later since checking VP9 10bit format */
-  base_dec->delay_start = TRUE;
-  base_dec->check_10bit= TRUE;
+  base_dec->check_10bit = TRUE;
 
   return TRUE;
 }
@@ -100,100 +95,6 @@ gst_qcodec2_vp9_dec_set_format (GstQcodec2Vdec * decoder,
   GST_DEBUG_OBJECT (dec, "VP9 dec set format");
 
   ret = dec_set_c2_pixel_format (decoder, state);
-
-  return ret;
-}
-
-static GstFlowReturn
-gst_qcodec2_vp9_dec_handle_frame (GstQcodec2Vdec * decoder,
-    GstVideoCodecFrame * frame)
-{
-  GstQcodec2Vdec *base_dec = decoder;
-  GstQcodec2VP9Dec *dec = GST_QCODEC2_VP9_DEC (decoder);
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstMapInfo mapinfo = { 0, };
-  GstBuffer *buf = NULL;
-  GstVp9Parser *vp9_parser = NULL;
-  GstVp9FrameHdr *vp9_hdr = NULL;
-  GPtrArray *config = NULL;
-  guint8 *frame_data = NULL;
-  gsize frame_size = 0;
-  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
-  ConfigParams pixelformat;
-
-  GST_DEBUG_OBJECT (dec, "VP9 dec handle frame");
-
-  /* check VP9 10bit case 2: no field bit-depth-luma in caps, parse it here in non-secure mode */
-  if (base_dec->check_10bit && !base_dec->secure) {
-    GST_DEBUG_OBJECT (dec,
-        "check VP9 10bit if without field bit-depth-luma in caps");
-    vp9_parser = gst_vp9_parser_new ();
-    vp9_hdr = g_slice_new0 (GstVp9FrameHdr);
-    config = g_ptr_array_new ();
-    buf = frame->input_buffer;
-    gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
-    frame_data = mapinfo.data;
-    frame_size = mapinfo.size;
-    if (vp9_parser && vp9_hdr && config) {
-      gst_vp9_parser_parse_frame_header (vp9_parser, vp9_hdr, frame_data,
-          frame_size);
-    } else {
-      SG_ERR_OBJ (dec, "failed to new some structure");
-      gst_buffer_unmap (buf, &mapinfo);
-      ret = GST_FLOW_ERROR;
-      goto done;
-    }
-    gst_buffer_unmap (buf, &mapinfo);
-
-    if (vp9_parser->bit_depth == GST_VP9_BIT_DEPTH_10) {
-      if (base_dec->is_ubwc) {
-        output_format = GST_VIDEO_FORMAT_NV12_10LE32;
-      } else {
-        output_format = GST_VIDEO_FORMAT_P010_10LE;
-      }
-
-      base_dec->output_format = output_format;
-
-      GST_LOG_OBJECT (dec,
-          "output width: %d, height: %d, format: %d (%s) for VP9",
-          base_dec->width, base_dec->height, output_format,
-          gst_video_format_to_string (output_format));
-
-      if (config) {
-        pixelformat =
-          make_pixel_format_param (gst_to_c2_pixelformat (base_dec,
-                output_format), FALSE);
-        GST_LOG_OBJECT (dec, "set c2 output format: %d for VP9",
-            pixelformat.pixelFormat.fmt);
-        g_ptr_array_add (config, &pixelformat);
-        if (!c2componentInterface_config (base_dec->comp_intf,
-              config, BLOCK_MODE_MAY_BLOCK)) {
-          SG_ERR_OBJ (dec, "Failed to set config");
-          ret = GST_FLOW_ERROR;
-          goto done;
-        }
-      }
-    }
-
-    base_dec->check_10bit = FALSE;
-  }
-
-  if (base_dec->delay_start) {
-    if (!gst_qcodec2_vdec_start_comp_and_config_pool (base_dec)) {
-      SG_ERR_OBJ (dec, "failed to start c2 comp or config pool");
-      ret = GST_FLOW_ERROR;
-      goto done;
-    }
-    base_dec->delay_start = FALSE;
-  }
-
-done:
-  if (config)
-    g_ptr_array_free (config, TRUE);
-  if (vp9_hdr)
-    g_slice_free (GstVp9FrameHdr, vp9_hdr);
-  if (vp9_parser)
-    gst_vp9_parser_free (vp9_parser);
 
   return ret;
 }
