@@ -1876,6 +1876,10 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
 
   /* Create component store */
   enc->comp_store = c2componentStore_create ();
+  if (!enc->comp_store) {
+    SG_ERR_OBJ (enc, "Failed to create component store, ret FALSE from _venc_open() !");
+    return FALSE;
+  }
 
   return ret;
 }
