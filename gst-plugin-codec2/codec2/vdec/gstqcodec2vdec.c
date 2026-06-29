@@ -479,9 +479,8 @@ dec_set_c2_pixel_format (GstQcodec2Vdec * decoder, GstVideoCodecState * state)
         goto done;
       }
 
-      /* disable checking and delay_start since bit-depth-chroma parsed */
+      /* disable checking since bit-depth-chroma parsed */
       dec->check_10bit = FALSE;
-      dec->delay_start = FALSE;
     }
 
     config = g_ptr_array_new ();
@@ -1002,12 +1001,10 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
   dec->in_data_idx_1cycle = 0;
   dec->out_data_idx_1cycle = 0;
 
-  if (!dec->delay_start) {
-    ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
-    if (ret == FALSE) {
-      SG_ERR_OBJ (dec, "failed to start component");
-      goto error_set_format;
-    }
+  ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
+  if (ret == FALSE) {
+    SG_ERR_OBJ (dec, "failed to start component");
+    goto error_set_format;
   }
 
 done:
@@ -1025,8 +1022,6 @@ error_set_format:
     SG_ERR_OBJ (dec, "failed to setup input");
     return FALSE;
   }
-
-  return TRUE;
 }
 
 /* Called when the element changes to GST_STATE_READY */
@@ -1047,7 +1042,6 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
   dec->comp_intf = NULL;
   dec->out_port_pool = NULL;
   dec->check_10bit = FALSE;
-  dec->delay_start = FALSE;
   dec->external_buf_table = NULL;
   dec->max_external_buf_cnt = QCODEC2_MIN_OUTBUFFERS;
   dec->acquired_external_buf = 0;
@@ -2202,12 +2196,13 @@ gst_qcodec2_vdec_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
-      GST_LOG_OBJECT (dec, "decoder state change from PAUSED to READY");
+      SG_INFO_OBJ (dec, "decoder state change PAUSED => READY, dec(%" GST_PTR_FORMAT "@%p)", dec, dec);
       if (dec->comp) {
         c2component_cancelPendingWork (dec->comp);
       }
       break;
     default:
+      SG_INFO_OBJ (dec, "decoder state change %s => %s, dec(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), dec, dec);
       break;
   }
   return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
