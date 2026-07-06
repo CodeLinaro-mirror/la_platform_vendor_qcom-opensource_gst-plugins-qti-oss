@@ -1059,6 +1059,10 @@ gst_qcodec2_vdec_open (GstVideoDecoder * decoder)
 
   /* Create component store */
   dec->comp_store = c2componentStore_create ();
+  if (!dec->comp_store) {
+    SG_ERR_OBJ (dec, "Failed to create component store, ret FALSE from _vdec_open() !");
+    return FALSE;
+  }
 
   if (dec_class->open) {
     GST_DEBUG_OBJECT (dec, "Subclass open");
