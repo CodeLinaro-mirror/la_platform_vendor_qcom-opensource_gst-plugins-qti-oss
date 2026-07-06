@@ -426,7 +426,7 @@ c2_status_t C2ComponentAdapter::waitForProgressOrStateChange(
     std::chrono::steady_clock::time_point endTime = std::chrono::steady_clock::now() + timeout;
     c2_status_t ret = C2_OK;
 
-    GST_LOG("work pending:%u, max:%u", mNumPendingWorks, maxPendingWorks);
+    GST_LOG("work pending:%u, max:%u, timeoutMs:%u", mNumPendingWorks, maxPendingWorks, timeoutMs);
 
     if (mNumPendingWorks >= maxPendingWorks) {
         auto pendingSignaled = [this]{ return mPendingSignaled; };
@@ -1503,15 +1503,16 @@ void C2ComponentAdapter::releaseInputBuf(uint64_t index)
 
 void C2ComponentAdapter::cancelPendingWork()
 {
-    GST_LOG("Component(%p) cancelPendingWork.", this);
+    SG_INFO("Component(%p) cancelPendingWork.", this);
 
     {
         std::unique_lock<std::mutex> ul(mLock);
-        GST_LOG("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
+        SG_INFO("%s mNumPendingWorks %d", __func__, mNumPendingWorks);
         mPendingSignaled = true;
     }
 
     mPendingWorkCond.notify_all();
+    SG_INFO("Component(%p) cancelPendingWork done.", this);
 }
 
 C2ComponentListenerAdapter::C2ComponentListenerAdapter(C2ComponentAdapter* comp)
