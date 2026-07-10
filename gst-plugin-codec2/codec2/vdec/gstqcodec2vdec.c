@@ -2155,10 +2155,10 @@ static gboolean
 gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder, GstEvent * event)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
-
-  switch (GST_EVENT_TYPE (event)) {
+  GstEventType event_type = GST_EVENT_TYPE (event);
+  switch (event_type) {
     case GST_EVENT_FLUSH_START:
-      GST_DEBUG_OBJECT (dec, "flush start");
+      SG_INFO_OBJ (dec, "dec %p flush start", dec);
       dec->is_flushing = TRUE;
       if (dec->comp) {
         c2component_cancelPendingWork (dec->comp);
@@ -2167,8 +2167,11 @@ gst_qcodec2_vdec_sink_event (GstVideoDecoder * decoder, GstEvent * event)
     default:
       break;
   }
-
-  return GST_VIDEO_DECODER_CLASS (parent_class)->sink_event (decoder, event);
+  gboolean ret = GST_VIDEO_DECODER_CLASS (parent_class)->sink_event (decoder, event);
+  if (event_type == GST_EVENT_FLUSH_START) {
+    SG_INFO_OBJ (dec, "dec %p flush start parent sink_event done, ret %s", dec, ret ? "true" : "false");
+  }
+  return ret;
 }
 
 /* Called during object destruction process */
@@ -2209,7 +2212,9 @@ gst_qcodec2_vdec_change_state (GstElement * element, GstStateChange transition)
       SG_INFO_OBJ (dec, "decoder state change %s => %s, dec(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), dec, dec);
       break;
   }
-  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  GstStateChangeReturn ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  SG_INFO_OBJ (dec, "decoder state change %s => %s done, dec(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), dec, dec);
+  return ret;
 }
 
 static void
