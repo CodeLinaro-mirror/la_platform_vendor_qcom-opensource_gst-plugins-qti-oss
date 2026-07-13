@@ -1961,5 +1961,5 @@ plugin_init (GstPlugin * plugin)
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     qvconv, "Qualcomm Technologies Inc video converter",
-    plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), "Proprietary", "Qualcomm Technologies Inc Qvconv",
+    plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), GST_LICENSE_UNKNOWN, "Qualcomm Technologies Inc Qvconv",
     "http://www.qualcomm.com")
