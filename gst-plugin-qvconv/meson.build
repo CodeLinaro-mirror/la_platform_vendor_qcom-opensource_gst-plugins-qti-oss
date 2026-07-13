@@ -1,4 +1,4 @@
-project('gst-plugin-qvconv-noship',
+project('gst-plugin-qvconv',
  'c',
   version : '1.0.0',
   meson_version : '>= 0.47',
@@ -33,14 +33,14 @@ else
   asan_args = []
 endif
 
-gst_plugin_qvconv_noship_args = ['-DHAVE_CONFIG_H'] + color_fmt_args + use_umd_args + asan_args
+gst_plugin_qvconv_args = ['-DHAVE_CONFIG_H'] + color_fmt_args + use_umd_args + asan_args
 
-gst_plugin_qvconv_noship_link_args = [ ]
-gst_plugin_qvconv_noship_link_args += ['-lgbm']
+gst_plugin_qvconv_link_args = [ ]
+gst_plugin_qvconv_link_args += ['-lgbm']
 
 core_conf = configuration_data()
-core_conf.set_quoted('PACKAGE', 'gst-plugin-qvconv-noship')
-core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvconv-noship')
+core_conf.set_quoted('PACKAGE', 'gst-plugin-qvconv')
+core_conf.set_quoted('PACKAGE_NAME', 'gst-plugin-qvconv')
 core_conf.set_quoted('VERSION', '1.0.0')
 configure_file(output : 'config.h', configuration : core_conf)
 
