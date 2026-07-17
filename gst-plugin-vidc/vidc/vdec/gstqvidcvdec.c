@@ -174,7 +174,8 @@ static GstStaticPadTemplate gst_vdec_src_template =
     GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (QVIDC_VDEC_RAW_CAPS_WITH_FEATURES
+    GST_STATIC_CAPS (QVIDC_VDEC_DMA_DRM_CAPS ("{ NV12 }")
+        ";" QVIDC_VDEC_RAW_CAPS_WITH_FEATURES
         (GST_CAPS_FEATURE_MEMORY_DMABUF, "{ NV12 }")
         ";" QVIDC_VDEC_RAW_CAPS ("{ NV12 }")
         ";" QVIDC_VDEC_RAW_CAPS_WITH_FEATURES
@@ -836,6 +837,27 @@ gst_qvidc_vdec_setup_output (GstVideoDecoder * decoder)
     goto error_setup_output;
   }
 
+  /* Prefer DMA_DRM caps over plain NV12 (for GStreamer 1.24+ waylandsink DMA path).
+   * waylandsink returns plain NV12 before DMA_DRM, so truncate would pick
+   * the wrong one. Explicitly select a DMA_DRM structure when available. */
+  if (!dec->secure) {
+    guint n = gst_caps_get_size (intersection);
+    for (guint i = 0; i < n; i++) {
+      GstStructure *st = gst_caps_get_structure (intersection, i);
+      const gchar *fmt = gst_structure_get_string (st, "format");
+      if (fmt && g_strcmp0 (fmt, "DMA_DRM") == 0) {
+        GstCaps *preferred = gst_caps_new_empty ();
+        gst_caps_append_structure_full (preferred,
+            gst_structure_copy (st),
+            gst_caps_features_copy (gst_caps_get_features (intersection, i)));
+        gst_caps_unref (intersection);
+        intersection = preferred;
+        GST_DEBUG_OBJECT (dec, "Preferring DMA_DRM caps");
+        break;
+      }
+    }
+  }
+
   /* Secure mode only support UBWC output */
   dec->is_ubwc =
       _unfixed_caps_has_compression (intersection, "ubwc") | dec->secure;
@@ -850,7 +872,13 @@ gst_qvidc_vdec_setup_output (GstVideoDecoder * decoder)
   GST_DEBUG_OBJECT (dec, "Fixed color format:%s, UBWC:%d", format_str,
       dec->is_ubwc);
 
-  if (!format_str || (output_format = gst_video_format_from_string (format_str))
+  if (format_str && g_strcmp0 (format_str, "DMA_DRM") == 0) {
+    /* GStreamer 1.24+ waylandsink DMA path: caps are DMA_DRM with drm-format */
+    dec->downstream_supports_dma = TRUE;
+    dec->downstream_is_dma_drm = TRUE;
+    /* output_format will be extracted after width/height are set in caps */
+  } else if (!format_str ||
+      (output_format = gst_video_format_from_string (format_str))
       == GST_VIDEO_FORMAT_UNKNOWN) {
     GST_ERROR_OBJECT (dec, "Invalid caps: %" GST_PTR_FORMAT, intersection);
     gst_caps_unref (intersection);
@@ -872,15 +900,37 @@ gst_qvidc_vdec_setup_output (GstVideoDecoder * decoder)
   gst_caps_set_value (intersection, "width", &g_width);
   gst_caps_set_value (intersection, "height", &g_height);
 
-  /* Check if fixed caps supports DMA buffer */
-  if (gst_qvidc_vdec_caps_has_feature (intersection,
+  if (dec->downstream_is_dma_drm) {
+    /* Now that width/height are set, parse the actual video format */
+    GstVideoInfoDmaDrm drm_info;
+    const gchar *drm_fmt_str;
+    if (!gst_video_info_dma_drm_from_caps (&drm_info, intersection)) {
+      GST_ERROR_OBJECT (dec, "Failed to parse DMA_DRM caps: %" GST_PTR_FORMAT,
+          intersection);
+      gst_caps_unref (intersection);
+      goto error_setup_output;
+    }
+    output_format = GST_VIDEO_INFO_FORMAT (&drm_info.vinfo);
+    /* Save the fixated drm-format string for use in EVENT_RECONFIG */
+    drm_fmt_str = gst_structure_get_string (
+        gst_caps_get_structure (intersection, 0), "drm-format");
+    g_free (dec->negotiated_drm_format);
+    dec->negotiated_drm_format = g_strdup (drm_fmt_str);
+    GST_DEBUG_OBJECT (dec, "DMA_DRM video format: %s, drm-format: %s",
+        gst_video_format_to_string (output_format), drm_fmt_str);
+  }
+
+  /* Check if fixed caps supports DMA buffer (non-DMA_DRM path) */
+  if (!dec->downstream_is_dma_drm &&
+      gst_qvidc_vdec_caps_has_feature (intersection,
           GST_CAPS_FEATURE_MEMORY_DMABUF)) {
     dec->downstream_supports_dma = TRUE;
     GST_DEBUG_OBJECT (dec, "Downstream supports DMA buffer");
   }
 
-  GST_INFO_OBJECT (dec, "DMA output feature is %s",
-      (dec->downstream_supports_dma ? "enabled" : "disabled"));
+  GST_INFO_OBJECT (dec, "DMA output feature is %s (dma_drm=%d)",
+      (dec->downstream_supports_dma ? "enabled" : "disabled"),
+      dec->downstream_is_dma_drm);
 
   dec->output_state->caps = intersection;
   GST_INFO_OBJECT (dec, "output caps: %" GST_PTR_FORMAT,
@@ -1105,6 +1155,7 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
   ConfigParams output_picture_order_mode;
   ConfigParams low_latency_mode;
   ConfigParams frame_rate;
+  ConfigParams pixelformat;
   GstVideoInfo input_info;
   gfloat fps = COMMON_FRAMERATE;
 
@@ -1209,6 +1260,12 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
   g_ptr_array_add (config, &frame_rate);
   GST_DEBUG_OBJECT (dec, "set framerate %0.2f", fps);
 
+  pixelformat = make_pixel_format_param (
+      gst_to_vidc_pixelformat (dec, dec->output_format), FALSE);
+  g_ptr_array_add (config, &pixelformat);
+  GST_DEBUG_OBJECT (dec, "set vidc output pixelformat: %d",
+      pixelformat.pixelFormat.fmt);
+
   BLOCK_MODE_TYPE mode = BLOCK_MODE_DONT_BLOCK;
   if (codectype.codec == VIDC_CODEC_VP9 && dec->check_10bit) {
     GST_DEBUG_OBJECT (dec,
@@ -1267,6 +1324,9 @@ gst_qvidc_vdec_open (GstVideoDecoder * decoder)
   dec->frame_index = 0;
   dec->num_output_done = 0;
   dec->downstream_supports_dma = FALSE;
+  dec->downstream_is_dma_drm = FALSE;
+  g_free (dec->negotiated_drm_format);
+  dec->negotiated_drm_format = NULL;
   dec->comp = NULL;
   dec->comp_intf = NULL;
   dec->in_port_pool = NULL;
@@ -1482,20 +1542,26 @@ gst_qvidc_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
       gst_buffer_resize (out_buf, 0, decode_buf->size);
 
       GstVideoInfo *vinfo = &state->info;
-      for (guint i = 0; i < vidc_getPlaneCount (dec->comp); i++) {
+      guint plane_count = vidc_getPlaneCount (dec->comp);
+      for (guint i = 0; i < plane_count; i++) {
         GST_VIDEO_INFO_PLANE_STRIDE (vinfo, i) =
             vidc_getPlaneStride (dec->comp, i);
         GST_VIDEO_INFO_PLANE_OFFSET (vinfo, i) =
             vidc_getPlaneOffset (dec->comp, i);
-        GST_ERROR_OBJECT (dec, "plane[%d] stride %d, offset 0x%x, n_plane %d",
-            i, vinfo->stride[i], vinfo->offset[i],
-            GST_VIDEO_INFO_N_PLANES (vinfo));
       }
 
-      gst_buffer_add_video_meta_full (out_buf, GST_VIDEO_FRAME_FLAG_NONE,
-          GST_VIDEO_INFO_FORMAT (vinfo), GST_VIDEO_INFO_WIDTH (vinfo),
-          GST_VIDEO_INFO_HEIGHT (vinfo), GST_VIDEO_INFO_N_PLANES (vinfo),
-          vinfo->offset, vinfo->stride);
+      GstVideoMeta *vmeta = gst_buffer_get_video_meta (out_buf);
+      if (vmeta) {
+        for (guint i = 0; i < plane_count; i++) {
+          vmeta->stride[i] = vinfo->stride[i];
+          vmeta->offset[i] = vinfo->offset[i];
+        }
+      } else {
+        gst_buffer_add_video_meta_full (out_buf, GST_VIDEO_FRAME_FLAG_NONE,
+            GST_VIDEO_INFO_FORMAT (vinfo), GST_VIDEO_INFO_WIDTH (vinfo),
+            GST_VIDEO_INFO_HEIGHT (vinfo), GST_VIDEO_INFO_N_PLANES (vinfo),
+            vinfo->offset, vinfo->stride);
+      }
 
       if (dec->is_ubwc) {
         if (!gst_mini_object_get_qdata (GST_MINI_OBJECT_CAST (out_buf),
@@ -1828,7 +1894,19 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       GST_DEBUG_OBJECT (dec, "set interlace mode %s in caps",
           gst_video_interlace_mode_to_string (interlace_mode));
 
-      if (dec->downstream_supports_dma) {
+      if (dec->downstream_is_dma_drm) {
+        /* GStreamer 1.24+ waylandsink requires DMA_DRM caps for DMA path.
+         * Overwrite format/drm-format in the existing caps (which already has
+         * framerate, pixel-aspect-ratio, etc. from gst_video_info_to_caps). */
+        gst_caps_set_simple (output_state->caps,
+            "format", G_TYPE_STRING, "DMA_DRM",
+            "drm-format", G_TYPE_STRING, dec->negotiated_drm_format,
+            NULL);
+        gst_caps_set_features (output_state->caps, 0,
+            gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
+        GST_DEBUG_OBJECT (dec, "set DMA_DRM caps: %" GST_PTR_FORMAT,
+            output_state->caps);
+      } else if (dec->downstream_supports_dma) {
         gst_caps_set_features (output_state->caps, 0,
             gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
         GST_DEBUG_OBJECT (dec, "set DMA feature in Caps");
@@ -1836,7 +1914,7 @@ handle_video_event (const void *handle, EVENT_TYPE type, void *data)
       if (dec->is_ubwc) {
         gst_caps_set_simple (output_state->caps, "compression",
             G_TYPE_STRING, "ubwc", NULL);
-      } else {
+      } else if (!dec->downstream_is_dma_drm) {
         gst_caps_set_simple (output_state->caps, "compression",
             G_TYPE_STRING, "linear", NULL);
       }
@@ -2189,6 +2267,8 @@ gst_qvidc_vdec_finalize (GObject * object)
 
   g_mutex_clear (&dec->pending_lock);
   g_cond_clear (&dec->pending_cond);
+  g_free (dec->negotiated_drm_format);
+  dec->negotiated_drm_format = NULL;
 
   /* Lastly chain up to the parent class */
   G_OBJECT_CLASS (parent_class)->finalize (object);

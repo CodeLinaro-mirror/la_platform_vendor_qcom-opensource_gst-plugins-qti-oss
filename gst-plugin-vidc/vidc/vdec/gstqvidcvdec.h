@@ -84,6 +84,12 @@ G_BEGIN_DECLS
   "format = (string) " formats ", "                             \
   QVIDC_VDEC_SRC_WH_CAPS   ", "                             \
   QVIDC_VDEC_SRC_FPS_CAPS
+#define QVIDC_VDEC_DMA_DRM_CAPS(drm_formats) \
+  "video/x-raw(" GST_CAPS_FEATURE_MEMORY_DMABUF "), " \
+  "format = (string) DMA_DRM, "                        \
+  "drm-format = (string) " drm_formats ", "            \
+  QVIDC_VDEC_SRC_WH_CAPS ", "                          \
+  QVIDC_VDEC_SRC_FPS_CAPS
 #define GST_TYPE_QVIDC_VDEC          (gst_qvidc_vdec_get_type())
 #define GST_QVIDC_VDEC(obj)          (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_QVIDC_VDEC,GstQvidcVdec))
 #define GST_QVIDC_VDEC_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_QVIDC_VDEC,GstQvidcVdecClass))
@@ -132,6 +138,8 @@ struct _GstQvidcVdec
   GstVideoFormat output_format;
   guint64 num_output_done;
   gboolean downstream_supports_dma;
+  gboolean downstream_is_dma_drm;
+  gchar *negotiated_drm_format;
   gboolean output_picture_order_mode;
   gboolean low_latency_mode;
 

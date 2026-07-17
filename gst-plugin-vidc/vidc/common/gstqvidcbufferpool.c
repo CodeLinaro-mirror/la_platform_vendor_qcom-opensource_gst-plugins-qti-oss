@@ -132,8 +132,20 @@ gst_qvidc_buffer_pool_set_config (GstBufferPool * bpool, GstStructure * config)
     info.size = MAX (size, info.size);
     pool->param.info = info;
   } else {
-    GST_ERROR_OBJECT (pool, "caps error");
-    return FALSE;
+    GstVideoInfoDmaDrm drm_info;
+    if (gst_video_info_dma_drm_from_caps (&drm_info, caps)) {
+      info = drm_info.vinfo;
+      GST_DEBUG_OBJECT (pool, "DMA_DRM caps: size %u, info.size %u, %ux%u",
+          size, info.size, info.width, info.height);
+      if (size < info.size)
+        info.size = size;
+      else
+        info.size = MAX (size, info.size);
+      pool->param.info = info;
+    } else {
+      GST_ERROR_OBJECT (pool, "caps error");
+      return FALSE;
+    }
   }
 
   // gst_buffer_pool_config_set_params (config, caps, info.size, min, max);
