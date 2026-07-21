@@ -37,8 +37,6 @@
 
 #include <gst/gst.h>
 #include "gstqvidcvdec.h"
-#define GST_USE_UNSTABLE_API
-#include <gst/codecparsers/gstvp9parser.h>
 
 G_BEGIN_DECLS
 #define GST_TYPE_QVIDC_VP9_DEC \
