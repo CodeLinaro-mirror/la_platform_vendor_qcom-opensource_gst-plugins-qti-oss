@@ -42,8 +42,6 @@
 GST_DEBUG_CATEGORY_EXTERN (gst_qvidc_vdec_debug);
 #define GST_CAT_DEFAULT gst_qvidc_vdec_debug
 
-static GstFlowReturn gst_qvidc_vp9_dec_handle_frame (GstQvidcVdec * decoder,
-    GstVideoCodecFrame * frame);
 static gboolean gst_qvidc_vp9_dec_open (GstQvidcVdec * decoder);
 static gboolean gst_qvidc_vp9_dec_set_format (GstQvidcVdec * decoder,
     GstVideoCodecState * state);
@@ -65,7 +63,6 @@ gst_qvidc_vp9_dec_class_init (GstQvidcVP9DecClass * klass)
       gst_static_pad_template_get (&gst_qvidc_vp9_dec_sink_template));
   GstQvidcVdecClass *qvidcvdec_class = GST_QVIDC_VDEC_CLASS (klass);
 
-  qvidcvdec_class->handle_frame = gst_qvidc_vp9_dec_handle_frame;
   qvidcvdec_class->set_format = gst_qvidc_vp9_dec_set_format;
   qvidcvdec_class->open = gst_qvidc_vp9_dec_open;
 
@@ -83,8 +80,6 @@ static gboolean
 gst_qvidc_vp9_dec_open (GstQvidcVdec * decoder)
 {
   GstQvidcVdec *base_dec = decoder;
-  /* start vidc component later since checking VP9 10bit format */
-  base_dec->delay_start = TRUE;
   base_dec->check_10bit = TRUE;
 
   return TRUE;
@@ -104,95 +99,3 @@ gst_qvidc_vp9_dec_set_format (GstQvidcVdec * decoder,
   return ret;
 }
 
-static GstFlowReturn
-gst_qvidc_vp9_dec_handle_frame (GstQvidcVdec * decoder,
-    GstVideoCodecFrame * frame)
-{
-  GstQvidcVdec *base_dec = decoder;
-  GstQvidcVP9Dec *dec = GST_QVIDC_VP9_DEC (decoder);
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstMapInfo mapinfo = { 0, };
-  GstBuffer *buf = NULL;
-  GstVp9Parser *vp9_parser = NULL;
-  GstVp9FrameHdr *vp9_hdr = NULL;
-  GPtrArray *config = NULL;
-  guint8 *frame_data = NULL;
-  gsize frame_size = 0;
-  GstVideoFormat output_format = GST_VIDEO_FORMAT_NV12;
-  ConfigParams pixelformat;
-
-  GST_DEBUG_OBJECT (dec, "VP9 dec handle frame");
-
-  /* check VP9 10bit case 2: no field bit-depth-luma in caps, parse it here in non-secure mode */
-  if (base_dec->check_10bit && !base_dec->secure) {
-    GST_DEBUG_OBJECT (dec,
-        "check VP9 10bit if without field bit-depth-luma in caps");
-    vp9_parser = gst_vp9_parser_new ();
-    vp9_hdr = g_slice_new0 (GstVp9FrameHdr);
-    config = g_ptr_array_new ();
-    buf = frame->input_buffer;
-    gst_buffer_map (buf, &mapinfo, GST_MAP_READ);
-    frame_data = mapinfo.data;
-    frame_size = mapinfo.size;
-    if (vp9_parser && vp9_hdr && config) {
-      gst_vp9_parser_parse_frame_header (vp9_parser, vp9_hdr, frame_data,
-          frame_size);
-    } else {
-      GST_ERROR_OBJECT (dec, "failed to new some structure");
-      gst_buffer_unmap (buf, &mapinfo);
-      ret = GST_FLOW_ERROR;
-      goto done;
-    }
-    gst_buffer_unmap (buf, &mapinfo);
-
-    if (vp9_parser->bit_depth == GST_VP9_BIT_DEPTH_10) {
-      if (base_dec->is_ubwc) {
-        output_format = GST_VIDEO_FORMAT_NV12_10LE32;
-      } else {
-        output_format = GST_VIDEO_FORMAT_P010_10LE;
-      }
-    }
-
-    base_dec->output_format = output_format;
-
-    GST_LOG_OBJECT (dec,
-        "output width: %d, height: %d, format: %d (%s) for VP9",
-        base_dec->width, base_dec->height, output_format,
-        gst_video_format_to_string (output_format));
-
-    if (config) {
-      pixelformat =
-          make_pixel_format_param (gst_to_vidc_pixelformat (base_dec,
-              output_format), FALSE);
-      GST_LOG_OBJECT (dec, "set vidc output format: %d for VP9",
-          pixelformat.pixelFormat.fmt);
-      g_ptr_array_add (config, &pixelformat);
-      if (!vidc_config (base_dec->comp, config, BLOCK_MODE_DONT_BLOCK)) {
-        GST_ERROR_OBJECT (dec, "Failed to set config");
-        ret = GST_FLOW_ERROR;
-        goto done;
-      }
-    }
-
-    base_dec->check_10bit = FALSE;
-  }
-
-  if (base_dec->delay_start) {
-    if (!gst_qvidc_vdec_config_pool (base_dec, NULL, BUFFER_PORT_INPUT)) {
-      GST_ERROR_OBJECT (dec, "failed to config pool");
-      ret = GST_FLOW_ERROR;
-      goto done;
-    }
-    base_dec->delay_start = FALSE;
-  }
-
-done:
-  if (config)
-    g_ptr_array_free (config, TRUE);
-  if (vp9_hdr)
-    g_slice_free (GstVp9FrameHdr, vp9_hdr);
-  if (vp9_parser)
-    gst_vp9_parser_free (vp9_parser);
-
-  return ret;
-}

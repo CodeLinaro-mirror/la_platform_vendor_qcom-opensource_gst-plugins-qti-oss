@@ -33,7 +33,7 @@ gstqvidc = library('gstqvidc',
   c_args : gst_plugin_vidc_args,
   include_directories: [configinc, 'vdec', 'venc', 'common', 'wrapper/include'],
   dependencies : [vidcwrapper_dep, gst_dep, gstvideo_dep, gstallocators_dep,
-                  dl_dep, gstcodecparsers_dep, xml2_dep, kiumd_dep],
+                  dl_dep, xml2_dep, kiumd_dep],
   install : true,
   install_dir : plugins_install_dir,
 )
