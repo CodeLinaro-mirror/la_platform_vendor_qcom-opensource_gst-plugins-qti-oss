@@ -1876,6 +1876,10 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
 
   /* Create component store */
   enc->comp_store = c2componentStore_create ();
+  if (!enc->comp_store) {
+    SG_ERR_OBJ (enc, "Failed to create component store, ret FALSE from _venc_open() !");
+    return FALSE;
+  }
 
   return ret;
 }
@@ -3182,7 +3186,9 @@ gst_qcodec2_venc_change_state (GstElement * element, GstStateChange transition)
       SG_INFO_OBJ (enc, "encoder state change %s => %s, enc(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), enc, enc);
       break;
   }
-  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  GstStateChangeReturn ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  SG_INFO_OBJ (enc, "encoder state change %s => %s done, enc(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), enc, enc);
+  return ret;
 }
 
 static void

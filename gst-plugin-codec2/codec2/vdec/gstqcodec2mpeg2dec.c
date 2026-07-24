@@ -49,6 +49,18 @@ static void gst_qcodec2_mpeg2_dec_get_property (GObject * object, guint prop_id,
 static gboolean gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
     GstVideoCodecState * state);
 
+typedef struct
+{
+  // Sequence Extension
+  gboolean has_seq_ext;
+  guint8 profile_id;      // 4 = Main, 5 = Simple
+  guint8 level_id;
+  guint8 chroma_format;
+  gboolean progressive;
+  guint8 h_size_ext;
+  guint8 v_size_ext;
+} GstQcodec2Mpeg2StreamInfo;
+
 enum
 {
   PROP_0,
@@ -59,6 +71,64 @@ enum
 /* class initialization */
 G_DEFINE_TYPE (GstQcodec2MPEG2Dec, gst_qcodec2_mpeg2_dec,
     GST_TYPE_QCODEC2_VDEC);
+
+static gboolean
+gst_qcodec2_mpeg2_parse_codec_data (GstBuffer * codec_data,
+    GstQcodec2Mpeg2StreamInfo * info)
+{
+  if (!codec_data || !info)
+    return FALSE;
+
+  GstMapInfo map;
+  if (!gst_buffer_map (codec_data, &map, GST_MAP_READ))
+    return FALSE;
+
+  const guint8 *d = map.data;
+  gsize size = map.size;
+  gsize i = 0;
+  guint8 sc = 0;
+
+  if (size < 6) {
+    gst_buffer_unmap (codec_data, &map);
+    return FALSE;
+  }
+
+  memset (info, 0, sizeof (*info));
+
+  while (i + 4 <= size) {
+    // Scan start code 00 00 01 xx
+    if (d[i] != 0x00 || d[i + 1] != 0x00 || d[i + 2] != 0x01) {
+      i++;
+      continue;
+    }
+    sc = d[i + 3];
+    // Skip start code
+    i += 4;
+
+    if (sc == 0xb5 && i + 6 <= size) {
+      // Sequence extension
+      guint8 ext_id = (d[i] >> 4) & 0xF;
+      if (ext_id != 0x1) {
+        // Not a sequence extension.
+        i++;
+        continue;
+      }
+
+      guint8 pal = ((d[i] & 0xF) << 4) | ((d[i + 1] >> 4) & 0xF);
+      info->profile_id    = (pal >> 4) & 0x7;      // bits[6:4]
+      info->level_id      = pal & 0xF;      // bits[3:0]
+      info->progressive   = (d[i + 1] >> 3) & 0x1;
+      info->chroma_format = (d[i + 1] >> 1) & 0x3;
+      info->h_size_ext    = d[i + 1] & 0x1;
+      info->v_size_ext    = (d[i + 2] >> 6) & 0x3;
+      info->has_seq_ext = TRUE;
+      i += 6;
+    }
+  }
+
+  gst_buffer_unmap (codec_data, &map);
+  return TRUE;
+}
 
 static GstStaticPadTemplate gst_qcodec2_mpeg2_dec_sink_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
@@ -150,10 +220,42 @@ gst_qcodec2_mpeg2_dec_set_format (GstQcodec2Vdec * decoder,
 {
   GstQcodec2MPEG2Dec *dec = GST_QCODEC2_MPEG2_DEC (decoder);
   GstQcodec2Vdec *base_dec = GST_QCODEC2_VDEC (decoder);
+  GstStructure *structure = NULL;
+  const gchar *caps_profile = NULL;
+  const GValue *codec_data_value = NULL;
+  GstBuffer *codec_data = NULL;
+  GstQcodec2Mpeg2StreamInfo stream_info;
+  gboolean unsupported_profile = FALSE;
   gboolean result = TRUE;
   ConfigParams deinterlace;
   ConfigParams pixel_format;
   GPtrArray *config = NULL;
+
+  structure = gst_caps_get_structure (state->caps, 0);
+  if (structure) {
+    caps_profile = gst_structure_get_string (structure, "profile");
+
+    if (caps_profile) {
+      if (g_strcmp0 (caps_profile, "simple") != 0
+          && g_strcmp0 (caps_profile, "main") != 0)
+        unsupported_profile = TRUE;
+    } else {
+      codec_data_value = gst_structure_get_value (structure, "codec_data");
+      if (codec_data_value) {
+        codec_data = gst_value_get_buffer (codec_data_value);
+        if (gst_qcodec2_mpeg2_parse_codec_data (codec_data,
+                &stream_info) && stream_info.has_seq_ext) {
+          if (stream_info.profile_id != 5 && stream_info.profile_id != 4)
+            unsupported_profile = TRUE;
+        }
+      }
+    }
+  }
+
+  if (unsupported_profile) {
+    SG_ERR_OBJ (dec, "Unsupported MPEG2 profile");
+    return FALSE;
+  }
 
   config = g_ptr_array_new ();
 

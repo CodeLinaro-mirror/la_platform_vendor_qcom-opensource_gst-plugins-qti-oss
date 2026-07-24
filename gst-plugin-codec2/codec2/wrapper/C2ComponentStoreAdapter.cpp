@@ -110,6 +110,10 @@ C2String C2ComponentStoreAdapter::getName()
 
 c2_status_t C2ComponentStoreAdapter::createComponent(C2String name, void** const component)
 {
+    if (!mStore) {
+        SG_ERR("mStore is null, cannot create component %s", name.c_str());
+        return C2_NO_INIT;
+    }
 
     c2_status_t result = C2_BAD_VALUE;
     std::shared_ptr<C2Component> comp = nullptr;

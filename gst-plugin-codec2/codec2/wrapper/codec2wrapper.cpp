@@ -1457,13 +1457,27 @@ void* c2componentStore_create()
     }
 
     std::shared_ptr<C2ComponentStore> store = c2StoreFactory->getInstance();
+    if (!store) {
+        SG_ERR("failed to get store from factory !");
+        delete c2StoreFactory;
+        dlclose(lib);
+        return nullptr;
+    }
 
     return new C2ComponentStoreAdapter(store, c2StoreFactory, lib);
 
 #else
     // Enabled death notifier on client side. When server died, client can receive message.
     auto client = aglqc2::QC2Client::create();
+    if (!client) {
+        SG_ERR("Failed to create QC2Client, ret nullptr store!!!");
+        return nullptr;
+    }
     auto store = client->getC2ComponentStore();
+    if (!store) {
+        SG_ERR("Failed to get C2ComponentStore from QC2Client, ret nullptr store!!!");
+        return nullptr;
+    }
     GST_LOG("Created component store %p", store.get());
 
     return new C2ComponentStoreAdapter(store, nullptr, nullptr);
