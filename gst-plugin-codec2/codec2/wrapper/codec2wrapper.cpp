@@ -107,7 +107,6 @@ typedef std::map<const char*, configFunctionForVendorParams, char_cmp> configFun
 std::unique_ptr<C2Param> setVideoPixelformat(gpointer param);
 std::unique_ptr<C2Param> setVideoResolution(gpointer param);
 std::unique_ptr<C2Param> setVideoBitrate(gpointer param);
-std::unique_ptr<C2Param> setRateControl(gpointer param);
 std::unique_ptr<C2Param> setIntraRefresh(gpointer param);
 std::unique_ptr<C2Param> setDecLowLatency(gpointer param);
 std::unique_ptr<C2Param> setColorAspectsInfo(gpointer param);
@@ -120,6 +119,7 @@ std::unique_ptr<C2Param> setVideoTemporalLayer(gpointer param);
 std::unique_ptr<C2Param> setHDRStaticInfo(gpointer param);
 
 // Function for vendor parameter configuration
+std::unique_ptr<C2Param> setRateControl(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setMirrorType(gpointer param, void* const comp_intf);
 std::unique_ptr<C2Param> setOutputPictureOrderMode(gpointer param, void* const comp_intf);
@@ -159,7 +159,6 @@ static configFunctionMap sConfigFunctionMap = {
     { CONFIG_FUNCTION_KEY_PIXELFORMAT, setVideoPixelformat },
     { CONFIG_FUNCTION_KEY_RESOLUTION, setVideoResolution },
     { CONFIG_FUNCTION_KEY_BITRATE, setVideoBitrate },
-    { CONFIG_FUNCTION_KEY_RATECONTROL, setRateControl },
     { CONFIG_FUNCTION_KEY_DEC_LOW_LATENCY, setDecLowLatency },
     { CONFIG_FUNCTION_KEY_COLOR_ASPECTS_INFO, setColorAspectsInfo },
     { CONFIG_FUNCTION_KEY_INTRAREFRESH, setIntraRefresh },
@@ -180,6 +179,7 @@ static configFunctionMap sConfigFunctionMap = {
 
 // Function map for vendor parameter configuration
 static configFunctionForVendorParamsMap sConfigFunctionForVendorParamsMap = {
+    { CONFIG_FUNCTION_KEY_RATECONTROL, setRateControl },
     { CONFIG_FUNCTION_KEY_ROTATION, setRotation },
     { CONFIG_FUNCTION_KEY_MIRROR, setMirrorType },
     { CONFIG_FUNCTION_KEY_OUTPUT_PICTURE_ORDER_MODE, setOutputPictureOrderMode },
@@ -385,7 +385,7 @@ std::unique_ptr<C2Param> setRotation(gpointer param, void* const comp_intf)
     return nullptr;
 }
 
-std::unique_ptr<C2Param> setRateControl(gpointer param)
+std::unique_ptr<C2Param> setRateControl(gpointer param, void* const comp_intf)
 {
 
     if (param == NULL) {
@@ -393,6 +393,22 @@ std::unique_ptr<C2Param> setRateControl(gpointer param)
     }
 
     ConfigParams* config = (ConfigParams*)param;
+
+    if (config->rcMode.type == RC_LOSSLESS) {
+        if (comp_intf == NULL) {
+            return nullptr;
+        }
+
+        C2ComponentInterfaceAdapter* intf_wrapper = (C2ComponentInterfaceAdapter*)comp_intf;
+        android::ReflectedParamUpdater::Dict kvpairs;
+        android::ReflectedParamUpdater::Value item;
+        std::unique_ptr<C2Param> bitrateModeExt;
+
+        item.set((int32_t)toC2RateControlMode(config->rcMode.type));
+        kvpairs.emplace("vendor.qti-ext-enc-bitrate-mode.value", item);
+        bitrateModeExt = intf_wrapper->updateParamFromConfig(kvpairs);
+        return bitrateModeExt;
+    }
 
     C2StreamBitrateModeTuning::output bitrateMode;
     bitrateMode.value = (C2Config::bitrate_mode_t)toC2RateControlMode(config->rcMode.type);
@@ -1441,13 +1457,27 @@ void* c2componentStore_create()
     }
 
     std::shared_ptr<C2ComponentStore> store = c2StoreFactory->getInstance();
+    if (!store) {
+        SG_ERR("failed to get store from factory !");
+        delete c2StoreFactory;
+        dlclose(lib);
+        return nullptr;
+    }
 
     return new C2ComponentStoreAdapter(store, c2StoreFactory, lib);
 
 #else
     // Enabled death notifier on client side. When server died, client can receive message.
     auto client = aglqc2::QC2Client::create();
+    if (!client) {
+        SG_ERR("Failed to create QC2Client, ret nullptr store!!!");
+        return nullptr;
+    }
     auto store = client->getC2ComponentStore();
+    if (!store) {
+        SG_ERR("Failed to get C2ComponentStore from QC2Client, ret nullptr store!!!");
+        return nullptr;
+    }
     GST_LOG("Created component store %p", store.get());
 
     return new C2ComponentStoreAdapter(store, nullptr, nullptr);

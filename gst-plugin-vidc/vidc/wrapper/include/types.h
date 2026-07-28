@@ -67,6 +67,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __VIDC_WRAPPER_TYPES_H__
 
 #include <stdio.h>
+#include <stdint.h>
 #include <glib.h>
 #include <gst/gst.h>
 

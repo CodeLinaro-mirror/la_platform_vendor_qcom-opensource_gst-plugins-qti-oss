@@ -6,7 +6,6 @@
 #endif
 
 #include <gst/gst.h>
-#include <gst/codecparsers/gstav1parser.h>
 #include "gstqcodec2av1dec.h"
 
 GST_DEBUG_CATEGORY_EXTERN (gst_qcodec2_vdec_debug);
