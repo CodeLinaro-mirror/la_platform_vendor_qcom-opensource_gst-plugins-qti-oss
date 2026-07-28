@@ -1,4 +1,4 @@
-option('code-coverage', type : 'boolean', value : 'false', yield : true, description: 'Enable code coverage')
+option('code-coverage', type : 'boolean', value : false, yield : true, description: 'Enable code coverage')
 option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
-option('mmmcolorfmt', type : 'boolean', value : 'false', yield : true, description: 'Use display mmm_color_fmts enum')
-option('GPP_ENABLED', type : 'boolean', value : 'false', yield : true, description: 'Enable GPP')
+option('mmmcolorfmt', type : 'boolean', value : false, yield : true, description: 'Use display mmm_color_fmts enum')
+option('GPP_ENABLED', type : 'boolean', value : false, yield : true, description: 'Enable GPP')
