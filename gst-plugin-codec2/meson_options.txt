@@ -1,4 +1,4 @@
-option('mmmcolorfmt', type : 'boolean', value : false, yield : true, description: 'Use display mmm_color_fmts enum')
+option('mmmcolorfmt', type : 'boolean', value : true, yield : true, description: 'Use display mmm_color_fmts enum')
 option('c2dec-deinterlace', type : 'feature', value : 'enabled', yield : true, description: 'Enable deinterlace support using C2D or Vulkan APIs')
 option('usedmaheap', type : 'boolean', value : false, description: 'Use DMA buffer heap.')
 option('av1-dec', type : 'feature', value : 'disabled', yield : true, description: 'Enable av1 decoder support')
