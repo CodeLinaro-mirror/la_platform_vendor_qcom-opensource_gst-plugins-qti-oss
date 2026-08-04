@@ -7,8 +7,8 @@ qvconv_sources = [
 
 gstqvconv = library('gstqvconv',
   sources : qvconv_sources,
-  cpp_args : [gst_plugin_qvconv_noship_args, '-Wall'],
-  link_args : gst_plugin_qvconv_noship_link_args,
+  cpp_args : [gst_plugin_qvconv_args, '-Wall'],
+  link_args : gst_plugin_qvconv_link_args,
   include_directories : [qvconv_inc],
   dependencies : [gst_dep, dl_dep, pthread_dep, gstbase_dep, gstvideo_dep,  gstallocators_dep, glib_dep],
   install : true,
