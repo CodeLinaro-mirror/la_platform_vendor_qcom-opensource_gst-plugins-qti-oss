@@ -1660,8 +1660,8 @@ gst_qvconv_set_info (GstVideoFilter * filter, GstCaps * incaps,
   GST_DEBUG ("reconfigured %d %d", GST_VIDEO_INFO_FORMAT (in_info),
       GST_VIDEO_INFO_FORMAT (out_info));
 
-  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info in caps %" GST_PTR_FORMAT "", incaps);
-  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info out caps %" GST_PTR_FORMAT "", outcaps);
+  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info(%p) in caps %" GST_PTR_FORMAT "", qvconv, incaps);
+  SG_INFO_OBJ (qvconv, "gst_qvconv_set_info(%p) out caps %" GST_PTR_FORMAT "", qvconv, outcaps);
   if (is_input_ubwc || gst_qvconv_caps_has_compression (incaps, "ubwc")) {
     priv->input_buffer.ubwc_flags = TRUE;
   }
@@ -1697,7 +1697,6 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
   C2DBuffer c2d_output_buffer;
   GstVideoMeta* QGVMeta = NULL;
   GstQvconvExtBufMeta *meta;
-  gint input_ion_fd;
   guint input_ion_offset = 0, input_ion_size = 0, fd_memory_size = 0;
   GstMemory *out_mem;
   C2DBuffer *c2d_buffer;
@@ -1705,7 +1704,6 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
   gint output_data_fd = -1, output_meta_fd = -1;
   gsize output_data_size = 0;
 
-  void *input_ion_ptr = NULL;
   GstMemory *in_mem = NULL;
   GstMapInfo map_info;
   gboolean need_copy = FALSE;
@@ -1725,10 +1723,6 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
    *    filesrc, we do a buffer copy and then convert.
    */
   QGVMeta = gst_buffer_get_video_meta (inbuf);
-#define SIG_OF_QVMETA(vmeta)	(unsigned int)((vmeta)->offset[2])
-#define DATASZ_OF_QVMETA(vmeta)	(unsigned int)((vmeta)->offset[3])
-#define FD_OF_QVMETA(vmeta)		(int)((vmeta)->stride[2])
-#define METAFD_OF_QVMETA(vmeta)	(int)((vmeta)->stride[3])
   if (gst_buffer_n_memory (inbuf) && gst_is_dmabuf_memory (gst_buffer_peek_memory (inbuf, 0))) {
     if (!priv->do_inputcopy) {
       in_mem = gst_buffer_get_memory (inbuf, 0);
@@ -1741,20 +1735,6 @@ gst_qvconv_do_convert (GstBaseTransform * trans, GstBuffer * inbuf,
     } else {
       need_copy = TRUE;
       GST_DEBUG_OBJECT (qvconv, "qvconv input is dmabuf, as prop. inputcopy is true, still do memcpy");
-    }
-   } else if (QGVMeta && QGVMeta->n_planes <= 2 && SIG_OF_QVMETA(QGVMeta) == GST_MAKE_FOURCC('Q','a','U','T')) {
-    if (!priv->do_inputcopy) {
-      input_ion_fd = FD_OF_QVMETA(QGVMeta);
-      input_ion_size = DATASZ_OF_QVMETA(QGVMeta);
-      input_ion_offset = 0;
-      input_ion_ptr = mmap(NULL, input_ion_size, PROT_READ|PROT_WRITE, MAP_SHARED,
-          input_ion_fd, input_ion_offset);
-      c2d_input_buffer.fd = input_ion_fd;
-      c2d_input_buffer.ptr = input_ion_ptr;
-      GST_DEBUG_OBJECT (qvconv, "qvconv input gstbuf has special meta %d %p %u, no need memcpy", input_ion_fd, input_ion_ptr, input_ion_size);
-    } else {
-      need_copy = TRUE;
-      GST_DEBUG_OBJECT (qvconv, "qvconv input gstbuf has special meta, as prop. inputcopy is true, still need memcpy");
     }
   } else {
     GST_DEBUG_OBJECT(qvconv, "Not DMA buffer, do memcpy");
@@ -1935,9 +1915,6 @@ exit:
   if (fd_memory_size > 0 && c2d_output_buffer.ptr)
     munmap (c2d_output_buffer.ptr, fd_memory_size);
 
-  if (input_ion_ptr)
-    munmap (input_ion_ptr, input_ion_size);
-
   if (in_mem) {
     GST_LOG_OBJECT (qvconv,"unmap in_mem %p", in_mem);
     gst_memory_unmap (in_mem, &map_info);
@@ -1984,5 +1961,5 @@ plugin_init (GstPlugin * plugin)
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     qvconv, "Qualcomm Technologies Inc video converter",
-    plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), "Proprietary", "Qualcomm Technologies Inc Qvconv",
+    plugin_init, VERSION "-" G_STRINGIFY(GST_VERSION_MAJOR) "/" G_STRINGIFY(GST_VERSION_MINOR) "/" G_STRINGIFY(GST_VERSION_MICRO), GST_LICENSE_UNKNOWN, "Qualcomm Technologies Inc Qvconv",
     "http://www.qualcomm.com")

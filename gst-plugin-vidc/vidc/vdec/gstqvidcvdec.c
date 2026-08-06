@@ -441,9 +441,8 @@ dec_set_vidc_pixel_format (GstQvidcVdec * decoder, GstVideoCodecState * state)
         goto done;
       }
 
-      /* disable checking and delay_start since bit-depth-chroma parsed */
+      /* disable checking since bit-depth-chroma parsed */
       dec->check_10bit = FALSE;
-      dec->delay_start = FALSE;
     }
 
     config = g_ptr_array_new ();
@@ -1223,12 +1222,10 @@ gst_qvidc_vdec_set_format (GstVideoDecoder * decoder,
 
   g_ptr_array_free (config, TRUE);
 
-  if (!dec->delay_start) {
-    ret = gst_qvidc_vdec_config_pool (decoder, NULL, BUFFER_PORT_INPUT);
-    if (ret == FALSE) {
-      GST_ERROR_OBJECT (dec, "failed to start component");
-      goto error_set_format;
-    }
+  ret = gst_qvidc_vdec_config_pool (decoder, NULL, BUFFER_PORT_INPUT);
+  if (ret == FALSE) {
+    GST_ERROR_OBJECT (dec, "failed to start component");
+    goto error_set_format;
   }
 
 done:
@@ -1272,7 +1269,6 @@ gst_qvidc_vdec_open (GstVideoDecoder * decoder)
   dec->in_port_pool = NULL;
   dec->out_port_pool = NULL;
   dec->check_10bit = FALSE;
-  dec->delay_start = FALSE;
   dec->max_external_buf_cnt = QVIDC_MIN_OUTBUFFERS;
   dec->gst_vidc_comp = NULL;
   dec->comp_name = NULL;

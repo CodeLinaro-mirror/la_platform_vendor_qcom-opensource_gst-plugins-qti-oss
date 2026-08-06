@@ -97,6 +97,9 @@ gst_app_context_free (GstAppContext * ctx)
 
   if (ctx->pipeline != NULL) {
     gst_element_set_state (ctx->pipeline, GST_STATE_NULL);
+    g_print("Waiting pipeline changing to NULL state. \n");
+    gst_element_get_state (ctx->pipeline, NULL, NULL, GST_CLOCK_TIME_NONE);
+    g_print ("Finished to switch pipeline state! \n");
     gst_object_unref (ctx->pipeline);
   }
 
@@ -112,20 +115,41 @@ gst_app_context_free (GstAppContext * ctx)
   return;
 }
 
+static DrmLicense
+choose_one_license ()
+{
+  gchar *endptr = NULL;
+  gchar input_str[16];  //Large enough for input + newline +null
+  DrmLicense license = LICENSE_NONE;
+  glong val = 0;
+
+  g_print ("Content can be played with PlayReady as well as Widevine.\n"
+    "Enter '1' for PlayReady or '2' for Widevine: " );
+
+  if (fgets (input_str, sizeof(input_str), stdin) == NULL) {
+    g_printerr ("ERROR: Failed to read user input.\n");
+    return LICENSE_INVALID;
+  }
+
+  val = g_ascii_strtoll ((const gchar *) input_str, &endptr, 0);
+  if (val == 1)
+    license = LICENSE_PLAYREADY;
+  else if (val == 2)
+    license = LICENSE_WIDEVINE;
+  else {
+    g_printerr ("ERROR: Invalid choice. Enter '1' for Playready or '2' for Widevine.\n");
+    license = LICENSE_INVALID;
+  }
+  return license;
+}
+
 static DrmContext*
 drm_ctx_new (DrmLicense license, gchar * header)
 {
   DrmContext *drmctx = NULL;
 
   if (license == LICENSE_BOTH) {
-    gchar *endptr = NULL;
-    gchar input_str[2];
-
-    g_print ("Content can be played with PlayReady as well as Widevine.\n"
-      "Enter '1' for PlayReady or '2' for Widevine: " );
-
-    fgets (input_str, 2, stdin);
-    license = (DrmLicense) g_ascii_strtoll ((const gchar *) input_str, &endptr, 0);
+    license = choose_one_license();
   }
 
   switch (license) {
@@ -523,7 +547,27 @@ parse_dash_key_tag (xmlNodePtr node, gchar ** header)
       }
 
       license = (license == LICENSE_WIDEVINE ? LICENSE_BOTH : LICENSE_PLAYREADY);
-      *header = (gchar *) xmlNodeGetContent (cur);
+      if (license == LICENSE_BOTH) {
+        license = choose_one_license();
+        if (license == LICENSE_PLAYREADY) {
+          if (*header) {
+            g_print ("Choose playready license, free header which is allocated before\n");
+            xmlFree(*header);
+          }
+          *header = (gchar *) xmlNodeGetContent (cur);
+        } else if (license == LICENSE_WIDEVINE) {
+          g_print ("Choose widevine license, can't change header pointer address\n");
+        } else {
+          if (*header) {
+            g_print ("Invalid choice, free any previously allocated header\n");
+            xmlFree(*header);
+            *header = NULL;
+          }
+        }
+        break;
+      } else {
+        *header = (gchar *) xmlNodeGetContent (cur);
+      }
     } else if (!xmlStrcasecmp (scheme_id_uri, (const xmlChar *) WIDEVINE_UUID)) {
       g_print ("Found Widevine UUID\n");
 
@@ -535,7 +579,27 @@ parse_dash_key_tag (xmlNodePtr node, gchar ** header)
       }
 
       license = (license == LICENSE_PLAYREADY ? LICENSE_BOTH : LICENSE_WIDEVINE);
-      *header = (gchar *) xmlNodeGetContent (cur);
+      if (license == LICENSE_BOTH) {
+        license = choose_one_license();
+        if (license == LICENSE_WIDEVINE) {
+          if (*header) {
+            g_print ("Choose widevine license, free header which is allocated before\n");
+            xmlFree(*header);
+          }
+          *header = (gchar *) xmlNodeGetContent (cur);
+        } else if (license == LICENSE_PLAYREADY) {
+          g_print ("Choose playready license, can't change header pointer address\n");
+        } else {
+          if (*header) {
+            g_print ("Invalid choice, free any previously allocated header\n");
+            xmlFree(*header);
+            *header = NULL;
+          }
+        }
+        break;
+      } else {
+        *header = (gchar *) xmlNodeGetContent (cur);
+      }
     }
 
     child_node = child_node->next;

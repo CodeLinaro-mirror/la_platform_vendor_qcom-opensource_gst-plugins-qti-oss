@@ -36,7 +36,7 @@ gstqcodec2 = library('gstqcodec2',
   c_args : gst_plugin_codec2_args,
   include_directories: [configinc, 'vdec', 'venc', 'common', 'wrapper/include'],
   dependencies : [codec2wrapper_dep, gst_dep, gstvideo_dep, gstallocators_dep, gstbase_dep, gstgl_dep,
-                  dl_dep, gstcodecparsers_dep, xml2_dep],
+                  dl_dep, xml2_dep],
   install : true,
   install_dir : plugins_install_dir,
 )
