@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 project(gst-plugins-qti-oss LANGUAGES C CXX)
 set(GST_VERSION_REQUIRED "1.16")
 
+# Required for SDK based compilation to resolve correct install directories
+# based on the target architecture set by the toolchain.
+include(GNUInstallDirs)
+
 # Common point for setting version of all libs of gst-plugins-qcom package
 set(GST_PLUGINS_QTI_OSS_VERSION "1.0")
 
@@ -72,6 +76,7 @@ option(ENABLE_GST_PLUGIN_VIDEOTEMPLATE "Enable gst-plugin-videotemplate" ${ENABL
 option(ENABLE_GST_PLUGIN_EXAMPLES "Enable gst-plugin-examples" OFF)
 option(ENABLE_GST_PYTHON_EXAMPLES "Enable gst-python-examples" OFF)
 option(ENABLE_GST_SAMPLE_APPS "Enable gst-sample-apps" OFF)
+option(ENABLE_GST_SAMPLE_APPS_CAMERA "Enable gst-sample-apps-camera" OFF)
 option(ENABLE_GST_PLUGIN_TOOLS "Enable gst-plugin-tools" OFF)
 option(ENABLE_GST_TEST_FRAMEWORK "Enable gst-test-framework" OFF)
 option(ENABLE_GST_UMD_DAEMON "Enable gst-umd-daemon" OFF)
@@ -116,9 +121,6 @@ else()
 
     # Define path to gst-plugins-base tree for header includes
     set(QTI_PLUGINS_BASE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/gst-plugin-base)
-
-    # Define the path to the common pkg-config template file used by all base libraries
-    set(BASE_COMMON_PC_IN ${CMAKE_CURRENT_SOURCE_DIR}/gst-plugin-base/gst/common.pc.in)
 
     add_subdirectory(gst-plugin-base/gst/camera)
   endif()
@@ -180,7 +182,9 @@ add_plugin_if(ENABLE_GST_PLUGIN_SMARTVENCBIN    gst-plugin-smartvencbin)
 # Sample Apps and Test Framework
 add_plugin_if(ENABLE_GST_PLUGIN_EXAMPLES        gst-plugin-examples)
 add_plugin_if(ENABLE_GST_PYTHON_EXAMPLES        gst-python-examples)
-add_plugin_if(ENABLE_GST_SAMPLE_APPS            gst-sample-apps)
+if(ENABLE_GST_SAMPLE_APPS OR ENABLE_GST_SAMPLE_APPS_CAMERA)
+  add_subdirectory(gst-sample-apps)
+endif()
 add_plugin_if(ENABLE_GST_SAMPLE_APPS            gst-sample-apps/gst-sample-apps-utils)
 add_plugin_if(ENABLE_GST_PLUGIN_TOOLS           gst-plugin-tools)
 add_plugin_if(ENABLE_GST_TEST_FRAMEWORK         gst-test-framework)
