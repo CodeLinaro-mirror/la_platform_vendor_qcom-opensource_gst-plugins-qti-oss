@@ -112,6 +112,8 @@ G_BEGIN_DECLS
     (gst_qmmfsrc_pad_logical_stream_type_get_type())
 #define GST_TYPE_QMMFSRC_PAD_ACTIVATION_MODE \
     (gst_qmmfsrc_pad_activation_mode_get_type())
+#define GST_TYPE_QMMFSRC_TOF_RANGE_MODE  (gst_qmmfsrc_tof_range_mode_get_type())
+#define GST_TYPE_QMMFSRC_TOF_IMAGE_TYPE  (gst_qmmfsrc_tof_image_type_get_type())
 
 #define GST_BAYER_FORMAT_OFFSET 0x1000
 
@@ -162,6 +164,22 @@ typedef enum formats {
   HAL_PIXEL_FORMAT_RAW12 = 38,
   HAL_PIXEL_FORMAT_RAW8 = 0x123
 } Formats;
+
+typedef enum {
+  TOF_RANGE_MODE_OFF = -1,
+  TOF_RANGE_MODE_SHORT,
+  TOF_RANGE_MODE_LONG,
+} TofRangeMode;
+
+typedef enum {
+  TOF_IMAGE_TYPE_OFF = -1,
+  TOF_IMAGE_TYPE_VGA_DEPTH_QVGA_IR_BG,
+  TOF_IMAGE_TYPE_QVGA_DEPTH_IR_BG,
+  TOF_IMAGE_TYPE_VGA_DEPTH_IR,
+  TOF_IMAGE_TYPE_VGA_IR_QVGA_DEPTH,
+  TOF_IMAGE_TYPE_VGA_IR_BG,
+  TOF_IMAGE_TYPE_MAX,
+} TofImageType;
 
 enum
 {
@@ -447,6 +465,10 @@ void gst_qmmfsrc_get_bayer_resolution_range (gpointer caps, GstQmmfSrcResolution
 void gst_qmmfsrc_get_raw_resolution_range (gpointer caps, GstQmmfSrcResolutionRange *range);
 
 guint gst_qmmfsrc_get_max_fps (gpointer caps);
+
+GType gst_qmmfsrc_tof_range_mode_get_type (void);
+
+GType gst_qmmfsrc_tof_image_type_get_type (void);
 
 /// org.quic.camera.defog
 static const gchar * gst_camera_defog_table[] =
