@@ -146,7 +146,6 @@ struct _GstQvidcVdec
   gboolean is_ubwc;
   gboolean check_10bit;
   gboolean secure;
-  gboolean delay_start;
   comp_cb cb;
   gboolean set_gstbuf_interlace_flag;
 

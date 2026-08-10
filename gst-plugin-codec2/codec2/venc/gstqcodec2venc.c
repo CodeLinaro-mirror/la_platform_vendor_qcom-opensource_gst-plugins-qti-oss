@@ -901,6 +901,7 @@ gst_qcodec2_venc_rate_control_get_type (void)
             "Variable bitrate, variable framerate(skip frame if bit budget not enough)",
           "VBR-VFR"},
       {RC_CQ, "Constant quality", "CQ"},
+      {RC_LOSSLESS, "Lossless, only for hevc and soc >= gen4.5", "lossless"},
       {0, NULL, NULL}
     };
 
@@ -1527,6 +1528,18 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
     enc->is_heic = TRUE;
   }
 
+  if (enc->rcMode == RC_LOSSLESS &&
+      (!GST_IS_QCODEC2_H265_ENC (enc) || enc->is_heic)) {
+    SG_ERR_OBJ (enc, "rate-control=lossless is supported only by HEVC encoder");
+    goto error_output;
+  }
+
+  if (enc->rcMode == RC_LOSSLESS && enc->target_bitrate > 0) {
+    GST_WARNING_OBJECT (enc,
+        "rate-control=lossless: target bitrate(%u) will be ignored",
+        enc->target_bitrate);
+  }
+
   if (!gst_video_encoder_negotiate (encoder)) {
     SG_ERR_OBJ (enc, "Failed to negotiate with downstream");
     goto error_output;
@@ -1534,7 +1547,7 @@ gst_qcodec2_venc_set_format (GstVideoEncoder * encoder,
 
   config = g_ptr_array_new ();
 
-  if (enc->target_bitrate > 0) {
+  if (enc->target_bitrate > 0 && enc->rcMode != RC_LOSSLESS) {
     bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
     g_ptr_array_add (config, &bitrate);
     GST_DEBUG_OBJECT (enc, "set target bitrate:%u", enc->target_bitrate);
@@ -1863,6 +1876,10 @@ gst_qcodec2_venc_open (GstVideoEncoder * encoder)
 
   /* Create component store */
   enc->comp_store = c2componentStore_create ();
+  if (!enc->comp_store) {
+    SG_ERR_OBJ (enc, "Failed to create component store, ret FALSE from _venc_open() !");
+    return FALSE;
+  }
 
   return ret;
 }
@@ -1938,6 +1955,7 @@ gst_qcodec2_venc_handle_dynamic_config (GstVideoEncoder * encoder)
   }
 
   if ((enc->target_bitrate > 0) &&
+      (enc->rcMode != RC_LOSSLESS) &&
       (enc->target_bitrate != enc->configured_target_bitrate)) {
     bitrate = make_bitrate_param (enc->target_bitrate, FALSE);
     GST_DEBUG_OBJECT (enc, "Dynamically configure target bitrate to %u from %u",
@@ -3168,7 +3186,9 @@ gst_qcodec2_venc_change_state (GstElement * element, GstStateChange transition)
       SG_INFO_OBJ (enc, "encoder state change %s => %s, enc(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), enc, enc);
       break;
   }
-  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  GstStateChangeReturn ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  SG_INFO_OBJ (enc, "encoder state change %s => %s done, enc(%" GST_PTR_FORMAT "@%p)", gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)), gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)), enc, enc);
+  return ret;
 }
 
 static void

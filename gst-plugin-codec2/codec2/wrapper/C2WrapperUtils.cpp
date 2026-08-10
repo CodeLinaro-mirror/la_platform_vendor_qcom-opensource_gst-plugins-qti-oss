@@ -217,6 +217,10 @@ uint32_t toC2RateControlMode(RC_MODE_TYPE mode)
         rcMode = C2Config::BITRATE_IGNORE;
         break;
     }
+    case RC_LOSSLESS: {
+        rcMode = 0x7F000001; //RC_MODE_EXT_LOSSLESS
+        break;
+    }
     default: {
         SG_ERR("Invalid RC Mode: %d", mode);
     }
