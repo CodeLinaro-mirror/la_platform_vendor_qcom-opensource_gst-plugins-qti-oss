@@ -38,7 +38,7 @@ GST_DEBUG_CATEGORY_EXTERN (gst_video_converter_engine_debug);
         {0, 0, 0, 0}, 255, GST_VCE_ROTATE_0 }
 #define GST_VCE_COMPOSITION_INIT \
     { NULL, 0, NULL, NULL, 0, FALSE, { 0.0, 0.0, 0.0, 0.0 }, \
-      { 1.0, 1.0, 1.0, 1.0 }, 0 }
+      { 1.0, 1.0, 1.0, 1.0 }, 0, FALSE }
 
 // Maximum number of image channels, used for normalization offsets and scales.
 #define GST_VCE_MAX_CHANNELS         4
@@ -172,6 +172,7 @@ struct _GstVideoBlit
  * @offsets: Component offset factors, used in normalize operation.
  * @scales: Component scale factors, used in normalize operation.
  * @datatype: The data type of the pixels in the output frame.
+ * @is_secure: Whether the composition uses secure/protected buffers.
  *
  * Blit composition.
  */
@@ -190,6 +191,8 @@ struct _GstVideoComposition
   gdouble      scales[GST_VCE_MAX_CHANNELS];
 
   guint64      datatype;
+
+  gboolean     is_secure;
 };
 
 /**

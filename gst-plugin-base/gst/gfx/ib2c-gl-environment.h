@@ -155,7 +155,8 @@ enum class ContextType {
 
 class Environment {
  public:
-  static std::string NewEnvironment(std::shared_ptr<Environment>& environment);
+  static std::string NewEnvironment(std::shared_ptr<Environment>& environment,
+                                    bool is_secure = false);
 
   Environment() = default;
   ~Environment();
@@ -175,7 +176,7 @@ class Environment {
   bool QueryExtension(const std::string extname);
 
  private:
-  std::string Initialize();
+  std::string Initialize(bool is_secure = false);
 
   /// Mutex for protecting EGL display creation/termination.
   static std::mutex mutex_;

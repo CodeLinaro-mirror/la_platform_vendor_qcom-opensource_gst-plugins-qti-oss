@@ -306,7 +306,8 @@ gst_video_format_to_ib2c_format (GstVideoFormat format, const guint64 datatype)
 
 static guint64
 gst_gles_create_surface (GstGlesVideoConverter * convert, const gchar * direction,
-    GstBuffer * buffer, const GstVideoInfo * info, guint64 datatype)
+    GstBuffer * buffer, const GstVideoInfo * info, guint64 datatype,
+    gboolean is_secure = FALSE)
 {
   GstMemory *memory = NULL;
   const gchar *mode = NULL;
@@ -317,6 +318,10 @@ gst_gles_create_surface (GstGlesVideoConverter * convert, const gchar * directio
 
   type |= (g_quark_from_static_string (direction) == GST_GLES_INPUT_QUARK) ?
       ::ib2c::SurfaceFlags::kInput : ::ib2c::SurfaceFlags::kOutput;
+
+  if (is_secure) {
+    type |= ::ib2c::SurfaceFlags::kSecure;
+  }
 
   memory = gst_buffer_peek_memory (buffer, 0);
 
@@ -574,7 +579,8 @@ gst_gles_update_object (::ib2c::Object * object, const guint64 surface_id,
 static guint64
 gst_gles_retrieve_surface_id (GstGlesVideoConverter * convert,
     GHashTable * surfaces, const gchar * direction,
-    GstBuffer * buffer, const GstVideoInfo * info, const guint64 flags)
+    GstBuffer * buffer, const GstVideoInfo * info, const guint64 flags,
+    gboolean is_secure = FALSE)
 {
   GstMemory *memory = NULL;
   GstGlesSurface *glsurface = NULL;
@@ -595,7 +601,8 @@ gst_gles_retrieve_surface_id (GstGlesVideoConverter * convert,
   if (!g_hash_table_contains (surfaces, GUINT_TO_POINTER (fd))) {
     // Create an input surface and add its ID to the input hash table.
     surface_id =
-        gst_gles_create_surface (convert, direction, buffer, info, flags);
+        gst_gles_create_surface (convert, direction, buffer, info, flags,
+            is_secure);
 
     if (surface_id == 0) {
       GST_ERROR ("Failed to create surface!");
@@ -643,6 +650,7 @@ gst_gles_video_converter_compose (GstGlesVideoConverter * convert,
     GstVideoComposition *composition = &(compositions[idx]);
     GstBuffer *outbuffer = composition->buffer;
     GstVideoBlit *blits = composition->blits;
+    gboolean is_secure = composition->is_secure;
 
     n_blits = composition->n_blits;
 
@@ -659,7 +667,7 @@ gst_gles_video_converter_compose (GstGlesVideoConverter * convert,
       GST_GLES_LOCK (convert);
 
       surface_id = gst_gles_retrieve_surface_id (convert, convert->insurfaces,
-          "Input", blit->buffer, blit->info, GST_VCE_DATA_TYPE_U8);
+          "Input", blit->buffer, blit->info, GST_VCE_DATA_TYPE_U8, is_secure);
 
       GST_GLES_UNLOCK (convert);
 
@@ -687,7 +695,8 @@ gst_gles_video_converter_compose (GstGlesVideoConverter * convert,
     GST_GLES_LOCK (convert);
 
     surface_id = gst_gles_retrieve_surface_id (convert, convert->outsurfaces,
-        "Output", outbuffer, composition->info, composition->datatype);
+        "Output", outbuffer, composition->info, composition->datatype,
+        is_secure);
     GST_GLES_UNLOCK (convert);
 
     if (!(success = (surface_id != 0))) {
@@ -911,14 +920,20 @@ GstGlesVideoConverter *
 gst_gles_video_converter_new (GstStructure * settings)
 {
   GstGlesVideoConverter *convert = NULL;
+  gboolean is_secure = FALSE;
 
   convert = g_slice_new0 (GstGlesVideoConverter);
   g_return_val_if_fail (convert != NULL, NULL);
 
+  if (settings != NULL) {
+    gst_structure_get_boolean (settings, "is-secure", &is_secure);
+  }
+
   g_mutex_init (&convert->lock);
 
   try {
-    convert->engine = ::ib2c::NewGlEngine(&convert->vendor, &convert->renderer);
+    convert->engine = ::ib2c::NewGlEngine(&convert->vendor, &convert->renderer,
+                                          (bool) is_secure);
   } catch (std::exception& e) {
     GST_ERROR ("Failed to create and init new engine, error: '%s'!", e.what());
     goto cleanup;
