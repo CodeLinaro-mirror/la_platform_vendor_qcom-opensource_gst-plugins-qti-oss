@@ -1,4 +1,4 @@
-option('usedmaheap', type : 'boolean', value : 'false', description: 'Use DMA buffer heap.')
+option('usedmaheap', type : 'boolean', value : false, description: 'Use DMA buffer heap.')
 option('widevine', type : 'feature', value : 'disabled', yield : true,  description: 'Enable Widevine support')
 option('ASAN', type: 'boolean', value: false, description: 'Enable address sanitizers tool')
 option('drm-optimization', type : 'boolean', value : false, description: 'Use non-contiguous memory if DRM optimization enabled')
