@@ -2274,32 +2274,73 @@ fill_output_buffer (GstQvidcVenc * enc, GstVideoInfo * vinfo,
       (GstBufferPoolAcquireParams *) & param_ext);
 
   if (ret == GST_FLOW_OK && out_buf) {
-    GST_ERROR_OBJECT (enc,
+    GstBuffer *copy_buf = NULL;
+
+    GST_DEBUG_OBJECT (enc,
         "acquired output gst buffer, desc size %d, out size %d", desc->size,
         gst_buffer_get_size (out_buf));
 
-    GST_BUFFER_PTS (out_buf) = gst_util_uint64_scale (desc->timestamp,
-        GST_SECOND, TICKS_PER_SECOND);
+    /* Copy the encoded bitstream into a new system-memory GstBuffer so that
+     * the DMA-BUF (encoder output pool buffer) can be returned to the pool
+     * immediately via gst_buffer_unref() below.
+     *
+     * gst_buffer_extract_dup() copies the encoded bytes into a plain
+     * g_malloc'd block, and gst_buffer_new_wrapped() wraps it in a new
+     * GstBuffer backed by the default system allocator (taking ownership,
+     * freeing with g_free on destroy). Unlike
+     * gst_buffer_copy_region(GST_BUFFER_COPY_MEMORY) - which may allocate the
+     * destination using the source buffer's own allocator (e.g. another
+     * DMA-BUF) - this guarantees the destination is regular system memory
+     * and creates no back-reference to out_buf, so out_buf's ref count is
+     * unaffected. */
+    {
+      gpointer data = NULL;
+      gsize copied = 0;
 
-    if (vinfo->fps_n > 0) {
-      GST_BUFFER_DURATION (out_buf) = gst_util_uint64_scale (GST_SECOND,
-          vinfo->fps_d, vinfo->fps_n);
+      gst_buffer_extract_dup (out_buf, 0, output_size, &data, &copied);
+      if (data && copied == output_size) {
+        copy_buf = gst_buffer_new_wrapped (data, copied);
+      } else {
+        if (data) {
+          g_free (data);
+        }
+        GST_ERROR_OBJECT (enc, "failed to extract output buffer data");
+      }
     }
 
-    GST_LOG_OBJECT (enc,
-        "gstbuf:%p, PTS:%lu, duration:%lu, fps_d:%d, fps_n:%d, size %d",
-        out_buf, GST_BUFFER_PTS (out_buf), GST_BUFFER_DURATION (out_buf),
-        vinfo->fps_d, vinfo->fps_n, desc->size);
+    if (copy_buf) {
+      GST_BUFFER_PTS (copy_buf) = gst_util_uint64_scale (desc->timestamp,
+          GST_SECOND, TICKS_PER_SECOND);
+
+      if (vinfo->fps_n > 0) {
+        GST_BUFFER_DURATION (copy_buf) = gst_util_uint64_scale (GST_SECOND,
+            vinfo->fps_d, vinfo->fps_n);
+      }
+
+      GST_LOG_OBJECT (enc,
+          "copy_buf:%p, PTS:%lu, duration:%lu, fps_d:%d, fps_n:%d, size %d",
+          copy_buf, GST_BUFFER_PTS (copy_buf),
+          GST_BUFFER_DURATION (copy_buf),
+          vinfo->fps_d, vinfo->fps_n, output_size);
+    } else {
+      GST_ERROR_OBJECT (enc, "failed to copy output buffer");
+    }
+
+    /* Return the DMA-BUF to the pool immediately so that vidc_queue() is
+     * called and the hardware can write the next encoded frame into it.
+     */
+    gst_buffer_unref (out_buf);
+
+    return copy_buf;
 
   } else {
     GST_ERROR_OBJECT (enc, "Fail to acquire output gst buffer");
     if (out_buf) {
       gst_buffer_unref (out_buf);
-      out_buf = NULL;
     }
   }
 
-  return out_buf;
+  return NULL;
 }
 
 /* Push encoded frame to downstream element */
