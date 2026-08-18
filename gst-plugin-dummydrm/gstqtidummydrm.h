@@ -74,6 +74,8 @@ struct _GstQtidummydrm
   QSEECom_handle *l_QSEEComHandle;
   GstDecryptorContextCPC cpc;
   guint pool_buf_size;
+  guint min_buffers;
+  guint max_buffers;
 };
 
 struct _GstQtidummydrmClass

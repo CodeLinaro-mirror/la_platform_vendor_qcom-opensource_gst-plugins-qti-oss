@@ -120,7 +120,7 @@ gst_qtihdcpdecrypt_create_pool (GstQtidummydrm * qtidummydrm)
   config = gst_buffer_pool_get_config (pool);
   /*TODO use min max value from decide_allocation */
   gst_buffer_pool_config_set_params (config, NULL, qtidummydrm->pool_buf_size,
-      DEFAULT_MIN_BUFFERS, DEFAULT_MAX_BUFFERS);
+      qtidummydrm->min_buffers, qtidummydrm->max_buffers);
 
   if (!(allocator = gst_fd_allocator_new ())) {
     GST_ERROR_OBJECT (qtidummydrm, "Failed to create fd allocator !");
@@ -147,6 +147,8 @@ gst_qtidummydrm_init (GstQtidummydrm * qtidummydrm)
   qtidummydrm->lib_handle = NULL;
   qtidummydrm->l_QSEEComHandle = NULL;
   qtidummydrm->pool_buf_size = MAX_POOL_BUFFER_SIZE;
+  qtidummydrm->min_buffers = DEFAULT_MIN_BUFFERS;
+  qtidummydrm->max_buffers = DEFAULT_MAX_BUFFERS;
 }
 
 void
@@ -384,6 +386,8 @@ gst_qtidummydrm_transform_decide_allocation (GstBaseTransform * trans,
     gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
     GST_DEBUG_OBJECT (qtidummydrm, "Size %d min %d max %d", size, min, max);
     qtidummydrm->pool_buf_size = size;
+    qtidummydrm->min_buffers = min;
+    qtidummydrm->max_buffers = max;
   }
 
   if (!(qtidummydrm->out_pool = gst_qtihdcpdecrypt_create_pool (qtidummydrm))) {
