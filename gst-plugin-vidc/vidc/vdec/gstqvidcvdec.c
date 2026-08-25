@@ -1544,6 +1544,9 @@ gst_qvidc_vdec_wrap_output_buffer (GstVideoDecoder * decoder,
             vidc_getPlaneStride (dec->comp, i);
         GST_VIDEO_INFO_PLANE_OFFSET (vinfo, i) =
             vidc_getPlaneOffset (dec->comp, i);
+        GST_DEBUG_OBJECT (dec, "plane[%d] stride %d, offset 0x%x, n_plane %d",
+            i, vinfo->stride[i], vinfo->offset[i],
+            GST_VIDEO_INFO_N_PLANES (vinfo));
       }
 
       GstVideoMeta *vmeta = gst_buffer_get_video_meta (out_buf);
