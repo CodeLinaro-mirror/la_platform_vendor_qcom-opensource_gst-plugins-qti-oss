@@ -827,6 +827,7 @@ static gboolean gst_qvconv_configure_c2d (GstQvconv * qvconv)
       SG_ERR_OBJ_LITE (qvconv, "c2d configure error, inst %p", qvconv);
       goto free_c2d_buf;
     }
+    SG_INFO_OBJ_LITE (qvconv, "configure c2d converter: calling c2d->configure() finish");
   }
 
   if (flip && !c2d->setFlip(flip))
