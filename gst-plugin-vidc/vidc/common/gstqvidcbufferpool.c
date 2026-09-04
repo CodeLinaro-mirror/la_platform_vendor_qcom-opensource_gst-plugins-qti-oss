@@ -370,7 +370,7 @@ _buffer_pool_acquire_buffer_wrap (GstBufferPool * bpool,
   GHashTable *buffer_table = pool->buffer_table;
 
   g_mutex_lock (&pool->buflock);
-  GST_ERROR_OBJECT (pool, "acquire_buffer %p", params);
+  GST_LOG_OBJECT (pool, "acquire_buffer %p", params);
 
   if (param_ext)
     key = ((gint64) param_ext->fd << 32) | ((gint64) param_ext->meta_fd);

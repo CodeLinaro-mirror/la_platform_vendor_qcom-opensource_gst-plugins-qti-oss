@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 * SPDX-License-Identifier: BSD-3-Clause-Clear
 */
 
@@ -614,7 +614,8 @@ parse_dash_manifest (gchar ** header)
 {
   DrmLicense license = LICENSE_INVALID;
   xmlNodePtr root, period, adapset;
-  xmlDocPtr doc = xmlParseFile (MANIFEST_DOWNLOAD_PATH);
+  char manifest_path[128] = MANIFEST_DOWNLOAD_PATH;
+  xmlDocPtr doc = xmlParseFile (manifest_path);
 
   g_print ("Parsing XML document...\n");
 

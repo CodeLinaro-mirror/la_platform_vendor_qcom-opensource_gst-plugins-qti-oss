@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: BSD-3-Clause-Clear
- */
+*/
 
 #ifndef __GST_DRM_DECRYPTOR_ENGINE_H__
 #define __GST_DRM_DECRYPTOR_ENGINE_H__
