@@ -80,7 +80,8 @@ struct _DfsInitSettings {
   gboolean              rectification;
   gboolean              gpu_rect;
   gint                  pplevel;
-  stereoConfiguration   stereo_parameter;
+  guint                 frames_per_second;
+  const gchar          *config_path;   /* path to stereo calibration config file */
 };
 
 GST_API GstDfsEngine *
@@ -92,6 +93,22 @@ gst_dfs_engine_free         (GstDfsEngine *engine);
 GST_API gboolean
 gst_dfs_engine_execute (GstDfsEngine *engine,
     const GstVideoFrame *inframe, gpointer output, gsize size);
+
+/*
+ * gst_dfs_engine_get_eye_dims:
+ * @frame_width:  full frame width from GstVideoInfo
+ * @frame_height: full frame height from GstVideoInfo
+ * @eye_width:    (out) per-eye width
+ * @eye_height:   (out) per-eye height
+ *
+ * Derives per-eye dimensions from the full stereo frame dimensions.
+ * The calculation is backend-specific: QVX uses over-under layout
+ * (full width, half height) while rvSDK uses side-by-side layout
+ * (half width, full height).
+ */
+GST_API void
+gst_dfs_engine_get_eye_dims (guint frame_width, guint frame_height,
+    guint *eye_width, guint *eye_height);
 
 G_END_DECLS
 

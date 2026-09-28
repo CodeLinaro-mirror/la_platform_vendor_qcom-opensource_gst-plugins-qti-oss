@@ -15,7 +15,7 @@
 #include <gst/utils/common-utils.h>
 
 #define GST_CAT_DEFAULT gst_dfs_debug
-GST_DEBUG_CATEGORY_STATIC (gst_dfs_debug);
+GST_DEBUG_CATEGORY (gst_dfs_debug);
 
 #define gst_dfs_parent_class parent_class
 G_DEFINE_TYPE (GstDfs, gst_dfs, GST_TYPE_BASE_TRANSFORM);
@@ -31,7 +31,8 @@ G_DEFINE_TYPE (GstDfs, gst_dfs, GST_TYPE_BASE_TRANSFORM);
 #define DEFAULT_PROP_GPU_RECT FALSE
 #define DEFAULT_PROP_MIN_DISPARITY 1
 
-#if defined(RVSDK_API_VERSION) && (RVSDK_API_VERSION >= 0x202403)
+#if defined(USE_QVX) || \
+    (defined(RVSDK_API_VERSION) && (RVSDK_API_VERSION >= 0x202403))
 #define DEFAULT_PROP_NUM_DISPARITY_LEVELS 96
 #define DEFAULT_PROP_FILTER_WIDTH 16
 #define DEFAULT_PROP_FILTER_HEIGHT 4
@@ -39,7 +40,7 @@ G_DEFINE_TYPE (GstDfs, gst_dfs, GST_TYPE_BASE_TRANSFORM);
 #define DEFAULT_PROP_NUM_DISPARITY_LEVELS 32
 #define DEFAULT_PROP_FILTER_WIDTH 11
 #define DEFAULT_PROP_FILTER_HEIGHT 11
-#endif // RVSDK_API_VERSION
+#endif // USE_QVX || RVSDK_API_VERSION >= 0x202403
 
 #define PLY_HEADER_SIZE 128      //Point Cloud PLY Header size in bytes
 #define PLY_POINT_NUM 3         //Point Cloud PLY point number per row
@@ -58,7 +59,7 @@ enum
   PROP_PPLEVEL,
 };
 
-#define GST_SINK_VIDEO_FORMATS "{ NV12, NV21 }"
+#define GST_SINK_VIDEO_FORMATS "{ NV12, NV21, GRAY8 }"
 
 #define GST_SRC_VIDEO_FORMATS "{ RGB, BGR, RGBA, BGRA, RGBx, BGRx, GRAY8 }"
 
@@ -122,128 +123,6 @@ gst_dfs_src_template (void)
       gst_dfs_src_caps ());
 }
 
-static gboolean
-gst_dfs_parse_config (gchar * config_location,
-    stereoConfiguration * configuration)
-{
-  gboolean rc = FALSE;
-  GstStructure *structure = NULL;
-  GValueArray *arrvalue;
-  gint intvalue;
-
-  GValue gvalue = G_VALUE_INIT;
-  g_value_init (&gvalue, GST_TYPE_STRUCTURE);
-
-  if (!g_file_test (config_location, G_FILE_TEST_EXISTS)) {
-    g_print("Failed to find config file\n");
-    GST_WARNING ("Failed to find config file");
-    return FALSE;
-  }
-
-  if (g_file_test (config_location, G_FILE_TEST_IS_REGULAR)) {
-    gchar *contents = NULL;
-    GError *error = NULL;
-
-    if (!g_file_get_contents (config_location, &contents, NULL, &error)) {
-      GST_WARNING ("Failed to get config file contents, error: %s!",
-          GST_STR_NULL (error->message));
-      g_clear_error (&error);
-      return FALSE;
-    }
-    // Remove trailing space and replace new lines with a coma delimeter.
-    contents = g_strstrip (contents);
-    contents = g_strdelimit (contents, "\n", ',');
-
-    rc = gst_value_deserialize (&gvalue, contents);
-    g_free (contents);
-
-    if (!rc) {
-      GST_WARNING ("Failed to deserialize config file contents!");
-      return rc;
-    }
-  } else if (!gst_value_deserialize (&gvalue, config_location)) {
-    GST_WARNING ("Failed to deserialize the config!");
-    return FALSE;
-  }
-
-  structure = GST_STRUCTURE (g_value_dup_boxed (&gvalue));
-  g_value_unset (&gvalue);
-
-  if ((rc = gst_structure_get_array (structure, "translation", &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->translation[i] = g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &= gst_structure_get_array (structure, "rotation", &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->rotation[i] = g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "left-camera.principal-point",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[0].principalPoint[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "right-camera.principal-point",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[1].principalPoint[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "left-camera.focal-length",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[0].focalLength[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "right-camera.focal-length",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[1].focalLength[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "left-camera.distortion-coefficient",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[0].distortion[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &=
-          gst_structure_get_array (structure, "right-camera.distortion-coefficient",
-              &arrvalue))) {
-    for (uint i = 0; i < arrvalue->n_values; i++) {
-      configuration->camera[1].distortion[i] =
-          g_value_get_double (arrvalue->values + i);
-    }
-  }
-
-  if ((rc &= gst_structure_get_int (structure, "distortion-model", &intvalue))) {
-    configuration->camera[0].distortionModel = intvalue;
-    configuration->camera[1].distortionModel = intvalue;
-  }
-
-  gst_structure_free (structure);
-
-  return rc;
-}
 
 GType
 gst_dfs_mode_get_type (void)
@@ -328,15 +207,17 @@ gst_dfs_create_pool (GstDfs * dfs, GstCaps * caps)
   } else if (gst_structure_has_name (structure, "cvp/x-disparity")) {
     GST_INFO_OBJECT (dfs, "Uses SYSTEM memory");
     pool = gst_buffer_pool_new ();
-    guint width = GST_VIDEO_INFO_WIDTH (dfs->ininfo) / 2;
-    guint height = GST_VIDEO_INFO_HEIGHT (dfs->ininfo);
+    guint width, height;
+    gst_dfs_engine_get_eye_dims (GST_VIDEO_INFO_WIDTH (dfs->ininfo),
+        GST_VIDEO_INFO_HEIGHT (dfs->ininfo), &width, &height);
     size = width * height * sizeof (float);
 
   } else if (gst_structure_has_name (structure, "cvp/x-point-cloud")) {
     GST_INFO_OBJECT (dfs, "Uses SYSTEM memory");
     pool = gst_buffer_pool_new ();
-    guint width = GST_VIDEO_INFO_WIDTH (dfs->ininfo) / 2;
-    guint height = GST_VIDEO_INFO_HEIGHT (dfs->ininfo);
+    guint width, height;
+    gst_dfs_engine_get_eye_dims (GST_VIDEO_INFO_WIDTH (dfs->ininfo),
+        GST_VIDEO_INFO_HEIGHT (dfs->ininfo), &width, &height);
     // Setting initial size of buffer to worst case size.
     // since point cloud is not known ahead of time and is not constant.
     size = (width * height) * PLY_POINT_NUM * PLY_POINT_TO_STRING + PLY_HEADER_SIZE;
@@ -445,23 +326,88 @@ gst_dfs_prepare_output_buffer (GstBaseTransform * trans,
   return GST_FLOW_OK;
 }
 
+static gboolean
+gst_dfs_accept_caps (GstBaseTransform * trans, GstPadDirection direction,
+    GstCaps * caps)
+{
+  GstDfs *dfs = GST_DFS_CAST (trans);
+  GstCaps *template_caps = NULL;
+  GstCaps *stripped = NULL;
+  gboolean ret = FALSE;
+  guint i, n;
+
+  if (direction == GST_PAD_SRC) {
+    template_caps = gst_pad_get_pad_template_caps (
+        GST_BASE_TRANSFORM_SRC_PAD (trans));
+    ret = gst_caps_can_intersect (caps, template_caps);
+    gst_caps_unref (template_caps);
+    return ret;
+  }
+
+  /*
+   * Sink pad: qmmfsrc adds multiview-mode, pixel-aspect-ratio and
+   * interlace-mode to its output caps. Strip them before testing
+   * against the sink template so they do not cause a false rejection.
+   */
+  template_caps = gst_pad_get_pad_template_caps (
+      GST_BASE_TRANSFORM_SINK_PAD (trans));
+
+  stripped = gst_caps_copy (caps);
+  n = gst_caps_get_size (stripped);
+  for (i = 0; i < n; i++) {
+    GstStructure *s = gst_caps_get_structure (stripped, i);
+    gst_structure_remove_fields (s,
+        "multiview-mode", "multiview-flags",
+        "pixel-aspect-ratio", "interlace-mode", NULL);
+  }
+
+  ret = gst_caps_can_intersect (stripped, template_caps);
+
+  GST_DEBUG_OBJECT (dfs, "accept_caps (sink): %s for %" GST_PTR_FORMAT,
+      ret ? "yes" : "no", caps);
+
+  gst_caps_unref (stripped);
+  gst_caps_unref (template_caps);
+  return ret;
+}
+
 static GstCaps *
 gst_dfs_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter)
 {
   GstDfs *dfs = GST_DFS_CAST (trans);
   GstCaps *result = NULL;
+  guint i, n;
 
   GST_DEBUG_OBJECT (dfs, "Transforming caps: %" GST_PTR_FORMAT
       " in direction %s", caps, (direction == GST_PAD_SINK) ? "sink" : "src");
   GST_DEBUG_OBJECT (dfs, "Filter caps: %" GST_PTR_FORMAT, filter);
 
-  if (direction == GST_PAD_SRC) {
-    GstPad *pad = GST_BASE_TRANSFORM_SINK_PAD (trans);
-    result = gst_pad_get_pad_template_caps (pad);
-  } else if (direction == GST_PAD_SINK) {
+  if (direction == GST_PAD_SINK) {
+    /* Given sink caps, return what we can produce on the src pad. */
     GstPad *pad = GST_BASE_TRANSFORM_SRC_PAD (trans);
     result = gst_pad_get_pad_template_caps (pad);
+  } else {
+    /*
+     * Given src caps, return what we accept on the sink pad.
+     *
+     * The upstream camera source (qmmfsrc) sets multiview-mode=mono,
+     * pixel-aspect-ratio and interlace-mode on its output caps for
+     * over-under stereo frames. GstBaseTransform verifies the
+     * transformation by intersecting the proposed incaps against what
+     * transform_caps returns for the SRC direction. The sink template
+     * does not carry these fields, so strip them from the template
+     * before returning so the intersection succeeds.
+     */
+    GstPad *pad = GST_BASE_TRANSFORM_SINK_PAD (trans);
+    result = gst_caps_copy (gst_pad_get_pad_template_caps (pad));
+    n = gst_caps_get_size (result);
+    for (i = 0; i < n; i++) {
+      GstStructure *s = gst_caps_get_structure (result, i);
+      gst_structure_remove_fields (s,
+          "multiview-mode", "multiview-flags",
+          "pixel-aspect-ratio", "interlace-mode", NULL);
+    }
   }
 
   if (filter != NULL) {
@@ -512,9 +458,11 @@ gst_dfs_fixate_caps (GstBaseTransform * trans,
     if (!gst_video_info_from_caps (&ininfo, incaps))
       GST_ERROR_OBJECT (dfs, "Failed to get input video info from caps!");
 
-
-    width = GST_VIDEO_INFO_WIDTH (&ininfo) / 2;
-    height = GST_VIDEO_INFO_HEIGHT (&ininfo);
+    guint eye_width, eye_height;
+    gst_dfs_engine_get_eye_dims (GST_VIDEO_INFO_WIDTH (&ininfo),
+        GST_VIDEO_INFO_HEIGHT (&ininfo), &eye_width, &eye_height);
+    width  = (gint) eye_width;
+    height = (gint) eye_height;
 
     value = gst_structure_get_value (output, "width");
     if ((NULL == value) || !gst_value_is_fixed (value)) {
@@ -532,6 +480,21 @@ gst_dfs_fixate_caps (GstBaseTransform * trans,
 
     GST_DEBUG_OBJECT (dfs, "Output width and height fixated to: %dx%d",
         width, height);
+
+    /*
+     * Propagate framerate from incaps. The src template exposes framerate
+     * as a range [ 0/1, 2147483647/1 ]. GstBaseTransform requires the
+     * result of fixate_caps to be fully fixed (gst_caps_is_fixed() == TRUE)
+     * before it will accept the negotiated caps. Copy the upstream-negotiated
+     * framerate so the output caps become fixed.
+     */
+    value = gst_structure_get_value (
+        gst_caps_get_structure (incaps, 0), "framerate");
+    if (value != NULL && gst_value_is_fixed (value)) {
+      gst_structure_set_value (output, "framerate", value);
+    } else {
+      gst_structure_fixate_field (output, "framerate");
+    }
 
   }
 
@@ -554,13 +517,38 @@ gst_dfs_transform (GstBaseTransform * trans, GstBuffer * inbuffer,
 
   vmeta = gst_buffer_get_video_meta (inbuffer);
 
+  /* Ensure caps have been negotiated before the first buffer arrives. */
+  if (dfs->ininfo == NULL) {
+    GST_ERROR_OBJECT (dfs, "Input video info not set, caps not negotiated!");
+    return GST_FLOW_ERROR;
+  }
+
   //Check if Engine has been init already
   if (dfs->engine == NULL) {
+    guint frame_width, frame_height;
+    gint  frame_stride;
+
+    /*
+     * Prefer GstVideoMeta when present (attached by pool-aware sources).
+     * Fall back to the negotiated GstVideoInfo from set_caps() otherwise.
+     */
+    if (vmeta != NULL) {
+      frame_width  = vmeta->width;
+      frame_height = vmeta->height;
+      frame_stride = vmeta->stride[0];
+    } else {
+      GST_DEBUG_OBJECT (dfs, "No GstVideoMeta on input buffer, "
+          "falling back to negotiated video info");
+      frame_width  = GST_VIDEO_INFO_WIDTH (dfs->ininfo);
+      frame_height = GST_VIDEO_INFO_HEIGHT (dfs->ininfo);
+      frame_stride = GST_VIDEO_INFO_PLANE_STRIDE (dfs->ininfo, 0);
+    }
+
     settings.mode = dfs->output_mode;
     settings.format = dfs->format;
-    settings.stereo_frame_width = vmeta->width;
-    settings.stereo_frame_height = vmeta->height;
-    settings.stride = vmeta->stride[0]; //Only need Y-plane
+    settings.stereo_frame_width  = frame_width;
+    settings.stereo_frame_height = frame_height;
+    settings.stride = frame_stride; //Only need Y-plane
     settings.dfs_mode = dfs->dfs_mode;
     settings.min_disparity = dfs->min_disparity;
     settings.num_disparity_levels = dfs->num_disparity_levels;
@@ -569,7 +557,13 @@ gst_dfs_transform (GstBaseTransform * trans, GstBuffer * inbuffer,
     settings.rectification = dfs->rectification;
     settings.pplevel = dfs->pplevel;
     settings.gpu_rect = dfs->gpu_rect;
-    settings.stereo_parameter = dfs->stereo_parameter;
+    settings.frames_per_second = (GST_VIDEO_INFO_FPS_D (dfs->ininfo) > 0)
+        ? (guint) (GST_VIDEO_INFO_FPS_N (dfs->ininfo)
+            / GST_VIDEO_INFO_FPS_D (dfs->ininfo))
+        : 30;
+    settings.config_path = dfs->config_location;
+
+    ts_begin = gst_util_get_timestamp ();
 
     ts_begin = gst_util_get_timestamp ();
 
@@ -739,22 +733,6 @@ gst_dfs_set_caps (GstBaseTransform * trans, GstCaps * incaps, GstCaps * outcaps)
   if (dfs->rectification == TRUE && dfs->dfs_mode == MODE_SPEED)
     dfs->gpu_rect = TRUE;
 
-  //Populate stereo parameter values
-  dfs->stereo_parameter.camera[0].pixelWidth =
-      GST_VIDEO_INFO_WIDTH (&ininfo) / 2;
-  dfs->stereo_parameter.camera[0].pixelHeight = GST_VIDEO_INFO_HEIGHT (&ininfo);
-  dfs->stereo_parameter.camera[1].pixelWidth =
-      GST_VIDEO_INFO_WIDTH (&ininfo) / 2;
-  dfs->stereo_parameter.camera[1].pixelHeight = GST_VIDEO_INFO_HEIGHT (&ininfo);
-  if (dfs->rectification) {
-    if (!gst_dfs_parse_config (dfs->config_location, &dfs->stereo_parameter)) {
-      GST_ERROR_OBJECT (dfs, "Error parsing config file");
-      return FALSE;
-    }
-  } else {
-    GST_INFO_OBJECT (dfs, "rectification=false. Config file not parsed.");
-  }
-
   dfs->ininfo = gst_video_info_copy (&ininfo);
 
   gst_base_transform_set_passthrough (trans, FALSE);
@@ -854,6 +832,7 @@ gst_dfs_class_init (GstDfsClass * klass)
   trans->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_dfs_prepare_output_buffer);
 
+  trans->accept_caps = GST_DEBUG_FUNCPTR (gst_dfs_accept_caps);
   trans->transform_caps = GST_DEBUG_FUNCPTR (gst_dfs_transform_caps);
   trans->fixate_caps = GST_DEBUG_FUNCPTR (gst_dfs_fixate_caps);
   trans->set_caps = GST_DEBUG_FUNCPTR (gst_dfs_set_caps);

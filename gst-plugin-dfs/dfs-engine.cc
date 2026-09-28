@@ -338,6 +338,115 @@ fill_stereo_params (rvStereoConfiguration * rv_stereo_param,
 }
 #endif
 
+void
+gst_dfs_engine_get_eye_dims (guint frame_width, guint frame_height,
+    guint *eye_width, guint *eye_height)
+{
+  /* rvSDK backend: side-by-side layout — half width, full height per eye */
+  *eye_width  = frame_width / 2;
+  *eye_height = frame_height;
+}
+
+static gboolean
+gst_dfs_parse_config (const gchar *config_location,
+    stereoConfiguration *configuration)
+{
+  gboolean rc = FALSE;
+  GstStructure *structure = NULL;
+  GValueArray *arrvalue;
+  gint intvalue;
+
+  GValue gvalue = G_VALUE_INIT;
+  g_value_init (&gvalue, GST_TYPE_STRUCTURE);
+
+  if (!g_file_test (config_location, G_FILE_TEST_EXISTS)) {
+    g_print ("Failed to find config file\n");
+    GST_WARNING ("Failed to find config file");
+    return FALSE;
+  }
+
+  if (g_file_test (config_location, G_FILE_TEST_IS_REGULAR)) {
+    gchar *contents = NULL;
+    GError *error = NULL;
+
+    if (!g_file_get_contents (config_location, &contents, NULL, &error)) {
+      GST_WARNING ("Failed to get config file contents, error: %s!",
+          GST_STR_NULL (error->message));
+      g_clear_error (&error);
+      return FALSE;
+    }
+    // Remove trailing space and replace new lines with a coma delimeter.
+    contents = g_strstrip (contents);
+    contents = g_strdelimit (contents, "\n", ',');
+
+    rc = gst_value_deserialize (&gvalue, contents);
+    g_free (contents);
+
+    if (!rc) {
+      GST_WARNING ("Failed to deserialize config file contents!");
+      return rc;
+    }
+  } else if (!gst_value_deserialize (&gvalue, config_location)) {
+    GST_WARNING ("Failed to deserialize the config!");
+    return FALSE;
+  }
+
+  structure = GST_STRUCTURE (g_value_dup_boxed (&gvalue));
+  g_value_unset (&gvalue);
+
+  if ((rc = gst_structure_get_array (structure, "translation", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->translation[i] = g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure, "rotation", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->rotation[i] = g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "left-camera.principal-point", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[0].principalPoint[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "right-camera.principal-point", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[1].principalPoint[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "left-camera.focal-length", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[0].focalLength[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "right-camera.focal-length", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[1].focalLength[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "left-camera.distortion-coefficient", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[0].distortion[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_array (structure,
+          "right-camera.distortion-coefficient", &arrvalue))) {
+    for (uint i = 0; i < arrvalue->n_values; i++)
+      configuration->camera[1].distortion[i] =
+          g_value_get_double (arrvalue->values + i);
+  }
+  if ((rc &= gst_structure_get_int (structure, "distortion-model", &intvalue))) {
+    configuration->camera[0].distortionModel = intvalue;
+    configuration->camera[1].distortionModel = intvalue;
+  }
+
+  gst_structure_free (structure);
+  return rc;
+}
+
 GstDfsEngine *
 gst_dfs_engine_new (DfsInitSettings * settings)
 {
@@ -367,6 +476,18 @@ gst_dfs_engine_new (DfsInitSettings * settings)
   engine->width = settings->stereo_frame_width / 2;
   engine->height = settings->stereo_frame_height;
   engine->stride = settings->stride;
+
+  if (settings->rectification && settings->config_path != NULL) {
+    stereoConfiguration stereo_cfg = {};
+    if (!gst_dfs_parse_config (settings->config_path, &stereo_cfg)) {
+      GST_ERROR ("Failed to parse config file: %s", settings->config_path);
+      goto cleanup;
+    }
+    fill_stereo_params (&stereo_param, &stereo_cfg);
+  } else {
+    stereoConfiguration stereo_cfg = {};
+    fill_stereo_params (&stereo_param, &stereo_cfg);
+  }
 
   posix_memalign_success =
       posix_memalign (reinterpret_cast < void **>(&engine->out_work_buffer),
@@ -402,8 +523,6 @@ gst_dfs_engine_new (DfsInitSettings * settings)
 #else
   dfs_param.doGpuRect = settings->gpu_rect;
 #endif // RVSDK_API_VERSION
-
-  fill_stereo_params (&stereo_param, &settings->stereo_parameter);
 
   GST_INFO ("Filter: %dx%d min_disp: %d num_levels: %d doRectification: %s",
       dfs_param.filterWidth, dfs_param.filterHeight,
@@ -553,16 +672,16 @@ write_point_cloud_ply (GstDfsEngine * engine, PointCloudType * pcl,
 {
   std::stringstream ply_content;
   uint8_t *dst = (uint8_t *) output;
-  ply_content << "ply" << std::endl;
-  ply_content << "format ascii 1.0" << std::endl;
-  ply_content << "element vertex " << pcl->size () << std::endl;
-  ply_content << "property float x" << std::endl;
-  ply_content << "property float y" << std::endl;
-  ply_content << "property float z" << std::endl;
-  ply_content << "end_header" << std::endl;
+  ply_content << "ply" << '\n';
+  ply_content << "format ascii 1.0" << '\n';
+  ply_content << "element vertex " << pcl->size () << '\n';
+  ply_content << "property float x" << '\n';
+  ply_content << "property float y" << '\n';
+  ply_content << "property float z" << '\n';
+  ply_content << "end_header" << '\n';
   for (const auto& pc : *pcl) {
     ply_content << std::fixed << std::
-        setprecision (2) << pc[0] << " " << pc[1] << " " << pc[2] << std::endl;
+        setprecision (2) << pc[0] << " " << pc[1] << " " << pc[2] << '\n';
   }
 
   std::string ply_content_str = ply_content.str();

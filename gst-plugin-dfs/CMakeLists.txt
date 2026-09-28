@@ -56,23 +56,29 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 # GStreamer DFS plugin.
 set(GST_DFS gstqtidfs)
 
-include(CheckIncludeFileCXX)
-check_include_file_cxx("dfs_factory.h" HAVE_DFS_FACTORY_H)
+# ---------------------------------------------------------------------------
+# Engine backend selection: QVX takes priority over the legacy rvSDK.
+#
+#   1. If qcom-qvx pkg-config is found  -> compile dfs-engine-qvx.cc
+#   2. Else if dfs_factory.h is found   -> compile dfs-engine.cc (rvSDK)
+#   3. Else                             -> fatal error, no engine available
+# ---------------------------------------------------------------------------
+pkg_check_modules(QVX qcom-qvx)
 
-if(HAVE_DFS_FACTORY_H)
+if(QVX_FOUND)
+
+  message(STATUS "DFS engine: QVX backend (qcom-qvx ${QVX_VERSION})")
 
   add_library(${GST_DFS} SHARED
     dfs.c
-    dfs-engine.cc
+    dfs-engine-qvx.cc
   )
 
-  # Add target specific precompiler defintions.
-  set(RVSDK_API_VERSION "0x202404" CACHE STRING "RVSDK_API_VERSION")
-  target_compile_definitions(${GST_DFS} PRIVATE
-    RVSDK_API_VERSION=${RVSDK_API_VERSION})
+  target_compile_definitions(${GST_DFS} PRIVATE USE_QVX=1)
 
   target_include_directories(${GST_DFS} PRIVATE
     ${GST_INCLUDE_DIRS}
+    ${QVX_INCLUDE_DIRS}
   )
 
   target_link_libraries(${GST_DFS} PRIVATE
@@ -84,14 +90,57 @@ if(HAVE_DFS_FACTORY_H)
     ${GST_QCOM_VIDEO_LIBRARIES}
     ${GST_QCOM_UTILS_LIBRARIES}
     ${GST_QCOM_ALLOC_LIBRARIES}
+    ${QVX_LIBRARIES}
   )
 
-  install(
-    TARGETS ${GST_DFS}
-    LIBRARY DESTINATION ${GST_PLUGINS_QTI_OSS_INSTALL_LIBDIR}/gstreamer-1.0
-    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
-                GROUP_EXECUTE GROUP_READ
-                WORLD_EXECUTE WORLD_READ
-  )
+else()
+
+  include(CheckIncludeFileCXX)
+  check_include_file_cxx("dfs_factory.h" HAVE_DFS_FACTORY_H)
+
+  if(HAVE_DFS_FACTORY_H)
+
+    message(STATUS "DFS engine: rvSDK backend (dfs_factory.h found)")
+
+    add_library(${GST_DFS} SHARED
+      dfs.c
+      dfs-engine.cc
+    )
+
+    # Add target specific precompiler definitions.
+    set(RVSDK_API_VERSION "0x202404" CACHE STRING "RVSDK_API_VERSION")
+    target_compile_definitions(${GST_DFS} PRIVATE
+      RVSDK_API_VERSION=${RVSDK_API_VERSION})
+
+    target_include_directories(${GST_DFS} PRIVATE
+      ${GST_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(${GST_DFS} PRIVATE
+      ${GST_LIBRARIES}
+      ${GST_BASE_LIBRARIES}
+      ${GST_ALLOC_LIBRARIES}
+      ${GST_VIDEO_LIBRARIES}
+      ${CMAKE_DL_LIBS}
+      ${GST_QCOM_VIDEO_LIBRARIES}
+      ${GST_QCOM_UTILS_LIBRARIES}
+      ${GST_QCOM_ALLOC_LIBRARIES}
+    )
+
+  else()
+
+    message(FATAL_ERROR
+      "DFS engine: no backend found. "
+      "Provide either qcom-qvx (pkg-config) or the rvSDK (dfs_factory.h).")
+
+  endif()
 
 endif()
+
+install(
+  TARGETS ${GST_DFS}
+  LIBRARY DESTINATION ${GST_PLUGINS_QTI_OSS_INSTALL_LIBDIR}/gstreamer-1.0
+  PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ
+              GROUP_EXECUTE GROUP_READ
+              WORLD_EXECUTE WORLD_READ
+)

@@ -49,8 +49,6 @@ struct _GstDfs {
 
   OutputMode              output_mode;
 
-  stereoConfiguration     stereo_parameter;
-
   DFSMode                 dfs_mode;
 
   gint                    min_disparity;
