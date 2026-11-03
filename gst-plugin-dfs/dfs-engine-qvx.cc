@@ -77,7 +77,7 @@ struct _GstDfsEngine
   gint                mode;           /* OutputMode */
   GstVideoFormat      format;
   guint32             width;          /* per-eye width  (stereo_frame_width  from DfsInitSettings) */
-  guint32             height;         /* per-eye height (stereo_frame_height from DfsInitSettings) */
+  guint32             height;         /* per-eye height (stereo_frame_height / 2 from DfsInitSettings) */
   guint32             stride;
 
   /* Logical camera id used when injecting frames */
@@ -442,7 +442,7 @@ gst_dfs_engine_new (DfsInitSettings *settings)
   engine->mode           = settings->mode;
   engine->format         = settings->format;
   engine->width          = settings->stereo_frame_width;
-  engine->height         = settings->stereo_frame_height;
+  engine->height         = settings->stereo_frame_height / 2;
   engine->stride         = settings->stride;
   engine->cam_id         = QVX_STEREO_CAM_ID;
   engine->result_ready   = false;
@@ -471,9 +471,9 @@ gst_dfs_engine_new (DfsInitSettings *settings)
      * data injected by gst_dfs_engine_execute(). scanline and height
      * are the FULL over-under frame (both eyes combined) — QVX core
      * splits the OU frame into top/bottom halves internally.
-     * engine->height is already the per-eye height (stereo_frame_height
-     * from DfsInitSettings = frame_height / 2), so multiply by 2 here
-     * to recover the full OU frame dimensions for the camera spec.
+     * engine->height is the per-eye height (stereo_frame_height / 2),
+     * so multiply by 2 here to recover the full OU frame dimensions
+     * for the camera spec.
      */
     config.stereo.camera.logical_id        = (qrv_int32_t) engine->cam_id;
     config.stereo.camera.spec.format       = translate_video_format (settings->format);

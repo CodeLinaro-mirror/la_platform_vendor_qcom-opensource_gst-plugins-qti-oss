@@ -565,8 +565,6 @@ gst_dfs_transform (GstBaseTransform * trans, GstBuffer * inbuffer,
 
     ts_begin = gst_util_get_timestamp ();
 
-    ts_begin = gst_util_get_timestamp ();
-
     dfs->engine = gst_dfs_engine_new (&settings);
     if (dfs->engine == NULL) {
       GST_ERROR_OBJECT (dfs, "Failed to create DFS engine!");
