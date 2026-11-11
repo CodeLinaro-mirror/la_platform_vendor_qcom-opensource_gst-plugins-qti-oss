@@ -41,7 +41,7 @@
 class DrmContext {
   public:
     DrmContext(gchar * header) : init_data_ (header) {}
-    virtual ~DrmContext() { g_free (init_data_); }
+    virtual ~DrmContext() {}
 
     virtual gint InitSession() = 0;
     virtual gint CreateLicenseRequest() = 0;

@@ -162,6 +162,8 @@ struct _GstQcodec2Vdec
   guint32 in_data_idx_total;
   guint32 out_data_idx_1cycle;
   guint32 out_data_idx_total;
+  unsigned long long in_data_accumlen_1cycle;
+  unsigned long long in_data_accumlen_total;
 };
 
 /* Param function */

@@ -887,10 +887,19 @@ parse_manifest (gchar ** header)
   gchar *manifest_content = NULL;
   DrmLicense license = LICENSE_INVALID;
 
-  if (decide_dash_or_hls (&manifest_content))
-    license = parse_dash_manifest (header);
-  else
+  if (decide_dash_or_hls (&manifest_content)) {
+    gchar *dash_header = NULL;
+    license = parse_dash_manifest (&dash_header);
+
+    /* Header for dash is allocated by g_strdup which is same with hls.
+     * So, could use g_free to free header when exit.
+     */
+    *header = g_strdup (dash_header);
+    xmlFree (dash_header);
+  }
+  else {
     license = parse_hls_manifest (header, manifest_content);
+  }
 
   g_free (manifest_content);
   return license;
@@ -1303,7 +1312,6 @@ main (gint argc, gchar *argv[])
   // If content is encrypted, create DrmContext context.
   if (license != LICENSE_NONE && ((appctx->drmctx = drm_ctx_new (license, header)) == NULL)) {
     g_printerr ("ERROR: Couldn't create DRM context!\n");
-    g_free (header);
     goto exit;
   }
 
@@ -1362,6 +1370,7 @@ exit:
   g_free (pro_header_arg);
   g_free (wv_pssh_arg);
   g_free (manifest_url);
+  g_free (header);
 
   gst_deinit ();
   return status;

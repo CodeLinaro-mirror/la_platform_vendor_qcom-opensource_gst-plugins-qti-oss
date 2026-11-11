@@ -2167,6 +2167,11 @@ fill_output_buffer (GstQcodec2Venc * enc, GstVideoInfo * vinfo,
   GstBuffer *buf;
   guint32 size;
 
+  /* With inline-header the codec already puts the headers in front of
+   * each sync frame, so adding config data again would duplicate them. */
+  if (enc->inline_sps_pps_headers)
+    has_config_data = FALSE;
+
   if (G_UNLIKELY (has_config_data))
     size = desc->size + desc->config_size;
   else

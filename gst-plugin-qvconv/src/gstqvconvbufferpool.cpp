@@ -107,7 +107,6 @@ gst_qvconv_memory_map (GstQvconvMemory * memory, gsize maxsize,
     GstMapFlags flags)
 {
   C2DBuffer *c2d_buf = &memory->c2d_buf;
-  //OMX_QCOM_PLATFORM_PRIVATE_PMEM_INFO *pmem_info = &memory->pmem_info;
 
   g_atomic_pointer_set (&memory->pointer, c2d_buf->ptr);
   return g_atomic_pointer_get (&memory->pointer);
@@ -149,27 +148,11 @@ gst_qvconv_memory_new (GstQvconvAllocator * allocator,
     C2DBuffer *c2d_buf, guint mem_valid_size)
 {
   GstMemory *mem;
-  //OMX_QCOM_PLATFORM_PRIVATE_PMEM_INFO *pmem_info;
   GstQvconvMemory *memory = g_slice_new0 (GstQvconvMemory);
 
   gst_mini_object_init (GST_MINI_OBJECT_CAST (memory),
       GST_MINI_OBJECT_FLAG_LOCKABLE, GST_TYPE_QVCONV_MEMORY, NULL, NULL,
       (GstMiniObjectFreeFunction) gst_qvconv_memory_free);
-
-#if 0
-  /* fill pmem info
-   * FIXME: the info should be filled in allocator_alloc.
-   * While the offset is not returned in c2d allocatebuffer
-   * and simply the case of no allocator.
-   * TODO: To merge c2d_buf and pmem_info.
-   */
-  pmem_info = &memory->pmem_info;
-  pmem_info->pmem_fd = c2d_buf->fd;
-  pmem_info->offset = 0;
-  pmem_info->size = c2d_buf->size;
-  pmem_info->mapped_size = c2d_buf->size;
-  pmem_info->buffer = c2d_buf->ptr;
-#endif
 
   memory->c2d_buf = *c2d_buf;
 
@@ -504,7 +487,6 @@ gst_qvconv_dmabuf_memory_new (GstQvconvDmaBufAllocator * allocator,
     C2DBuffer *c2d_buf, guint mem_valid_size)
 {
   GstMemory *mem;
-  //OMX_QCOM_PLATFORM_PRIVATE_PMEM_INFO *pmem_info;
   GstQvconvMemory *memory = g_slice_new0 (GstQvconvMemory);
 
   mem = gst_dmabuf_allocator_alloc_with_flags (GST_ALLOCATOR_CAST(allocator), c2d_buf->fd, c2d_buf->size,
@@ -516,21 +498,6 @@ gst_qvconv_dmabuf_memory_new (GstQvconvDmaBufAllocator * allocator,
 
   gst_mini_object_set_qdata (GST_MINI_OBJECT_CAST (mem),
       GST_QVCONV_PRIVATE_DATA, memory, (GDestroyNotify)gst_qvconv_dmabuf_memory_free);
-
-#if 0
-  /* fill pmem info
-   * FIXME: the info should be filled in allocator_alloc.
-   * While the offset is not returned in c2d allocatebuffer
-   * and simply the case of no allocator.
-   * TODO: To merge c2d_buf and pmem_info.
-   */
-  pmem_info = &memory->pmem_info;
-  pmem_info->pmem_fd = c2d_buf->fd;
-  pmem_info->offset = 0;
-  pmem_info->size = c2d_buf->size;
-  pmem_info->mapped_size = c2d_buf->size;
-  pmem_info->buffer = c2d_buf->ptr;
-#endif
 
   memory->c2d_buf = *c2d_buf;
   memory->memory.allocator = GST_ALLOCATOR_CAST(gst_object_ref (allocator));

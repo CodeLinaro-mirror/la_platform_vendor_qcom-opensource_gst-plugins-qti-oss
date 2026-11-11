@@ -995,11 +995,12 @@ gst_qcodec2_vdec_set_format (GstVideoDecoder * decoder,
     }
   }
 
-  SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
-      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
+  SG_INFO_OBJ (dec, "set_format: handled in-data(%u/%u,len:%llu/%llu), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->in_data_accumlen_1cycle, dec->in_data_accumlen_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
   //In dec + enc pipeline, if ctrl+c halfway, there is still enc output after stop. Then, reset those 1 cycle idx here again.
   dec->in_data_idx_1cycle = 0;
   dec->out_data_idx_1cycle = 0;
+  dec->in_data_accumlen_1cycle = 0;
 
   ret = gst_qcodec2_vdec_start_comp_and_config_pool (dec);
   if (ret == FALSE) {
@@ -1080,10 +1081,11 @@ gst_qcodec2_vdec_stop (GstVideoDecoder * decoder)
 {
   GstQcodec2Vdec *dec = GST_QCODEC2_VDEC (decoder);
 
-  SG_INFO_OBJ (dec, "stop: handled in-data(%u/%u), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
-      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
+  SG_INFO_OBJ (dec, "stop: handled in-data(%u/%u,len:%llu/%llu), out-data(%u/%u), dec(%" GST_PTR_FORMAT "@%p) f-idx %lu, w %d, h %d, comp %s/%p",
+      dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->in_data_accumlen_1cycle, dec->in_data_accumlen_total, dec->out_data_idx_1cycle, dec->out_data_idx_total, dec, dec, dec->frame_index, dec->width, dec->height, dec->comp_name ? dec->comp_name : "NULL", dec->comp);
   dec->in_data_idx_1cycle = 0;
   dec->out_data_idx_1cycle = 0;
+  dec->in_data_accumlen_1cycle = 0;
 
   /* handle state change from PAUSE to READY, then back to PAUSE */
   dec->output_setup = FALSE;
@@ -1235,12 +1237,15 @@ gst_qcodec2_vdec_handle_frame (GstVideoDecoder * decoder,
 
   g_return_val_if_fail (frame != NULL, GST_FLOW_ERROR);
 
+  gsize data_len = gst_buffer_get_size (frame->input_buffer);
+  dec->in_data_accumlen_1cycle += data_len;
+  dec->in_data_accumlen_total += data_len;
   if (dec->in_data_idx_1cycle < DEC_SHOWLOG_NUMBER || 0 == (dec->in_data_idx_1cycle % DEC_SHOWLOG_INTERVAL)) {
-    SG_INFO_OBJ (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
-        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+    SG_INFO_OBJ (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in(idx:%u/%u,len:%llu/%llu), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), data_len, dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->in_data_accumlen_1cycle, dec->in_data_accumlen_total, dec, dec->frame_index);
   }else{
-    GST_DEBUG_OBJECT (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in-idx(%u/%u), dec(%p) f-idx %lu",
-        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), gst_buffer_get_size (frame->input_buffer), dec->in_data_idx_1cycle, dec->in_data_idx_total, dec, dec->frame_index);
+    GST_DEBUG_OBJECT (dec, "Frame number: %u, Distance from Sync: %d, in buf %p, frame PTS: %" GST_TIME_FORMAT ", sz %"  G_GSIZE_FORMAT ", in(idx:%u/%u,len:%llu/%llu), dec(%p) f-idx %lu",
+        frame->system_frame_number, frame->distance_from_sync, frame->input_buffer, GST_TIME_ARGS (frame->pts), data_len, dec->in_data_idx_1cycle, dec->in_data_idx_total, dec->in_data_accumlen_1cycle, dec->in_data_accumlen_total, dec, dec->frame_index);
   }
   dec->in_data_idx_1cycle++;
   dec->in_data_idx_total++;
@@ -2338,6 +2343,8 @@ gst_qcodec2_vdec_init (GstQcodec2Vdec * dec)
   dec->in_data_idx_total = 0;
   dec->out_data_idx_1cycle = 0;
   dec->out_data_idx_total = 0;
+  dec->in_data_accumlen_1cycle = 0;
+  dec->in_data_accumlen_total = 0;
 
   g_cond_init (&dec->pending_cond);
   g_mutex_init (&dec->pending_lock);

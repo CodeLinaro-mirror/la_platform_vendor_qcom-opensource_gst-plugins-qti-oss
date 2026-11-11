@@ -51,7 +51,7 @@ soap_callback (gchar * buffer, size_t size, size_t nitems, void * outstream)
   struct soapbuf *write_buf = (soapbuf *) outstream;
   size_t write_buf_size = size * nitems;
 
-  write_buf->pdata = (gchar *) realloc (write_buf->pdata,
+  write_buf->pdata = (gchar *) g_realloc (write_buf->pdata,
       write_buf->sdata + write_buf_size + 1);
 
   if (write_buf->pdata == NULL) {
@@ -68,14 +68,14 @@ soap_callback (gchar * buffer, size_t size, size_t nitems, void * outstream)
 
 static gint
 perform_curl (gchar * url, struct curl_slist * http_header,
-    gchar ** post_data, size_t * post_data_size)
+    gchar * post_data, size_t post_data_size, gchar ** resp_data, size_t * resp_data_size)
 {
   CURL *curl = NULL;
   struct soapbuf soapbuf;
   glong response_code = -1;
   gint ret = -1;
 
-  if (post_data == NULL || *post_data_size == 0) {
+  if (post_data == NULL || post_data_size == 0) {
     g_print ("ERROR: Post data not available.\n");
     return ret;
   }
@@ -94,10 +94,10 @@ perform_curl (gchar * url, struct curl_slist * http_header,
   curl_easy_setopt (curl, CURLOPT_URL, url);
   curl_easy_setopt (curl, CURLOPT_HTTPHEADER, http_header);
   curl_easy_setopt (curl, CURLOPT_POST, 1L);
-  curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE_LARGE, *post_data_size);
-  curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, *post_data);
+  curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE_LARGE, post_data_size);
+  curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, post_data);
 
-  soapbuf.pdata = *post_data;
+  soapbuf.pdata = NULL;
   soapbuf.sdata = 0;
 
   curl_easy_setopt (curl, CURLOPT_WRITEDATA, &soapbuf);
@@ -107,6 +107,7 @@ perform_curl (gchar * url, struct curl_slist * http_header,
 
   if ((ret = curl_easy_perform (curl)) != CURLE_OK) {
     g_print ("Curl error %d\n", ret);
+    g_free (soapbuf.pdata);
     goto curl_error;
   }
 
@@ -115,12 +116,13 @@ perform_curl (gchar * url, struct curl_slist * http_header,
   if (response_code != 200) {
     g_printerr ("Response error: %ld", response_code);
     ret = -1;
+    g_free (soapbuf.pdata);
     goto curl_error;
   }
 
   // Response data
-  *post_data = soapbuf.pdata;
-  *post_data_size = soapbuf.sdata;
+  *resp_data = soapbuf.pdata;
+  *resp_data_size = soapbuf.sdata;
 
 curl_error:
   curl_slist_free_all (http_header);
@@ -257,7 +259,9 @@ PlayreadyContext::FetchLicense ()
   struct curl_slist *http_header = NULL;
   gchar *content_type = (gchar *) CONTENT_TYPE;
   gchar *req_buf = NULL;
-  size_t req_buf_size;
+  size_t req_buf_size = 0;
+  gchar *resp_buf = NULL;
+  size_t resp_buf_size = 0;
   gint result = PRDRM_FAILED;
 
   // Use the LA URL from environment variable if set, otherwise
@@ -277,11 +281,11 @@ PlayreadyContext::FetchLicense ()
 
   req_buf_size = license_request_.length();
   req_buf = g_strndup (license_request_.c_str(), req_buf_size);
-
-  if ((result = perform_curl (la_url, http_header, &req_buf, &req_buf_size))
+  if ((result = perform_curl (la_url, http_header, req_buf, req_buf_size, &resp_buf, &resp_buf_size))
       == PRDRM_SUCCESS) {
     g_print ("License acquired from license server successfully.\n");
-    license_response_.assign (req_buf, req_buf + req_buf_size);
+    license_response_.assign (resp_buf, resp_buf + resp_buf_size);
+    g_free (resp_buf);
   }
 
   g_free (req_buf);
@@ -339,7 +343,9 @@ WidevineContext::FetchProvisioningResponse (std::string request)
   gchar *prov_url = NULL;
   gchar *req_buf = NULL;
   std::string response;
-  size_t req_buf_size;
+  size_t req_buf_size = 0;
+  gchar *resp_buf = NULL;
+  size_t resp_buf_size = 0;
 
   req_buf_size = request.length();
   req_buf = g_strndup (request.c_str(), req_buf_size);
@@ -357,14 +363,17 @@ WidevineContext::FetchProvisioningResponse (std::string request)
   http_header = curl_slist_append (http_header, "Connection: close");
   http_header = curl_slist_append (http_header, "User-Agent: Widevine CDM v1.0");
 
-  if (perform_curl (url, http_header, &req_buf, &req_buf_size) != 0) {
+  if (CURLE_OK != perform_curl (url, http_header, req_buf, req_buf_size, &resp_buf, &resp_buf_size)) {
     g_free (url);
+    g_free (req_buf);
+    g_printerr ("ERROR: the Widevine provisioning response failure\n");
     return "";
   }
 
-  response.assign (req_buf, req_buf + req_buf_size);
+  response.assign (resp_buf, resp_buf + resp_buf_size);
   g_free (req_buf);
   g_free (url);
+  g_free (resp_buf);
 
   return response;
 }
@@ -503,7 +512,9 @@ WidevineContext::FetchLicense ()
   struct curl_slist *http_header = NULL;
   gchar *lic_url = NULL;
   gchar *req_buf = NULL;
-  size_t req_buf_size;
+  size_t req_buf_size = 0;
+  gchar *resp_buf = NULL;
+  size_t resp_buf_size = 0 ;
 
   lic_url = std::getenv ("CDM_LIC_URL");
   if (lic_url == NULL || strlen (lic_url) == 0) {
@@ -518,13 +529,14 @@ WidevineContext::FetchLicense ()
   http_header = curl_slist_append (http_header, "Connection: close");
   http_header = curl_slist_append (http_header, "User-Agent: Widevine CDM v1.0");
 
-  if (perform_curl (lic_url, http_header, &req_buf, &req_buf_size) != CURLE_OK)
+  if (perform_curl (lic_url, http_header, req_buf, req_buf_size, &resp_buf, &resp_buf_size) != CURLE_OK)
     return widevine::Cdm::kTypeError;
 
-  license_response_.assign (req_buf, req_buf + req_buf_size);
+  license_response_.assign (resp_buf, resp_buf + resp_buf_size);
 
   g_print ("License fetched from license server successfully.\n");
 
+  g_free (resp_buf);
   return widevine::Cdm::kSuccess;
 }
 

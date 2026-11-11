@@ -40,6 +40,10 @@ gst_qvdein_pool_aligned_info (const GstBufferPool * pool)
 }
 
 gint
+gst_qvdein_pool_buffer_import (const GstBufferPool * pool,
+    const GstVideoInfo * info, const GstBuffer * buffer, gboolean ubwc);
+
+gint
 gst_qvdein_pool_buffer_get_fd (const GstBufferPool * pool,
     const GstBuffer * buffer);
 

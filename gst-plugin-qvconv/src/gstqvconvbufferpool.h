@@ -25,9 +25,6 @@ struct _GstQvconvMemory
 
   C2DBuffer c2d_buf;
 
-  /* pmem info struct for downstream element */
-  //OMX_QCOM_PLATFORM_PRIVATE_PMEM_INFO pmem_info;
-
   gpointer pointer;
 };
 
