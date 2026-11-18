@@ -19,7 +19,7 @@ enum {
   GST_C2_EVENT_UNKNOWN,
   GST_C2_EVENT_EOS,
   GST_C2_EVENT_ERROR,
-  GST_C2_EVENT_DROP
+  GST_C2_EVENT_DROP,
 };
 
 enum
@@ -35,6 +35,14 @@ typedef enum {
   GST_C2_USERDATA_TYPE_ROI_RECTANGLE,
   GST_C2_USERDATA_TYPE_ROI_MB_MAP,
 } GstC2UserdataType;
+
+typedef enum {
+  GST_C2_POOL_TYPE_UNSPECIFIED,
+  GST_C2_POOL_TYPE_DEFAULT_LINEAR,
+  GST_C2_POOL_TYPE_DEFAULT_GRAPHIC,
+  GST_C2_POOL_TYPE_LINEAR_NON_CONTIGUOUS,
+  GST_C2_POOL_TYPE_GRAPHIC_NON_CONTIGUOUS,
+} GstC2PoolType;
 
 struct _GstC2QueueItem {
   /// Input buffer to be queued
@@ -59,6 +67,7 @@ struct _GstC2Callbacks {
  * @name: The Codec2 component name which will be created internally.
  * @callbacks: Engine callback functions which will be called when an event
  *             occurs or an encoded/decoded output buffer is produced.
+ * @type: Pool type for creating C0dec2BlockPool.
  * @userdata: Private user defined data which will be attached to the callbacks.
  *
  * Initialize instance of Codec2 engine.
@@ -67,7 +76,7 @@ struct _GstC2Callbacks {
  */
 GST_API GstC2Engine *
 gst_c2_engine_new (const gchar * name, guint32 mode, GstC2Callbacks * callbacks,
-                   gpointer userdata);
+                   GstC2PoolType type, gpointer userdata);
 
 /**
  * gst_c2_engine_free:
@@ -168,6 +177,22 @@ gst_c2_engine_drain (GstC2Engine * engine, gboolean eos);
  */
 GST_API gboolean
 gst_c2_engine_queue (GstC2Engine * engine, GstC2QueueItem * item);
+
+/**
+ * gst_c2_engine_wait_buffer_fence:
+ * @engine: Pointer to Codec2 engine instance.
+ * @buffer: Pointer to GStreamer buffer.
+ * @timeout_ms: Timeout in milliseconds.
+ *
+ * Wait for the Codec2 fence associated with the given GStreamer buffer, if
+ * present. If no fence metadata is associated with the buffer this call
+ * succeeds immediately.
+ *
+ * return: TRUE on success or FALSE on failure.
+ */
+GST_API gboolean
+gst_c2_engine_wait_buffer_fence (GstC2Engine * engine, GstBuffer * buffer,
+    guint timeout_ms);
 
 G_END_DECLS
 

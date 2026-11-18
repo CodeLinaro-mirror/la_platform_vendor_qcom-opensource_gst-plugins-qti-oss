@@ -58,6 +58,7 @@ namespace camera = qmmf;
   g_mutex_unlock(GST_QMMF_CONTEXT_GET_LOCK(obj))
 
 #define GST_QMMF_CONTEXT_HFR_FPS_THRESHOLD 60
+#define GST_QMMF_CONTEXT_MAX_PHYSICAL_CAMERAS 16
 
 #define GST_CAT_DEFAULT qmmf_context_debug_category()
 static GstDebugCategory *
@@ -76,7 +77,7 @@ qmmf_context_debug_category (void)
 struct _GstQmmfLogicalCamInfo {
   gboolean        is_logical_cam;
   gint            phy_cam_num;
-  gchar*          phy_cam_name_list[16];
+  gchar*          phy_cam_name_list[GST_QMMF_CONTEXT_MAX_PHYSICAL_CAMERAS];
 };
 
 struct _GstQmmfCameraSwitchInfo {
@@ -1011,8 +1012,8 @@ gst_qmmf_context_unregister_metadata_pad (GstQmmfContext * context, GstPad * pad
         GST_DEBUG ("Decremented ref_count for timestamp %" G_GUINT64_FORMAT
             " to %u due to pad unregistration", meta_pair.first, ref_info.ref_count);
 
-        // If ref_count reaches 0, free the metadata
-        if (ref_info.ref_count == 0) {
+        // Discard the unused camera metadata.
+        if (ref_info.ref_count != 0) {
           GST_INFO ("Freeing metadata for timestamp %" G_GUINT64_FORMAT
               " after pad unregistration", meta_pair.first);
 
@@ -1818,6 +1819,20 @@ gst_qmmf_context_new (GstCameraEventCb eventcb, GstCameraMetaCb metacb,
   return context;
 }
 
+static void
+gst_qmmf_context_clear_logical_cam_info (GstQmmfLogicalCamInfo *pinfo)
+{
+  if (pinfo->is_logical_cam == TRUE) {
+    for (int i = 0; i < pinfo->phy_cam_num; i++) {
+      g_free (pinfo->phy_cam_name_list[i]);
+      pinfo->phy_cam_name_list[i] = NULL;
+    }
+  }
+
+  pinfo->is_logical_cam = FALSE;
+  pinfo->phy_cam_num = 0;
+}
+
 void
 gst_qmmf_context_free (GstQmmfContext * context)
 {
@@ -1832,10 +1847,7 @@ gst_qmmf_context_free (GstQmmfContext * context)
   gst_structure_free (context->nrtuning);
   gst_structure_free (context->mwbsettings);
 
-  if (context->logical_cam_info.is_logical_cam == TRUE) {
-    for (int i = 0; i < context->logical_cam_info.phy_cam_num; i++)
-      g_free (context->logical_cam_info.phy_cam_name_list[i]);
-  }
+  gst_qmmf_context_clear_logical_cam_info (&context->logical_cam_info);
 
   g_mutex_lock (&context->metadata_lock);
 
@@ -1857,17 +1869,6 @@ gst_qmmf_context_free (GstQmmfContext * context)
   if (!context->metadata_refcount_map->empty ()) {
     GST_WARNING ("Freeing %zu metadata entries during context cleanup",
         context->metadata_refcount_map->size ());
-
-    for (auto& pair : (*context->metadata_refcount_map)) {
-      if (pair.second.metadata != NULL) {
-        GST_WARNING ("Freeing unreleased metadata for timestamp %" G_GUINT64_FORMAT
-            " with ref_count %u/%u", pair.first, pair.second.ref_count,
-            pair.second.total_pads);
-        ::camera::CameraMetadata meta_wrapper(pair.second.metadata);
-        meta_wrapper.clear();
-        pair.second.metadata = NULL;
-      }
-    }
     context->metadata_refcount_map->clear ();
   }
 
@@ -1892,6 +1893,8 @@ gst_qmmf_context_parse_logical_cam_info (GstQmmfContext *context,
 {
   camera_metadata_entry entry;
   GstQmmfLogicalCamInfo *pinfo = &context->logical_cam_info;
+
+  gst_qmmf_context_clear_logical_cam_info (pinfo);
 
   entry = meta.find (ANDROID_REQUEST_AVAILABLE_CAPABILITIES);
 
@@ -1922,6 +1925,13 @@ gst_qmmf_context_parse_logical_cam_info (GstQmmfContext *context,
         // data format example:
         // '0''\0''1''\0''2''\0'
         if (pids[i] == '\0') {
+          if (pinfo->phy_cam_num >= GST_QMMF_CONTEXT_MAX_PHYSICAL_CAMERAS) {
+            GST_WARNING ("Too many physical cameras in logical camera %d, "
+                "max supported is %d", context->camera_id,
+                GST_QMMF_CONTEXT_MAX_PHYSICAL_CAMERAS);
+            break;
+          }
+
           pinfo->phy_cam_name_list[pinfo->phy_cam_num] = g_strdup (pname);
           pinfo->phy_cam_num++;
           pname = (gchar *)&pids[i+1];
@@ -2166,6 +2176,8 @@ gst_qmmf_context_close (GstQmmfContext * context)
   status = recorder->StopCamera (context->camera_id);
   QMMFSRC_RETURN_VAL_IF_FAIL (NULL, status == 0, FALSE,
       "QMMF Recorder StopCamera Failed!");
+
+  gst_qmmf_context_clear_logical_cam_info (&context->logical_cam_info);
 
   context->state = GST_STATE_NULL;
 
@@ -2538,7 +2550,9 @@ gst_qmmf_context_create_image_stream (GstQmmfContext * context, GstPad * pad)
         imgparam.format = ::qmmf::recorder::ImageFormat::kNV12UBWC;
         break;
       case GST_VIDEO_FORMAT_P010_10LE:
-        imgparam.format = ::qmmf::recorder::ImageFormat::kP010;
+        imgparam.format = (ipad->subformat == GST_IMAGE_SUBFORMAT_HEIF) ?
+            ::qmmf::recorder::ImageFormat::kP010HEIF :
+            ::qmmf::recorder::ImageFormat::kP010;
         break;
       case GST_VIDEO_FORMAT_NV12_Q10LE32C:
         imgparam.format = ::qmmf::recorder::ImageFormat::kTP10UBWC;
@@ -3809,7 +3823,25 @@ gst_qmmf_context_set_camera_param (GstQmmfContext * context, guint param_id,
               GST_INFO ("physical camera switch tag update success");
             }
           } else {
-            GST_ERROR ("physical camera switch tag not found ");
+            //old tag can't found, check new tag name
+            GST_TRACE ("com.qti.chi.multicameraswitchControl tag not found");
+
+            tag_id = get_vendor_tag_by_name (
+                "com.qualcomm.qti.multiCameraSwitchControl", "activeCameraIndex");
+            if (tag_id != 0) {
+              gint32 val = (gint32)output;
+              gint32 ret;
+
+              ret = meta.update (tag_id, &val, 1);
+              if (ret != 0) {
+                GST_ERROR ("physical camera switch tag update error");
+              } else {
+                GST_INFO ("physical camera switch tag update success");
+              }
+            } else {
+              GST_ERROR ("both multicameraswitchControl tags not found, "
+                  "physical camera switch not supported");
+            }
           }
         }
       } else {
@@ -4106,30 +4138,36 @@ gst_qmmf_context_get_camera_param (GstQmmfContext * context, guint param_id,
     }
     case PARAM_CAMERA_VIDEO_METADATA:
     {
-      ::camera::CameraMetadata *meta = new ::camera::CameraMetadata();
+      ::camera::CameraMetadata *meta = NULL;
 
-      if (context->state >= GST_STATE_READY)
+      if (context->state >= GST_STATE_READY) {
+        meta = new ::camera::CameraMetadata ();
         recorder->GetCameraParam (context->camera_id, *meta);
+      }
 
       g_value_set_pointer (value, meta);
       break;
     }
     case PARAM_CAMERA_IMAGE_METADATA:
     {
-      ::camera::CameraMetadata *meta = new ::camera::CameraMetadata();
+      ::camera::CameraMetadata *meta = NULL;
 
-      if (context->state >= GST_STATE_READY)
+      if (context->state >= GST_STATE_READY) {
+        meta = new ::camera::CameraMetadata ();
         recorder->GetDefaultCaptureParam (context->camera_id, *meta);
+      }
 
       g_value_set_pointer (value, meta);
       break;
     }
     case PARAM_CAMERA_STATIC_METADATA:
     {
-      ::camera::CameraMetadata *meta = new ::camera::CameraMetadata();
+      ::camera::CameraMetadata *meta = NULL;
 
-      if (context->state >= GST_STATE_READY)
+      if (context->state >= GST_STATE_READY) {
+        meta = new ::camera::CameraMetadata ();
         recorder->GetCameraCharacteristics (context->camera_id, *meta);
+      }
 
       g_value_set_pointer (value, meta);
       break;

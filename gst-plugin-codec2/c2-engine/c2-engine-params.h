@@ -34,6 +34,7 @@ typedef struct _GstC2QuantRectangle GstC2QuantRectangle;
 typedef struct _GstC2QuantRegions GstC2QuantRegions;
 typedef struct _GstC2QuantMbmapInfo GstC2QuantMbmapInfo;
 typedef struct _GstC2TemporalLayer GstC2TemporalLayer;
+typedef struct _GstC2VideoFence GstC2VideoFence;
 #if (GST_VERSION_MAJOR >= 1) && (GST_VERSION_MINOR >= 18)
 typedef struct _GstC2HdrStaticMetadata GstC2HdrStaticMetadata;
 #endif // (GST_VERSION_MAJOR >= 1) && (GST_VERSION_MINOR >= 18)
@@ -92,6 +93,7 @@ enum {
   GST_C2_PARAM_FLIP,                 // GstC2VideoFlip
   GST_C2_PARAM_VBV_DELAY,            // gint32
   GST_C2_PARAM_VUI_TIMING_INFO,      // gboolean
+  GST_C2_PARAM_QUALITY,              // guint32
   GST_C2_PARAM_HDR_MODE,             // GstC2HdrMode
   GST_C2_PARAM_OPERATING_FRAMERATE,  // gdouble
   GST_C2_PARAM_CHROMA_QP_OFFSET,     // gint32
@@ -99,6 +101,11 @@ enum {
   GST_C2_PARAM_BITRATE_BOOST_MARGIN, // gint32
   GST_C2_PARAM_ENCODING_MODE,        // GstC2EncodingMode
   GST_C2_PARAM_CAC,                  // GstC2ContentAdaptiveCoding
+  GST_C2_PARAM_LOW_LATENCY,          // gboolean
+  GST_C2_PARAM_DECODE_SLICE_MODE,    // guint32
+  GST_C2_PARAM_VIDEO_FENCE,          // GstC2VideoFence
+  GST_C2_PARAM_VIDEO_FENCE_TYPE_INFO, // GstC2VideoFenceTypeInfo
+  GST_C2_PARAM_END_OF_PICTURE_MARKER, // gboolean
 };
 
 typedef enum {
@@ -111,6 +118,7 @@ typedef enum {
   GST_C2_PROFILE_HEVC_MAIN,
   GST_C2_PROFILE_HEVC_MAIN10,
   GST_C2_PROFILE_HEVC_MAIN_STILL,
+  GST_C2_PROFILE_HEVC_MAIN10_STILL,
 
   GST_C2_PROFILE_AAC_LC,
   GST_C2_PROFILE_AAC_MAIN,
@@ -332,6 +340,21 @@ typedef enum {
   GST_C2_CAC_ENABLE_ALL,
 } GstC2Cac;
 
+typedef enum {
+  GST_C2_FENCE_TYPE_TX,
+  GST_C2_FENCE_TYPE_RX,
+} GstC2FenceType;
+
+typedef enum {
+  GST_C2_VIDEO_FENCE_TYPE_INFO_SW,
+  GST_C2_VIDEO_FENCE_TYPE_INFO_SYNX_V2,
+} GstC2VideoFenceTypeInfo;
+
+struct _GstC2VideoFence {
+  gboolean        enable;
+  GstC2FenceType  fence_type;
+};
+
 struct _GstC2PixelInfo {
   GstVideoFormat format;
   guint32        n_subframes;
@@ -372,20 +395,20 @@ struct _GstC2TileLayout {
 
 struct _GstC2QuantInit {
   gboolean i_frames_enable;
-  guint32  i_frames;
+  gint32   i_frames;
   gboolean p_frames_enable;
-  guint32  p_frames;
+  gint32   p_frames;
   gboolean b_frames_enable;
-  guint32  b_frames;
+  gint32   b_frames;
 };
 
 struct _GstC2QuantRanges {
-  guint32 min_i_qp;
-  guint32 max_i_qp;
-  guint32 min_p_qp;
-  guint32 max_p_qp;
-  guint32 min_b_qp;
-  guint32 max_b_qp;
+  gint32 min_i_qp;
+  gint32 max_i_qp;
+  gint32 min_p_qp;
+  gint32 max_p_qp;
+  gint32 min_b_qp;
+  gint32 max_b_qp;
 };
 
 struct _GstC2QuantRectangle {
@@ -421,10 +444,12 @@ struct _GstC2TemporalLayer {
 
 guint gst_c2_utils_h264_profile_from_string (const gchar * profile);
 guint gst_c2_utils_h265_profile_from_string (const gchar * profile);
+guint gst_c2_utils_heic_profile_from_string (const gchar * profile);
 guint gst_c2_utils_aac_profile_from_string (const gchar * profile);
 
 const gchar * gst_c2_utils_h264_profile_to_string (guint profile);
 const gchar * gst_c2_utils_h265_profile_to_string (guint profile);
+const gchar * gst_c2_utils_heic_profile_to_string (guint profile);
 const gchar * gst_c2_utils_aac_profile_to_string (guint profile);
 guint gst_c2_utils_aac_profile_to_aot (guint profile);
 

@@ -104,6 +104,36 @@ class GstC2BufferQData {
   GstC2BufferQData(std::shared_ptr<C2Buffer>& c2buffer) : c2buffer_(c2buffer) {}
   ~GstC2BufferQData() = default;
 
+  c2_status_t WaitFence(guint timeout_ms) const {
+    C2Fence fence;
+
+    if (c2buffer_ == nullptr)
+      return C2_BAD_VALUE;
+
+    if (c2buffer_->data().type() == C2BufferData::LINEAR) {
+      const auto& blocks = c2buffer_->data().linearBlocks();
+
+      if (blocks.empty())
+        return C2_BAD_VALUE;
+
+      fence = blocks.front().fence();
+    } else if (c2buffer_->data().type() == C2BufferData::GRAPHIC) {
+      const auto& blocks = c2buffer_->data().graphicBlocks();
+
+      if (blocks.empty())
+        return C2_BAD_VALUE;
+
+      fence = blocks.front().fence();
+    } else {
+      return C2_BAD_VALUE;
+    }
+
+    if (!fence.valid() || fence.ready())
+      return C2_OK;
+
+    return fence.wait(static_cast<c2_nsecs_t>(timeout_ms) * 1000 * 1000);
+  }
+
  private:
   std::shared_ptr<C2Buffer> c2buffer_;
 };
@@ -113,6 +143,36 @@ gst_c2_buffer_qdata_release (gpointer userdata)
 {
   GstC2BufferQData *qdata = reinterpret_cast<GstC2BufferQData*>(userdata);
   delete qdata;
+}
+
+gboolean
+gst_c2_engine_wait_buffer_fence (GstC2Engine * engine_, GstBuffer * buffer,
+    guint timeout_ms)
+{
+  GstC2BufferQData *qdata = NULL;
+  c2_status_t status = C2_OK;
+
+  g_return_val_if_fail (engine_ != NULL, FALSE);
+  g_return_val_if_fail (buffer != NULL, FALSE);
+
+  qdata = reinterpret_cast<GstC2BufferQData*>(gst_mini_object_get_qdata (
+      GST_MINI_OBJECT (buffer), gst_c2_buffer_qdata_quark ()));
+
+  if (qdata == NULL)
+    return TRUE;
+
+  status = qdata->WaitFence (timeout_ms);
+  if (status != C2_OK) {
+    GST_WARNING ("Failed to wait on buffer fence, status: %d, timeout: %u ms",
+        status, timeout_ms);
+    return FALSE;
+  }
+
+  // Slice data output is treated as incomplete by video
+  if (!GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_MARKER))
+    GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_MARKER);
+
+  return TRUE;
 }
 
 // Nofifier class for C2 buffers and events. Translates the C2 data into the
@@ -273,7 +333,7 @@ class GstC2Notifier : public IC2Notifier {
 
 GstC2Engine *
 gst_c2_engine_new (const gchar * name, guint32 mode, GstC2Callbacks * callbacks,
-    gpointer userdata)
+    GstC2PoolType type, gpointer userdata)
 {
   GstC2Engine *engine = NULL;
 
@@ -317,11 +377,32 @@ gst_c2_engine_new (const gchar * name, guint32 mode, GstC2Callbacks * callbacks,
     return NULL;
   }
 
+  C2Module::PoolType pool_type = C2Module::PoolType::kUnspecified;
+  switch (type) {
+    case GST_C2_POOL_TYPE_UNSPECIFIED:
+      pool_type = C2Module::PoolType::kUnspecified;
+      break;
+    case GST_C2_POOL_TYPE_DEFAULT_LINEAR:
+      pool_type = C2Module::PoolType::kDefaultLinear;
+      break;
+    case GST_C2_POOL_TYPE_DEFAULT_GRAPHIC:
+      pool_type = C2Module::PoolType::kDefaultGraphic;
+      break;
+    case GST_C2_POOL_TYPE_LINEAR_NON_CONTIGUOUS:
+      pool_type = C2Module::PoolType::kLinearNonContiguous;
+      break;
+    case GST_C2_POOL_TYPE_GRAPHIC_NON_CONTIGUOUS:
+      pool_type = C2Module::PoolType::kGraphicNonContiguous;
+      break;
+    default:
+      break;
+  }
+
   try {
     std::shared_ptr<IC2Notifier> notifier =
         std::make_shared<GstC2Notifier>(engine);
 
-    engine->c2module->Initialize (notifier);
+    engine->c2module->Initialize (notifier, pool_type);
   } catch (std::exception& e) {
     GST_ERROR ("Failed to initialize, error: '%s'!", e.what());
     gst_c2_engine_free (engine);
@@ -453,7 +534,7 @@ gst_c2_engine_drain (GstC2Engine * engine, gboolean eos)
   std::shared_ptr<C2Buffer> c2buffer;
   std::list<std::unique_ptr<C2Param>> settings;
 
-  uint64_t index = 0;
+  uint64_t index = 0xFFFFFFFDULL;
   uint64_t timestamp = 0;
   uint32_t flags = C2FrameData::FLAG_END_OF_STREAM;
 
@@ -556,9 +637,15 @@ gst_c2_engine_queue (GstC2Engine * engine, GstC2QueueItem * item)
     try {
       qc2audio::QC2Status status = qc2audio::QC2_OK;
       std::shared_ptr<qc2audio::QC2Buffer> outbuffer;
+#if (CODEC2_CONFIG_VERSION_MAJOR == 2 && CODEC2_CONFIG_VERSION_MINOR >= 3)
+      std::shared_ptr<qc2audio::QC2LinearBufferPool> c2pool =
+          c2module->GetLinearBufferPool(size);
+      status = c2pool->allocate(&outbuffer);
+#else
       std::shared_ptr<qc2audio::QC2BufferCirclePools> c2circlePool =
-          c2module->GetLinearCirclePool(size);
+          c2module->GetLinearBufferPool(size);
       status = c2circlePool->take(&outbuffer, nullptr);
+#endif // (CODEC2_CONFIG_VERSION_MAJOR == 2 && CODEC2_CONFIG_VERSION_MINOR >= 3)
       c2buffer = GstC2Utils::CreateBuffer(buffer, outbuffer);
     } catch (std::exception& e) {
       GST_ERROR ("Failed to fetch memory block, error: '%s'!", e.what());
